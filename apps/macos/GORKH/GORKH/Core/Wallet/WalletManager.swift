@@ -453,6 +453,7 @@ final class WalletManager: ObservableObject {
                     rentExemptLamports: rent
                 )
             }
+            let destinationTokenAccount = recipientTokenAccount ?? ataPlan.associatedTokenAddress
 
             let draft = TokenTransferDraft(
                 network: selectedNetwork,
@@ -461,7 +462,7 @@ final class WalletManager: ObservableObject {
                 mintAddress: token.mintAddress,
                 tokenProgramKind: token.programKind,
                 recipientOwnerAddress: recipientOwner,
-                recipientTokenAccount: recipientTokenAccount,
+                recipientTokenAccount: destinationTokenAccount,
                 amountRaw: amountRaw,
                 amountText: amountText.trimmingCharacters(in: .whitespacesAndNewlines),
                 decimals: token.decimals,
@@ -477,6 +478,9 @@ final class WalletManager: ObservableObject {
             tokenApprovalState = .drafted
 
             if ataPlan.shouldCreateAssociatedTokenAccount {
+                guard ataPlan.creationSupported, destinationTokenAccount != nil else {
+                    throw TokenTransferValidationError.associatedTokenAccountCreationUnavailable(ataPlan.message)
+                }
                 record(
                     kind: .ataCreationPlanned,
                     walletID: profile.id,
@@ -486,10 +490,10 @@ final class WalletManager: ObservableObject {
                         "network": selectedNetwork.rawValue,
                         "mint": token.mintAddress,
                         "tokenProgram": token.programKind.rawValue,
-                        "recipientOwner": recipientOwner
+                        "recipientOwner": recipientOwner,
+                        "associatedTokenAccount": destinationTokenAccount ?? ""
                     ]
                 )
-                throw TokenTransferValidationError.associatedTokenAccountCreationUnavailable(ataPlan.message)
             }
 
             record(
@@ -502,7 +506,8 @@ final class WalletManager: ObservableObject {
                     "mint": token.mintAddress,
                     "sourceTokenAccount": token.tokenAccountAddress,
                     "recipientOwner": recipientOwner,
-                    "recipientTokenAccount": recipientTokenAccount ?? "",
+                    "recipientTokenAccount": destinationTokenAccount ?? "",
+                    "createsAssociatedTokenAccount": "\(ataPlan.shouldCreateAssociatedTokenAccount)",
                     "amountRaw": "\(amountRaw)",
                     "decimals": "\(token.decimals)"
                 ]
@@ -546,9 +551,23 @@ final class WalletManager: ObservableObject {
                 details: [
                     "network": draft.network.rawValue,
                     "mint": draft.mintAddress,
-                    "status": result.status.rawValue
+                    "status": result.status.rawValue,
+                    "createsAssociatedTokenAccount": "\(draft.ataPlan.shouldCreateAssociatedTokenAccount)"
                 ]
             )
+            if draft.ataPlan.shouldCreateAssociatedTokenAccount, result.status == .success {
+                record(
+                    kind: .ataCreationIncluded,
+                    walletID: profile.id,
+                    publicAddress: profile.publicAddress,
+                    message: "ATA creation included in simulated SPL token transfer.",
+                    details: [
+                        "network": draft.network.rawValue,
+                        "mint": draft.mintAddress,
+                        "associatedTokenAccount": draft.ataPlan.associatedTokenAddress ?? ""
+                    ]
+                )
+            }
             statusMessage = result.status == .success ? "Token simulation succeeded." : (result.errorMessage ?? "Token simulation failed.")
         } catch {
             tokenSimulationResult = .unavailable(error.localizedDescription)
@@ -598,12 +617,13 @@ final class WalletManager: ObservableObject {
             walletID: profile.id,
             publicAddress: profile.publicAddress,
             message: "SPL token transfer approved by user.",
-            details: [
-                "network": draft.network.rawValue,
-                "mint": draft.mintAddress,
-                "amountRaw": "\(draft.amountRaw)"
-            ]
-        )
+                details: [
+                    "network": draft.network.rawValue,
+                    "mint": draft.mintAddress,
+                    "amountRaw": "\(draft.amountRaw)",
+                    "createsAssociatedTokenAccount": "\(draft.ataPlan.shouldCreateAssociatedTokenAccount)"
+                ]
+            )
 
         tokenApprovalState = .approved
         isBusy = true
@@ -634,6 +654,7 @@ final class WalletManager: ObservableObject {
                     "sourceTokenAccount": draft.sourceTokenAccount,
                     "recipientOwner": draft.recipientOwnerAddress,
                     "recipientTokenAccount": draft.recipientTokenAccount ?? "",
+                    "createsAssociatedTokenAccount": "\(draft.ataPlan.shouldCreateAssociatedTokenAccount)",
                     "amountRaw": "\(draft.amountRaw)",
                     "decimals": "\(draft.decimals)"
                 ]

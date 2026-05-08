@@ -1,6 +1,27 @@
 import Foundation
 
 enum AssociatedTokenAccount {
+    static func deriveAddress(
+        owner: String,
+        mint: String,
+        tokenProgramKind: TokenProgramKind
+    ) throws -> ProgramDerivedAddressResult {
+        guard let ownerBytes = SolanaAddressValidator.decodeAddress(owner),
+              let mintBytes = SolanaAddressValidator.decodeAddress(mint),
+              let tokenProgramBytes = SolanaAddressValidator.decodeAddress(tokenProgramKind.programID) else {
+            throw SolanaValidationError.invalidAddress("Associated token account derivation contains an invalid address.")
+        }
+
+        return try ProgramDerivedAddress.findProgramAddress(
+            seeds: [
+                ownerBytes,
+                tokenProgramBytes,
+                mintBytes
+            ],
+            programID: SolanaConstants.associatedTokenAccountProgramID
+        )
+    }
+
     static func existingPlan(
         recipientOwner: String,
         mint: String,
@@ -8,7 +29,7 @@ enum AssociatedTokenAccount {
         recipientTokenAccount: String,
         rentExemptLamports: UInt64? = nil
     ) -> AssociatedTokenAccountPlan {
-        AssociatedTokenAccountPlan(
+        return AssociatedTokenAccountPlan(
             recipientOwnerAddress: recipientOwner,
             mintAddress: mint,
             tokenProgramKind: tokenProgramKind,
@@ -27,16 +48,24 @@ enum AssociatedTokenAccount {
         tokenProgramKind: TokenProgramKind,
         rentExemptLamports: UInt64? = nil
     ) -> AssociatedTokenAccountPlan {
-        AssociatedTokenAccountPlan(
+        let derived = try? deriveAddress(
+            owner: recipientOwner,
+            mint: mint,
+            tokenProgramKind: tokenProgramKind
+        )
+
+        return AssociatedTokenAccountPlan(
             recipientOwnerAddress: recipientOwner,
             mintAddress: mint,
             tokenProgramKind: tokenProgramKind,
-            associatedTokenAddress: nil,
+            associatedTokenAddress: derived?.base58Address,
             recipientTokenAccountExists: false,
             shouldCreateAssociatedTokenAccount: true,
-            creationSupported: false,
+            creationSupported: derived != nil && tokenProgramKind == .splToken,
             rentExemptLamports: rentExemptLamports,
-            message: "Recipient associated token account is missing. Creation is visible in the plan, but automatic ATA creation is deferred until PDA derivation is implemented without unsafe assumptions."
+            message: derived == nil
+                ? "Recipient associated token account is missing, and ATA derivation failed."
+                : "Recipient associated token account is missing. GORKH will create \(derived?.base58Address ?? "the derived ATA") before transferring."
         )
     }
 }

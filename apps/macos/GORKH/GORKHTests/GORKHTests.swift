@@ -385,8 +385,117 @@ struct GORKHTests {
             recentBlockhash: blockhash
         )
 
-        #expect(Data(message.prefix(3)).hexString == "010102")
+        let parsed = try parseMessage(message)
+        #expect(Data(message.prefix(3)).hexString == "010002")
+        #expect(parsed.requiredSignatures == 1)
+        #expect(parsed.readonlySignedAccounts == 0)
+        #expect(parsed.readonlyUnsignedAccounts == 2)
         #expect(message.range(of: SplTokenInstructionBuilder.transferCheckedInstructionData(amountRaw: 42, decimals: 6)) != nil)
+        #expect(parsed.instructions.count == 1)
+    }
+
+    @Test func ed25519OnCurveCheckRecognizesValidPublicKeysAndPdas() throws {
+        let publicKey = Data(hex: "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a")
+        #expect(Ed25519CompressedPoint.isOnCurve(publicKey))
+
+        let pda = try ProgramDerivedAddress.findProgramAddress(
+            seeds: [Data("gorkh".utf8)],
+            programID: SolanaConstants.associatedTokenAccountProgramID
+        )
+        #expect(pda.address.count == 32)
+        #expect(!Ed25519CompressedPoint.isOnCurve(pda.address))
+    }
+
+    @Test func pdaDerivationIsDeterministicAndRejectsOversizedSeeds() throws {
+        let first = try ProgramDerivedAddress.findProgramAddress(
+            seeds: [Data("wallet".utf8), Data("mint".utf8)],
+            programID: SolanaConstants.associatedTokenAccountProgramID
+        )
+        let second = try ProgramDerivedAddress.findProgramAddress(
+            seeds: [Data("wallet".utf8), Data("mint".utf8)],
+            programID: SolanaConstants.associatedTokenAccountProgramID
+        )
+        let different = try ProgramDerivedAddress.findProgramAddress(
+            seeds: [Data("wallet".utf8), Data("other".utf8)],
+            programID: SolanaConstants.associatedTokenAccountProgramID
+        )
+
+        #expect(first == second)
+        #expect(first.address != different.address)
+        #expect(first.bump <= 255)
+        #expect(throws: ProgramDerivedAddressError.self) {
+            try ProgramDerivedAddress.createProgramAddress(
+                seeds: [Data(repeating: 1, count: 33)],
+                programID: SolanaConstants.associatedTokenAccountProgramID
+            )
+        }
+    }
+
+    @Test func associatedTokenAddressDerivationIsDeterministic() throws {
+        let owner = Base58.encode(Data(repeating: 2, count: 32))
+        let mint = Base58.encode(Data(repeating: 5, count: 32))
+
+        let first = try AssociatedTokenAccount.deriveAddress(
+            owner: owner,
+            mint: mint,
+            tokenProgramKind: .splToken
+        )
+        let second = try AssociatedTokenAccount.deriveAddress(
+            owner: owner,
+            mint: mint,
+            tokenProgramKind: .splToken
+        )
+
+        #expect(first == second)
+        #expect(first.address.count == 32)
+        #expect(SolanaAddressValidator.isValidAddress(first.base58Address))
+        #expect(!Ed25519CompressedPoint.isOnCurve(first.address))
+    }
+
+    @Test func createAtaAndTransferMessageUsesExpectedInstructionOrder() throws {
+        let owner = Base58.encode(Data(repeating: 2, count: 32))
+        let source = Base58.encode(Data(repeating: 3, count: 32))
+        let recipientOwner = Base58.encode(Data(repeating: 7, count: 32))
+        let mint = Base58.encode(Data(repeating: 5, count: 32))
+        let blockhash = Base58.encode(Data(repeating: 6, count: 32))
+        let ataPlan = AssociatedTokenAccount.missingPlan(
+            recipientOwner: recipientOwner,
+            mint: mint,
+            tokenProgramKind: .splToken,
+            rentExemptLamports: 2_039_280
+        )
+        let destination = try #require(ataPlan.associatedTokenAddress)
+        let draft = TokenTransferDraft(
+            network: .devnet,
+            ownerAddress: owner,
+            sourceTokenAccount: source,
+            mintAddress: mint,
+            tokenProgramKind: .splToken,
+            recipientOwnerAddress: recipientOwner,
+            recipientTokenAccount: destination,
+            amountRaw: 42,
+            amountText: "0.000042",
+            decimals: 6,
+            availableAmountRaw: 1_000_000,
+            ataPlan: ataPlan
+        )
+
+        let message = try SplTokenInstructionBuilder.makeTransferCheckedMessage(
+            draft: draft,
+            recentBlockhash: blockhash
+        )
+        let parsed = try parseMessage(message)
+        let associatedProgram = try #require(SolanaAddressValidator.decodeAddress(SolanaConstants.associatedTokenAccountProgramID))
+        let tokenProgram = try #require(SolanaAddressValidator.decodeAddress(SolanaConstants.splTokenProgramID))
+
+        #expect(parsed.requiredSignatures == 1)
+        #expect(parsed.instructions.count == 2)
+        #expect(parsed.accountKeys[Int(parsed.instructions[0].programIDIndex)] == associatedProgram)
+        #expect(parsed.instructions[0].data.isEmpty)
+        #expect(parsed.instructions[0].accountIndexes.count == 6)
+        #expect(parsed.accountKeys[Int(parsed.instructions[1].programIDIndex)] == tokenProgram)
+        #expect(parsed.instructions[1].data == SplTokenInstructionBuilder.transferCheckedInstructionData(amountRaw: 42, decimals: 6))
+        #expect(SplTokenInstructionBuilder.instructionCount(for: draft) == 2)
     }
 
     @Test func tokenTransferRejectsToken2022UntilExtensionHandlingExists() throws {
@@ -419,7 +528,7 @@ struct GORKHTests {
         }
     }
 
-    @Test func missingAtaPlanIsVisibleAndDoesNotPretendCreationSupport() {
+    @Test func missingAtaPlanIsVisibleAndCreationSupportedForSplToken() {
         let plan = AssociatedTokenAccount.missingPlan(
             recipientOwner: SolanaConstants.systemProgramID,
             mint: Base58.encode(Data(repeating: 5, count: 32)),
@@ -429,9 +538,15 @@ struct GORKHTests {
 
         #expect(plan.shouldCreateAssociatedTokenAccount)
         #expect(!plan.recipientTokenAccountExists)
-        #expect(!plan.creationSupported)
+        #expect(plan.creationSupported)
+        #expect(plan.associatedTokenAddress != nil)
         #expect(plan.rentExemptLamports == 2_039_280)
         #expect(plan.message.lowercased().contains("missing"))
+    }
+
+    @Test func token2022UsesOfficialProgramIdButSendsStayBlocked() {
+        #expect(SolanaConstants.token2022ProgramID == "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb")
+        #expect(TokenProgramKind.token2022.programID == SolanaConstants.token2022ProgramID)
     }
 
     @Test func tokenAuditEventsDropSensitiveDetails() throws {
@@ -712,6 +827,100 @@ private enum LiveDevnetSmokeError: LocalizedError {
             return message
         }
     }
+}
+
+private struct ParsedSolanaMessage {
+    let requiredSignatures: UInt8
+    let readonlySignedAccounts: UInt8
+    let readonlyUnsignedAccounts: UInt8
+    let accountKeys: [Data]
+    let instructions: [ParsedSolanaInstruction]
+}
+
+private struct ParsedSolanaInstruction {
+    let programIDIndex: UInt8
+    let accountIndexes: [UInt8]
+    let data: Data
+}
+
+private func parseMessage(_ message: Data) throws -> ParsedSolanaMessage {
+    var offset = 0
+    let bytes = [UInt8](message)
+
+    func readByte() throws -> UInt8 {
+        guard offset < bytes.count else {
+            throw TestParsingError.outOfBounds
+        }
+        defer { offset += 1 }
+        return bytes[offset]
+    }
+
+    func readShortVector() throws -> Int {
+        var value = 0
+        var shift = 0
+
+        while true {
+            let byte = try readByte()
+            value |= Int(byte & 0x7f) << shift
+            if byte & 0x80 == 0 {
+                return value
+            }
+            shift += 7
+        }
+    }
+
+    let requiredSignatures = try readByte()
+    let readonlySignedAccounts = try readByte()
+    let readonlyUnsignedAccounts = try readByte()
+    let accountCount = try readShortVector()
+    var accountKeys: [Data] = []
+
+    for _ in 0..<accountCount {
+        guard offset + 32 <= bytes.count else {
+            throw TestParsingError.outOfBounds
+        }
+        accountKeys.append(Data(bytes[offset..<(offset + 32)]))
+        offset += 32
+    }
+
+    guard offset + 32 <= bytes.count else {
+        throw TestParsingError.outOfBounds
+    }
+    offset += 32 // recent blockhash
+
+    let instructionCount = try readShortVector()
+    var instructions: [ParsedSolanaInstruction] = []
+    for _ in 0..<instructionCount {
+        let programIDIndex = try readByte()
+        let accountIndexCount = try readShortVector()
+        var accountIndexes: [UInt8] = []
+        for _ in 0..<accountIndexCount {
+            accountIndexes.append(try readByte())
+        }
+        let dataLength = try readShortVector()
+        guard offset + dataLength <= bytes.count else {
+            throw TestParsingError.outOfBounds
+        }
+        let instructionData = Data(bytes[offset..<(offset + dataLength)])
+        offset += dataLength
+        instructions.append(ParsedSolanaInstruction(
+            programIDIndex: programIDIndex,
+            accountIndexes: accountIndexes,
+            data: instructionData
+        ))
+    }
+
+    return ParsedSolanaMessage(
+        requiredSignatures: requiredSignatures,
+        readonlySignedAccounts: readonlySignedAccounts,
+        readonlyUnsignedAccounts: readonlyUnsignedAccounts,
+        accountKeys: accountKeys,
+        instructions: instructions
+    )
+}
+
+private enum TestParsingError: Error {
+    case outOfBounds
 }
 
 @MainActor

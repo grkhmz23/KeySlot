@@ -8,9 +8,8 @@ Do not use this flow on mainnet. Do not paste recovery phrases, private keys, or
 
 - A GORKH devnet wallet with SOL for fees.
 - A devnet SPL Token account owned by that wallet.
-- A recipient owner address that already has an initialized token account for the same mint.
 
-Phase 1.3 discovers Token-2022 balances, but Token-2022 sending is intentionally disabled until extension account handling is implemented. Phase 1.3 also detects when the recipient token account is missing and shows the ATA creation plan, but automatic ATA creation is deferred until PDA derivation is implemented without unsafe assumptions.
+Phase 1.3 discovers Token-2022 balances, but Token-2022 sending is intentionally disabled until extension account handling is implemented. Phase 1.3B derives the recipient Associated Token Account for SPL Token sends and includes a create-ATA instruction before `transferChecked` when the recipient ATA is missing.
 
 ## Manual UI Smoke
 
@@ -26,7 +25,7 @@ Phase 1.3 discovers Token-2022 balances, but Token-2022 sending is intentionally
    - raw/UI amount
    - token program label
 8. Click `Send` on an SPL Token row.
-9. Enter a recipient owner address that already has a token account for the same mint.
+9. Enter a recipient owner address. If the owner does not have an ATA for this mint, GORKH must show that ATA creation is included before transfer.
 10. Enter a small token amount.
 11. Click `Prepare Token Draft`.
 12. Confirm the draft shows:
@@ -46,9 +45,10 @@ Phase 1.3 discovers Token-2022 balances, but Token-2022 sending is intentionally
 ## Expected Failure Checks
 
 - Recipient owner has no token account for the mint:
-  - draft must show the missing recipient token account
-  - approval/send must stay blocked
-  - audit must record `ata_creation_planned`
+  - draft must show the missing recipient ATA
+  - approval must show `ATA creation included`
+  - simulation must cover create ATA + transfer
+  - audit must record `ata_creation_planned` and `ata_creation_included` after successful simulation
 - Token-2022 token:
   - balance may be visible
   - send must be blocked with clear copy
@@ -66,3 +66,38 @@ rg -n "privateKey|secretKey|seed phrase|wallet JSON|mnemonic" apps/macos/GORKH/G
 ```
 
 The search may find source-level identifiers and safety copy, but it must not reveal actual secret material.
+
+## Non-GUI Smoke Harness
+
+The automated devnet SPL smoke uses the same gitignored throwaway wallet state as the SOL smoke:
+
+```sh
+scripts/live-devnet-wallet-smoke.sh --prepare-manual-funding
+```
+
+Fund the printed address with:
+
+- devnet SOL for rent and fees
+- a small devnet SPL Token balance
+
+Then run:
+
+```sh
+scripts/live-devnet-spl-smoke.sh
+```
+
+To force a specific mint:
+
+```sh
+scripts/live-devnet-spl-smoke.sh --mint <SPL_TOKEN_MINT>
+```
+
+If the smoke wallet has devnet SOL but no SPL balance, and local `solana` and `spl-token` CLIs are installed, create a temporary devnet-only SPL mint and mint test tokens to the smoke wallet:
+
+```sh
+scripts/live-devnet-spl-smoke.sh --prepare-token-balance
+```
+
+Then run the `nextCommand` printed by the setup step.
+
+The harness creates a fresh throwaway recipient owner, derives the missing recipient ATA, simulates create-ATA + `transferChecked`, signs locally, sends to devnet, waits for confirmation, and verifies the recipient token balance. It prints only public addresses, token account addresses, the transaction signature, and the devnet explorer link.

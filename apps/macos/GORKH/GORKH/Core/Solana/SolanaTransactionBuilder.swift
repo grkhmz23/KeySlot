@@ -44,12 +44,13 @@ enum SolanaTransactionBuilder {
     static func makeMessage(
         accountKeys: [Data],
         recentBlockhash: Data,
+        requiredSignatures: UInt8 = 1,
         readonlySignedAccounts: UInt8,
         readonlyUnsignedAccounts: UInt8,
         instructions: [SolanaCompiledInstruction]
     ) -> Data {
         var message = Data()
-        message.append(1) // required signatures; GORKH Phase 1 signing is single-owner only.
+        message.append(requiredSignatures)
         message.append(readonlySignedAccounts)
         message.append(readonlyUnsignedAccounts)
 

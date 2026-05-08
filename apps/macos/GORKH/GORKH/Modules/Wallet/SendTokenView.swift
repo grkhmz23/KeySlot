@@ -92,6 +92,7 @@ private struct TokenTransferDraftSummaryView: View {
             row("Source", draft.sourceTokenAccount)
             row("Recipient owner", draft.recipientOwnerAddress)
             row("Recipient token account", draft.recipientTokenAccount ?? "Missing")
+            row("ATA creation", draft.ataPlan.shouldCreateAssociatedTokenAccount ? "Included before transfer" : "Not needed")
             row("Amount", "\(draft.formattedAmount) (\(draft.amountRaw) raw)")
             row("ATA plan", draft.ataPlan.message)
 
@@ -119,7 +120,7 @@ private struct TokenTransferDraftSummaryView: View {
                 .foregroundStyle(GorkhColors.secondaryText)
                 .frame(width: 150, alignment: .leading)
             Text(value)
-                .font(.system(.callout, design: title == "Amount" || title == "Network" || title == "Token program" || title == "Simulation" || title == "Estimated fee" || title == "Rent estimate" ? .default : .monospaced))
+                .font(.system(.callout, design: title == "Amount" || title == "Network" || title == "Token program" || title == "Simulation" || title == "Estimated fee" || title == "Rent estimate" || title == "ATA creation" ? .default : .monospaced))
                 .foregroundStyle(GorkhColors.primaryText)
                 .textSelection(.enabled)
             Spacer()

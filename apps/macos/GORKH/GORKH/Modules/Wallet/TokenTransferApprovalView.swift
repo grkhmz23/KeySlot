@@ -19,13 +19,24 @@ struct TokenTransferApprovalView: View {
 
             if draft.ataPlan.shouldCreateAssociatedTokenAccount {
                 GorkhStatusChip(
-                    title: "Recipient token account missing",
+                    title: "ATA creation included",
                     systemImage: "exclamationmark.triangle.fill",
                     color: GorkhColors.warning
                 )
                 Text(draft.ataPlan.message)
                     .font(.caption)
                     .foregroundStyle(GorkhColors.secondaryText)
+                if let rent = draft.ataPlan.rentExemptLamports {
+                    Text("The sender pays rent/fees for ATA creation. Rent estimate: \(rent) lamports.")
+                        .font(.caption)
+                        .foregroundStyle(GorkhColors.warning)
+                }
+            } else {
+                GorkhStatusChip(
+                    title: "Recipient ATA exists",
+                    systemImage: "checkmark.seal",
+                    color: GorkhColors.success
+                )
             }
 
             if draft.network.isMainnet {
