@@ -34,10 +34,10 @@ enum LiveDevnetWalletSmoke {
 
     private static func runAutomaticAirdrop() async throws -> LiveDevnetSmokeResult {
         let rpcClient = SolanaRPCClient()
-        let sender = try SolanaKeypair.generate()
+        let sender = try generateBip39SmokeKeypair()
         let recipient = try SolanaKeypair.generate()
 
-        fputs("Generated throwaway sender: \(sender.publicAddress)\n", stderr)
+        fputs("Generated BIP39-derived throwaway sender: \(sender.publicAddress)\n", stderr)
         fputs("Generated throwaway recipient: \(recipient.publicAddress)\n", stderr)
         fputs("Requesting devnet airdrop...\n", stderr)
         let airdropSignature = try await requestAirdropWithRetry(
@@ -65,14 +65,14 @@ enum LiveDevnetWalletSmoke {
     }
 
     private static func prepareManualFunding() throws {
-        let sender = try SolanaKeypair.generate()
+        let sender = try generateBip39SmokeKeypair()
         let state = ManualFundingState(
             version: 1,
             network: WalletNetwork.devnet.rawValue,
             createdAt: Date(),
             senderPublicAddress: sender.publicAddress,
             localSigningMaterialBase64: sender.seed.base64EncodedString(),
-            warning: "Throwaway devnet-only smoke key. Never use for real funds. This file must stay gitignored."
+            warning: "Throwaway devnet-only BIP39-derived smoke seed. Never use for real funds. This file must stay gitignored."
         )
 
         try FileManager.default.createDirectory(
@@ -119,6 +119,16 @@ enum LiveDevnetWalletSmoke {
         Warning:
         This is devnet-only. The temporary signing material is stored locally under \(stateDirectoryName)/, which is gitignored. Do not use this address for real funds.
         """)
+    }
+
+    private static func generateBip39SmokeKeypair() throws -> SolanaKeypair {
+        let words = try Bip39MnemonicService.shared.generate(wordCount: 12)
+        // The phrase is never printed or stored; only the derived throwaway seed
+        // is kept for manual resume under the gitignored smoke directory.
+        return try SolanaDerivationService().deriveKeypair(
+            mnemonic: words.joined(separator: " "),
+            path: .defaultSolana
+        )
     }
 
     private static func resumeManualFunding() async throws -> LiveDevnetSmokeResult {

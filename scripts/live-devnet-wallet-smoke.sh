@@ -27,6 +27,10 @@ rm -f "$BINARY_PATH"
   -target "$TARGET_ARCH-apple-macos26.3" \
   -module-cache-path "$MODULE_CACHE_PATH" \
   -o "$BINARY_PATH" \
+  "$ROOT_DIR/apps/macos/GORKH/GORKH/Core/Crypto/Bip39EnglishWordlist.swift" \
+  "$ROOT_DIR/apps/macos/GORKH/GORKH/Core/Crypto/DerivationPath.swift" \
+  "$ROOT_DIR/apps/macos/GORKH/GORKH/Core/Crypto/MnemonicService.swift" \
+  "$ROOT_DIR/apps/macos/GORKH/GORKH/Core/Crypto/SolanaDerivationService.swift" \
   "$ROOT_DIR/apps/macos/GORKH/GORKH/Core/Security/Redaction.swift" \
   "$ROOT_DIR/apps/macos/GORKH/GORKH/Core/Solana/SolanaAddressValidator.swift" \
   "$ROOT_DIR/apps/macos/GORKH/GORKH/Core/Solana/SolanaKeypair.swift" \

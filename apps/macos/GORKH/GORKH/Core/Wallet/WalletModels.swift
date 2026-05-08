@@ -6,6 +6,8 @@ struct WalletProfile: Codable, Equatable, Identifiable {
     var publicAddress: String
     var accounts: [WalletAccount]
     var selectedNetwork: WalletNetwork
+    var walletOrigin: WalletOrigin
+    var derivationPath: String?
     var createdAt: Date
     var lastUsedAt: Date?
 
@@ -14,6 +16,8 @@ struct WalletProfile: Codable, Equatable, Identifiable {
         label: String,
         publicAddress: String,
         selectedNetwork: WalletNetwork = .devnet,
+        walletOrigin: WalletOrigin = .legacyKeypair,
+        derivationPath: String? = nil,
         createdAt: Date = Date(),
         lastUsedAt: Date? = nil
     ) {
@@ -21,11 +25,40 @@ struct WalletProfile: Codable, Equatable, Identifiable {
         self.label = label
         self.publicAddress = publicAddress
         self.accounts = [
-            WalletAccount(id: id, publicAddress: publicAddress, label: label, derivationPath: nil)
+            WalletAccount(id: id, publicAddress: publicAddress, label: label, derivationPath: derivationPath)
         ]
         self.selectedNetwork = selectedNetwork
+        self.walletOrigin = walletOrigin
+        self.derivationPath = derivationPath
         self.createdAt = createdAt
         self.lastUsedAt = lastUsedAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case label
+        case publicAddress
+        case accounts
+        case selectedNetwork
+        case walletOrigin
+        case derivationPath
+        case createdAt
+        case lastUsedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        label = try container.decode(String.self, forKey: .label)
+        publicAddress = try container.decode(String.self, forKey: .publicAddress)
+        selectedNetwork = try container.decode(WalletNetwork.self, forKey: .selectedNetwork)
+        walletOrigin = try container.decodeIfPresent(WalletOrigin.self, forKey: .walletOrigin) ?? .legacyKeypair
+        derivationPath = try container.decodeIfPresent(String.self, forKey: .derivationPath)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        lastUsedAt = try container.decodeIfPresent(Date.self, forKey: .lastUsedAt)
+        accounts = try container.decodeIfPresent([WalletAccount].self, forKey: .accounts) ?? [
+            WalletAccount(id: id, publicAddress: publicAddress, label: label, derivationPath: derivationPath)
+        ]
     }
 }
 
@@ -34,6 +67,26 @@ struct WalletAccount: Codable, Equatable, Identifiable {
     var publicAddress: String
     var label: String
     var derivationPath: String?
+}
+
+enum WalletOrigin: String, Codable, CaseIterable {
+    case generatedRecovery = "generated_recovery"
+    case importedRecovery = "imported_recovery"
+    case importedPrivateKey = "advanced_import"
+    case legacyKeypair = "legacy_local"
+
+    var displayName: String {
+        switch self {
+        case .generatedRecovery:
+            return "Generated recovery phrase"
+        case .importedRecovery:
+            return "Imported recovery phrase"
+        case .importedPrivateKey:
+            return "Imported private key"
+        case .legacyKeypair:
+            return "Legacy local keypair"
+        }
+    }
 }
 
 enum WalletVaultState: Equatable {

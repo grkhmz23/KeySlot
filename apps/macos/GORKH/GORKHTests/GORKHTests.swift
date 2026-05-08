@@ -23,6 +23,27 @@ struct GORKHTests {
         #expect(lowercased.contains("publicaddress"))
     }
 
+    @Test func walletMetadataCanStoreRecoveryOriginWithoutSecretMaterial() throws {
+        let profile = WalletProfile(
+            label: "Primary",
+            publicAddress: SolanaConstants.systemProgramID,
+            selectedNetwork: .devnet,
+            walletOrigin: .generatedRecovery,
+            derivationPath: DerivationPath.defaultSolana.rawValue
+        )
+
+        let data = try JSONEncoder().encode(profile)
+        let decoded = try JSONDecoder().decode(WalletProfile.self, from: data)
+        let json = try #require(String(data: data, encoding: .utf8)).lowercased()
+
+        #expect(decoded.walletOrigin == .generatedRecovery)
+        #expect(decoded.derivationPath == DerivationPath.defaultSolana.rawValue)
+        #expect(!json.contains("private"))
+        #expect(!json.contains("secret"))
+        #expect(!json.contains("seed"))
+        #expect(!json.contains("mnemonic"))
+    }
+
     @Test func auditEventsDropSensitiveDetails() throws {
         let event = AuditEvent(
             kind: .walletImported,
@@ -69,6 +90,64 @@ struct GORKHTests {
         }
         #expect(throws: SolanaValidationError.self) {
             try SolanaAmountValidator.lamports(fromSOLText: "1.0000000001")
+        }
+    }
+
+    @Test func bip39GenerationProducesValidTwelveWordPhrase() throws {
+        let service = Bip39MnemonicService.shared
+        let words = try service.generate(wordCount: 12)
+        let phrase = words.joined(separator: " ")
+
+        #expect(words.count == 12)
+        #expect(service.validate(phrase))
+    }
+
+    @Test func bip39ValidationRejectsInvalidChecksumAndUnknownWords() {
+        let service = Bip39MnemonicService.shared
+
+        #expect(!service.validate("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon"))
+        #expect(!service.validate("gorkh abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"))
+    }
+
+    @Test func bip39NormalizesWhitespaceAndCase() throws {
+        let service = Bip39MnemonicService.shared
+        let messy = "  ABANDON\nabandon  abandon abandon abandon abandon abandon abandon abandon abandon abandon ABOUT  "
+
+        #expect(service.normalize(messy) == "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about")
+        try service.validateOrThrow(messy)
+    }
+
+    @Test func bip39SeedMatchesOfficialVector() throws {
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        let seed = try Bip39MnemonicService.shared.seed(from: phrase, passphrase: "TREZOR")
+        let expected = Data(hex: "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04")
+
+        #expect(seed == expected)
+    }
+
+    @Test func solanaDerivationIsDeterministicAndPathSensitive() throws {
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        let service = SolanaDerivationService()
+        let defaultKeypair = try service.deriveKeypair(mnemonic: phrase, path: .defaultSolana)
+        let sameKeypair = try service.deriveKeypair(mnemonic: phrase, path: try DerivationPath("m/44'/501'/0'/0'"))
+        let differentKeypair = try service.deriveKeypair(mnemonic: phrase, path: try DerivationPath("m/44'/501'/1'/0'"))
+
+        #expect(defaultKeypair.seed == sameKeypair.seed)
+        #expect(defaultKeypair.publicKey == sameKeypair.publicKey)
+        #expect(defaultKeypair.publicAddress == sameKeypair.publicAddress)
+        #expect(defaultKeypair.publicKey.count == 32)
+        #expect(defaultKeypair.publicAddress != differentKeypair.publicAddress)
+    }
+
+    @Test func derivationPathValidationAllowsOnlyHardenedSolanaPaths() throws {
+        #expect(try DerivationPath("m/44'/501'/0'").rawValue == "m/44'/501'/0'")
+        #expect(try DerivationPath("m/44'/501'/0'/0'").rawValue == "m/44'/501'/0'/0'")
+        #expect(try DerivationPath("m/44'/501'/1'/0'").rawValue == "m/44'/501'/1'/0'")
+        #expect(throws: DerivationPathError.self) {
+            try DerivationPath("m/44'/501'/0/0'")
+        }
+        #expect(throws: DerivationPathError.self) {
+            try DerivationPath("m/44'/60'/0'/0'")
         }
     }
 
@@ -125,6 +204,36 @@ struct GORKHTests {
         #expect(seedImport.publicKey == expectedPublicKey)
         #expect(base58ArrayImport.publicKey == expectedPublicKey)
         #expect(jsonImport.publicKey == expectedPublicKey)
+    }
+
+    @Test func walletManagerImportsMnemonicAndPrivateKeyOrigins() throws {
+        let vault = InMemoryWalletVault()
+        let suiteName = "ai.gorkh.tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let auditURL = FileManager.default.temporaryDirectory.appendingPathComponent("gorkh-test-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: auditURL) }
+        let manager = WalletManager(
+            vault: vault,
+            rpcClient: SolanaRPCClient(),
+            auditLog: AuditLog(fileURL: auditURL),
+            metadataStore: WalletMetadataStore(defaults: defaults)
+        )
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        let expectedAddress = try SolanaDerivationService().deriveKeypair(mnemonic: phrase, path: .defaultSolana).publicAddress
+
+        manager.importMnemonic(label: "Recovered", mnemonic: phrase, derivationPath: .defaultSolana)
+
+        let recoveredProfile = try #require(manager.selectedProfile)
+        #expect(recoveredProfile.publicAddress == expectedAddress)
+        #expect(recoveredProfile.walletOrigin == .importedRecovery)
+        #expect(recoveredProfile.derivationPath == DerivationPath.defaultSolana.rawValue)
+        #expect(vault.containsSecret(for: recoveredProfile.id))
+
+        let seed = Data(hex: "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
+        manager.importPrivateKey(label: "Advanced", privateKeyText: Base58.encode(seed))
+        let privateKeyProfile = try #require(manager.selectedProfile)
+        #expect(privateKeyProfile.walletOrigin == .importedPrivateKey)
     }
 
     @Test func transferMessageSerializationIsStableForKnownInputs() throws {

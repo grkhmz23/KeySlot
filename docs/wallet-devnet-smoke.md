@@ -7,12 +7,13 @@ Phase 1.1 must pass this checklist before any mainnet send is considered valid f
 This checklist validates:
 
 - CryptoKit signing compatibility with Solana Ed25519 expectations
+- BIP39-derived throwaway signer compatibility with the existing Solana transaction path
 - Solana transfer message serialization
 - devnet RPC balance, simulation, send, and confirmation
 - audit events for wallet and transaction actions
 - explorer link correctness
 
-It does not validate BIP39 recovery, SPL tokens, swaps, staking, lending, bridging, or agent execution.
+It does not validate SPL tokens, swaps, staking, lending, bridging, or agent execution.
 
 ## Preconditions
 
@@ -34,7 +35,7 @@ Automated live core smoke:
 scripts/live-devnet-wallet-smoke.sh
 ```
 
-The live script is devnet-only. It creates throwaway test keys, requests a devnet airdrop, builds and simulates a 0.001 SOL transfer, signs locally, sends to devnet, waits for confirmation, and writes only public result metadata.
+The live script is devnet-only. It creates a throwaway BIP39-derived test signer without printing the phrase, requests a devnet airdrop, builds and simulates a 0.001 SOL transfer, signs locally, sends to devnet, waits for confirmation, and writes only public result metadata.
 
 Manual-funding live core smoke, used when the public devnet faucet is rate-limited:
 

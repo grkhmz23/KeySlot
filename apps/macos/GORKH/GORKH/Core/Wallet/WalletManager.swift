@@ -21,6 +21,8 @@ final class WalletManager: ObservableObject {
     private let rpcClient: SolanaRPCClient
     private let auditLog: AuditLog
     private let metadataStore: WalletMetadataStore
+    private let mnemonicService: any MnemonicService
+    private let derivationService: SolanaDerivationService
     private var unlockedSecrets: [UUID: WalletSecret] = [:]
     private var preparedMessage: Data?
 
@@ -44,16 +46,34 @@ final class WalletManager: ObservableObject {
         )
     }
 
-    init(
+    convenience init(
         vault: WalletVault,
         rpcClient: SolanaRPCClient,
         auditLog: AuditLog,
         metadataStore: WalletMetadataStore
     ) {
+        self.init(
+            vault: vault,
+            rpcClient: rpcClient,
+            auditLog: auditLog,
+            metadataStore: metadataStore,
+            mnemonicService: Bip39MnemonicService.shared
+        )
+    }
+
+    init(
+        vault: WalletVault,
+        rpcClient: SolanaRPCClient,
+        auditLog: AuditLog,
+        metadataStore: WalletMetadataStore,
+        mnemonicService: any MnemonicService
+    ) {
         self.vault = vault
         self.rpcClient = rpcClient
         self.auditLog = auditLog
         self.metadataStore = metadataStore
+        self.mnemonicService = mnemonicService
+        self.derivationService = SolanaDerivationService(mnemonicService: mnemonicService)
         loadMetadata()
         auditEvents = auditLog.loadRecent()
         refreshVaultState()
@@ -94,7 +114,8 @@ final class WalletManager: ObservableObject {
             let profile = WalletProfile(
                 label: label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "GORKH Wallet" : label,
                 publicAddress: keypair.publicAddress,
-                selectedNetwork: selectedNetwork
+                selectedNetwork: selectedNetwork,
+                walletOrigin: .legacyKeypair
             )
             let secret = try WalletSecret(seed: keypair.seed)
             try vault.saveSecret(secret, for: profile.id)
@@ -114,13 +135,58 @@ final class WalletManager: ObservableObject {
         }
     }
 
+    func generateRecoveryPhrase() -> [String] {
+        do {
+            return try mnemonicService.generate(wordCount: 12)
+        } catch {
+            statusMessage = error.localizedDescription
+            vaultState = .error(error.localizedDescription)
+            recordFailure(message: error.localizedDescription)
+            return []
+        }
+    }
+
+    func createRecoveryWallet(label: String, recoveryWords: [String], derivationPath: DerivationPath) {
+        let phrase = recoveryWords.joined(separator: " ")
+        runSensitiveOperation {
+            let keypair = try derivationService.deriveKeypair(mnemonic: phrase, path: derivationPath)
+            let profile = WalletProfile(
+                label: label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "GORKH Wallet" : label,
+                publicAddress: keypair.publicAddress,
+                selectedNetwork: selectedNetwork,
+                walletOrigin: .generatedRecovery,
+                derivationPath: derivationPath.rawValue
+            )
+            let secret = try WalletSecret(seed: keypair.seed)
+            try vault.saveSecret(secret, for: profile.id)
+
+            profiles.append(profile)
+            selectedWalletID = profile.id
+            unlockedSecrets[profile.id] = secret
+            saveMetadata()
+            refreshVaultState()
+            record(
+                kind: .walletCreated,
+                walletID: profile.id,
+                publicAddress: profile.publicAddress,
+                message: "Wallet created from recovery phrase locally.",
+                details: [
+                    "origin": profile.walletOrigin.rawValue,
+                    "derivationPath": derivationPath.rawValue
+                ]
+            )
+            statusMessage = "Recovery wallet created and unlocked on this Mac."
+        }
+    }
+
     func importPrivateKey(label: String, privateKeyText: String) {
         runSensitiveOperation {
             let keypair = try SolanaKeypair.importPrivateKey(privateKeyText)
             let profile = WalletProfile(
                 label: label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Imported Wallet" : label,
                 publicAddress: keypair.publicAddress,
-                selectedNetwork: selectedNetwork
+                selectedNetwork: selectedNetwork,
+                walletOrigin: .importedPrivateKey
             )
             let secret = try WalletSecret(seed: keypair.seed)
             try vault.saveSecret(secret, for: profile.id)
@@ -141,10 +207,47 @@ final class WalletManager: ObservableObject {
     }
 
     func importMnemonic(label: String, mnemonic: String) {
-        _ = label
-        _ = mnemonic
-        statusMessage = WalletVaultError.unsupportedMnemonicImport.localizedDescription
-        vaultState = .error(WalletVaultError.unsupportedMnemonicImport.localizedDescription)
+        importMnemonic(label: label, mnemonic: mnemonic, derivationPath: .defaultSolana)
+    }
+
+    func importMnemonic(label: String, mnemonic: String, derivationPath: DerivationPath) {
+        runSensitiveOperation {
+            let keypair = try derivationService.deriveKeypair(mnemonic: mnemonic, path: derivationPath)
+            let profile = WalletProfile(
+                label: label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Imported Wallet" : label,
+                publicAddress: keypair.publicAddress,
+                selectedNetwork: selectedNetwork,
+                walletOrigin: .importedRecovery,
+                derivationPath: derivationPath.rawValue
+            )
+            let secret = try WalletSecret(seed: keypair.seed)
+            try vault.saveSecret(secret, for: profile.id)
+
+            profiles.append(profile)
+            selectedWalletID = profile.id
+            unlockedSecrets[profile.id] = secret
+            saveMetadata()
+            refreshVaultState()
+            record(
+                kind: .walletImported,
+                walletID: profile.id,
+                publicAddress: profile.publicAddress,
+                message: "Recovery phrase wallet imported locally.",
+                details: [
+                    "origin": profile.walletOrigin.rawValue,
+                    "derivationPath": derivationPath.rawValue
+                ]
+            )
+            statusMessage = "Recovery wallet imported and unlocked."
+        }
+    }
+
+    func previewMnemonicAddress(mnemonic: String, derivationPath: DerivationPath) throws -> String {
+        try derivationService.deriveKeypair(mnemonic: mnemonic, path: derivationPath).publicAddress
+    }
+
+    func isValidMnemonic(_ mnemonic: String) -> Bool {
+        mnemonicService.validate(mnemonic)
     }
 
     func unlockWallet() {

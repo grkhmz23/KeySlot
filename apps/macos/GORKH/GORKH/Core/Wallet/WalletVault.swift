@@ -27,7 +27,6 @@ enum WalletVaultError: LocalizedError, Equatable {
     case invalidSecret
     case missingSecret
     case keychainError(OSStatus)
-    case unsupportedMnemonicImport
 
     var errorDescription: String? {
         switch self {
@@ -37,8 +36,6 @@ enum WalletVaultError: LocalizedError, Equatable {
             return "Wallet secret is missing."
         case .keychainError(let status):
             return "Keychain operation failed with status \(status)."
-        case .unsupportedMnemonicImport:
-            return "Seed phrase import is deferred until an audited BIP39 and Solana derivation implementation is added."
         }
     }
 }

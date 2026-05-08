@@ -68,6 +68,15 @@ struct WalletView: View {
                                 .font(.system(.callout, design: .monospaced))
                                 .textSelection(.enabled)
                                 .foregroundStyle(GorkhColors.secondaryText)
+                            HStack(spacing: 8) {
+                                GorkhStatusChip(title: profile.walletOrigin.displayName, systemImage: "key", color: GorkhColors.accent)
+                                if let derivationPath = profile.derivationPath {
+                                    Text(derivationPath)
+                                        .font(.system(.caption, design: .monospaced))
+                                        .foregroundStyle(GorkhColors.secondaryText)
+                                        .textSelection(.enabled)
+                                }
+                            }
                         }
                     } else {
                         Text("No wallet is configured on this Mac.")
