@@ -1,0 +1,8 @@
+*.xcuserstate
+xcuserdata/
+DerivedData/
+.DS_Store
+build/
+*.xcresult
+*.dSYM
+.gorkh-devnet-smoke/
