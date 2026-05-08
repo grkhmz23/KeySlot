@@ -1,6 +1,12 @@
 import CryptoKit
 import Foundation
 
+struct SolanaCompiledInstruction: Equatable {
+    let programIDIndex: UInt8
+    let accountIndexes: [UInt8]
+    let data: Data
+}
+
 enum SolanaTransactionBuilder {
     static func makeTransferMessage(draft: TransactionDraft, recentBlockhash: String) throws -> Data {
         guard let from = SolanaAddressValidator.decodeAddress(draft.fromAddress) else {
@@ -16,28 +22,49 @@ enum SolanaTransactionBuilder {
             throw SolanaValidationError.invalidAddress("Latest blockhash is invalid.")
         }
 
-        var message = Data()
-        message.append(1) // required signatures
-        message.append(0) // readonly signed accounts
-        message.append(1) // readonly unsigned accounts
-
-        let accountKeys = [from, to, systemProgram]
-        message.append(shortVector(accountKeys.count))
-        accountKeys.forEach { message.append($0) }
-        message.append(contentsOf: blockhash)
-
-        message.append(shortVector(1)) // one instruction
-        message.append(2) // system program account index
-        message.append(shortVector(2))
-        message.append(0)
-        message.append(1)
-
         var instructionData = Data()
         instructionData.append(littleEndianUInt32(2)) // SystemInstruction::Transfer
         instructionData.append(littleEndianUInt64(draft.amountLamports))
 
-        message.append(shortVector(instructionData.count))
-        message.append(instructionData)
+        let instruction = SolanaCompiledInstruction(
+            programIDIndex: 2,
+            accountIndexes: [0, 1],
+            data: instructionData
+        )
+
+        return makeMessage(
+            accountKeys: [from, to, systemProgram],
+            recentBlockhash: Data(blockhash),
+            readonlySignedAccounts: 0,
+            readonlyUnsignedAccounts: 1,
+            instructions: [instruction]
+        )
+    }
+
+    static func makeMessage(
+        accountKeys: [Data],
+        recentBlockhash: Data,
+        readonlySignedAccounts: UInt8,
+        readonlyUnsignedAccounts: UInt8,
+        instructions: [SolanaCompiledInstruction]
+    ) -> Data {
+        var message = Data()
+        message.append(1) // required signatures; GORKH Phase 1 signing is single-owner only.
+        message.append(readonlySignedAccounts)
+        message.append(readonlyUnsignedAccounts)
+
+        message.append(shortVector(accountKeys.count))
+        accountKeys.forEach { message.append($0) }
+        message.append(recentBlockhash)
+
+        message.append(shortVector(instructions.count))
+        instructions.forEach { instruction in
+            message.append(instruction.programIDIndex)
+            message.append(shortVector(instruction.accountIndexes.count))
+            instruction.accountIndexes.forEach { message.append($0) }
+            message.append(shortVector(instruction.data.count))
+            message.append(instruction.data)
+        }
 
         return message
     }
@@ -65,7 +92,7 @@ enum SolanaTransactionBuilder {
         message.base64EncodedString()
     }
 
-    private static func shortVector(_ value: Int) -> Data {
+    static func shortVector(_ value: Int) -> Data {
         var remaining = value
         var output = Data()
 
@@ -81,12 +108,12 @@ enum SolanaTransactionBuilder {
         return output
     }
 
-    private static func littleEndianUInt32(_ value: UInt32) -> Data {
+    static func littleEndianUInt32(_ value: UInt32) -> Data {
         var littleEndian = value.littleEndian
         return Data(bytes: &littleEndian, count: MemoryLayout<UInt32>.size)
     }
 
-    private static func littleEndianUInt64(_ value: UInt64) -> Data {
+    static func littleEndianUInt64(_ value: UInt64) -> Data {
         var littleEndian = value.littleEndian
         return Data(bytes: &littleEndian, count: MemoryLayout<UInt64>.size)
     }

@@ -16,6 +16,99 @@ struct SolanaRPCClient {
         return value.uint64Value
     }
 
+    func getTokenBalances(ownerAddress: String, network: WalletNetwork) async throws -> [TokenBalance] {
+        var balances: [TokenBalance] = []
+        let fetchedAt = Date()
+
+        for programKind in TokenProgramKind.allCases {
+            let result = try await request(
+                method: "getTokenAccountsByOwner",
+                params: [
+                    ownerAddress,
+                    ["programId": programKind.programID],
+                    [
+                        "encoding": "jsonParsed",
+                        "commitment": "confirmed"
+                    ]
+                ],
+                network: network
+            )
+            balances.append(contentsOf: try SplTokenParser.parseTokenAccounts(
+                result: result,
+                programKind: programKind,
+                fetchedAt: fetchedAt
+            ))
+        }
+
+        return balances.sorted {
+            if $0.mintAddress == $1.mintAddress {
+                return $0.tokenAccountAddress < $1.tokenAccountAddress
+            }
+            return $0.mintAddress < $1.mintAddress
+        }
+    }
+
+    func getTokenAccounts(
+        ownerAddress: String,
+        mintAddress: String,
+        programKind: TokenProgramKind,
+        network: WalletNetwork
+    ) async throws -> [TokenBalance] {
+        let result = try await request(
+            method: "getTokenAccountsByOwner",
+            params: [
+                ownerAddress,
+                ["mint": mintAddress],
+                [
+                    "encoding": "jsonParsed",
+                    "commitment": "confirmed"
+                ]
+            ],
+            network: network
+        )
+
+        return try SplTokenParser.parseTokenAccounts(
+            result: result,
+            programKind: programKind,
+            fetchedAt: Date()
+        )
+        .filter { $0.programKind == programKind }
+    }
+
+    func getAccountExists(address: String, network: WalletNetwork) async throws -> Bool {
+        let result = try await request(
+            method: "getAccountInfo",
+            params: [
+                address,
+                [
+                    "encoding": "base64",
+                    "commitment": "confirmed"
+                ]
+            ],
+            network: network
+        )
+
+        guard let dictionary = result as? [String: Any] else {
+            throw SolanaRPCError.invalidResponse
+        }
+
+        return !(dictionary["value"] is NSNull) && dictionary["value"] != nil
+    }
+
+    func getMinimumBalanceForRentExemption(byteCount: Int, network: WalletNetwork) async throws -> UInt64 {
+        let result = try await request(
+            method: "getMinimumBalanceForRentExemption",
+            params: [byteCount],
+            network: network
+        )
+
+        guard let value = result as? NSNumber else {
+            throw SolanaRPCError.invalidResponse
+        }
+
+        return value.uint64Value
+    }
+
     func getLatestBlockhash(network: WalletNetwork) async throws -> String {
         let result = try await request(method: "getLatestBlockhash", params: [], network: network)
         guard let dictionary = result as? [String: Any],

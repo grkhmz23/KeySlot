@@ -12,6 +12,12 @@ final class WalletManager: ObservableObject {
     @Published private(set) var currentDraft: TransactionDraft?
     @Published private(set) var simulationResult: SimulationResult?
     @Published private(set) var approvalState: ApprovalState = .idle
+    @Published private(set) var tokenBalances: [TokenBalance] = []
+    @Published private(set) var tokenBalancesFetchedAt: Date?
+    @Published private(set) var tokenBalanceError: String?
+    @Published private(set) var currentTokenDraft: TokenTransferDraft?
+    @Published private(set) var tokenSimulationResult: SimulationResult?
+    @Published private(set) var tokenApprovalState: ApprovalState = .idle
     @Published private(set) var lastTransactionSignature: String?
     @Published private(set) var lastConfirmationStatus: String?
     @Published private(set) var statusMessage: String?
@@ -25,6 +31,7 @@ final class WalletManager: ObservableObject {
     private let derivationService: SolanaDerivationService
     private var unlockedSecrets: [UUID: WalletSecret] = [:]
     private var preparedMessage: Data?
+    private var preparedTokenMessage: Data?
 
     var selectedProfile: WalletProfile? {
         profiles.first { $0.id == selectedWalletID }
@@ -89,6 +96,13 @@ final class WalletManager: ObservableObject {
         simulationResult = nil
         approvalState = .idle
         preparedMessage = nil
+        tokenBalances = []
+        tokenBalancesFetchedAt = nil
+        tokenBalanceError = nil
+        currentTokenDraft = nil
+        tokenSimulationResult = nil
+        tokenApprovalState = .idle
+        preparedTokenMessage = nil
         refreshVaultState()
     }
 
@@ -106,6 +120,13 @@ final class WalletManager: ObservableObject {
         simulationResult = nil
         approvalState = .idle
         preparedMessage = nil
+        tokenBalances = []
+        tokenBalancesFetchedAt = nil
+        tokenBalanceError = nil
+        currentTokenDraft = nil
+        tokenSimulationResult = nil
+        tokenApprovalState = .idle
+        preparedTokenMessage = nil
     }
 
     func createWallet(label: String) {
@@ -281,7 +302,9 @@ final class WalletManager: ObservableObject {
         }
         unlockedSecrets.removeValue(forKey: profile.id)
         preparedMessage = nil
+        preparedTokenMessage = nil
         approvalState = currentDraft == nil ? .idle : .drafted
+        tokenApprovalState = currentTokenDraft == nil ? .idle : .drafted
         refreshVaultState()
         record(
             kind: .walletLocked,
@@ -300,6 +323,7 @@ final class WalletManager: ObservableObject {
         runSensitiveOperation {
             try vault.deleteSecret(for: profile.id)
             unlockedSecrets.removeValue(forKey: profile.id)
+            preparedTokenMessage = nil
             profiles.removeAll { $0.id == profile.id }
             selectedWalletID = profiles.first?.id
             saveMetadata()
@@ -331,6 +355,294 @@ final class WalletManager: ObservableObject {
                 details: ["network": selectedNetwork.rawValue]
             )
             statusMessage = "Balance refreshed."
+        }
+    }
+
+    func refreshTokenBalances() async {
+        guard let profile = selectedProfile else {
+            vaultState = .missing
+            return
+        }
+
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            let balances = try await rpcClient.getTokenBalances(ownerAddress: profile.publicAddress, network: selectedNetwork)
+            tokenBalances = balances
+            tokenBalancesFetchedAt = Date()
+            tokenBalanceError = nil
+            record(
+                kind: .tokenBalancesRefreshed,
+                walletID: profile.id,
+                publicAddress: profile.publicAddress,
+                message: "SPL token balances refreshed.",
+                details: [
+                    "network": selectedNetwork.rawValue,
+                    "tokenAccountCount": "\(balances.count)"
+                ]
+            )
+            statusMessage = balances.isEmpty ? "No SPL token accounts found." : "SPL token balances refreshed."
+        } catch {
+            tokenBalanceError = error.localizedDescription
+            statusMessage = error.localizedDescription
+            record(
+                kind: .tokenTransferFailed,
+                walletID: profile.id,
+                publicAddress: profile.publicAddress,
+                message: "Token balance refresh failed.",
+                details: ["error": error.localizedDescription]
+            )
+        }
+    }
+
+    func draftTokenTransfer(token: TokenBalance, recipient: String, amountText: String) async {
+        guard let profile = selectedProfile else {
+            vaultState = .missing
+            return
+        }
+
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            guard vaultState == .unlocked else {
+                throw WalletVaultError.missingSecret
+            }
+            guard token.ownerAddress == profile.publicAddress else {
+                throw TokenTransferValidationError.invalidTokenAccount("Selected token account does not belong to the active wallet.")
+            }
+            guard token.programKind == .splToken else {
+                throw TokenTransferValidationError.unsupportedTokenProgram("Token-2022 balances are visible, but Token-2022 sends are deferred until extension account handling is implemented.")
+            }
+            guard token.state == .initialized else {
+                throw TokenTransferValidationError.invalidTokenAccount("Selected token account is \(token.state.rawValue) and cannot be sent.")
+            }
+            let recipientOwner = recipient.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard SolanaAddressValidator.isValidAddress(recipientOwner) else {
+                throw SolanaValidationError.invalidAddress("Recipient owner address is invalid.")
+            }
+
+            let amountRaw = try TokenAmountFormatter.rawAmount(fromUIAmount: amountText, decimals: token.decimals)
+            guard amountRaw <= token.amountRaw else {
+                throw TokenTransferValidationError.insufficientBalance("Token amount exceeds the available balance.")
+            }
+
+            let recipientAccounts = try await rpcClient.getTokenAccounts(
+                ownerAddress: recipientOwner,
+                mintAddress: token.mintAddress,
+                programKind: token.programKind,
+                network: selectedNetwork
+            )
+            let recipientTokenAccount = recipientAccounts.first { $0.state == .initialized }?.tokenAccountAddress
+            let rent = try? await rpcClient.getMinimumBalanceForRentExemption(byteCount: 165, network: selectedNetwork)
+            let ataPlan: AssociatedTokenAccountPlan
+            if let recipientTokenAccount {
+                ataPlan = AssociatedTokenAccount.existingPlan(
+                    recipientOwner: recipientOwner,
+                    mint: token.mintAddress,
+                    tokenProgramKind: token.programKind,
+                    recipientTokenAccount: recipientTokenAccount,
+                    rentExemptLamports: rent
+                )
+            } else {
+                ataPlan = AssociatedTokenAccount.missingPlan(
+                    recipientOwner: recipientOwner,
+                    mint: token.mintAddress,
+                    tokenProgramKind: token.programKind,
+                    rentExemptLamports: rent
+                )
+            }
+
+            let draft = TokenTransferDraft(
+                network: selectedNetwork,
+                ownerAddress: profile.publicAddress,
+                sourceTokenAccount: token.tokenAccountAddress,
+                mintAddress: token.mintAddress,
+                tokenProgramKind: token.programKind,
+                recipientOwnerAddress: recipientOwner,
+                recipientTokenAccount: recipientTokenAccount,
+                amountRaw: amountRaw,
+                amountText: amountText.trimmingCharacters(in: .whitespacesAndNewlines),
+                decimals: token.decimals,
+                availableAmountRaw: token.amountRaw,
+                ataPlan: ataPlan
+            )
+
+            currentTokenDraft = draft
+            tokenSimulationResult = nil
+            preparedTokenMessage = nil
+            lastTransactionSignature = nil
+            lastConfirmationStatus = nil
+            tokenApprovalState = .drafted
+
+            if ataPlan.shouldCreateAssociatedTokenAccount {
+                record(
+                    kind: .ataCreationPlanned,
+                    walletID: profile.id,
+                    publicAddress: profile.publicAddress,
+                    message: "Recipient associated token account is missing.",
+                    details: [
+                        "network": selectedNetwork.rawValue,
+                        "mint": token.mintAddress,
+                        "tokenProgram": token.programKind.rawValue,
+                        "recipientOwner": recipientOwner
+                    ]
+                )
+                throw TokenTransferValidationError.associatedTokenAccountCreationUnavailable(ataPlan.message)
+            }
+
+            record(
+                kind: .tokenTransferDrafted,
+                walletID: profile.id,
+                publicAddress: profile.publicAddress,
+                message: "SPL token transfer drafted.",
+                details: [
+                    "network": selectedNetwork.rawValue,
+                    "mint": token.mintAddress,
+                    "sourceTokenAccount": token.tokenAccountAddress,
+                    "recipientOwner": recipientOwner,
+                    "recipientTokenAccount": recipientTokenAccount ?? "",
+                    "amountRaw": "\(amountRaw)",
+                    "decimals": "\(token.decimals)"
+                ]
+            )
+            statusMessage = "Token transfer draft prepared."
+        } catch {
+            tokenApprovalState = .failed(error.localizedDescription)
+            statusMessage = error.localizedDescription
+            recordTokenFailure(message: error.localizedDescription)
+        }
+    }
+
+    func simulateCurrentTokenDraft() async {
+        guard let draft = currentTokenDraft, let profile = selectedProfile else {
+            return
+        }
+
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            let blockhash = try await rpcClient.getLatestBlockhash(network: draft.network)
+            let message = try SplTokenInstructionBuilder.makeTransferCheckedMessage(
+                draft: draft,
+                recentBlockhash: blockhash
+            )
+            let messageBase64 = SolanaTransactionBuilder.makeMessageBase64(message: message)
+            let fee = try? await rpcClient.getFeeForMessage(messageBase64: messageBase64, network: draft.network)
+            let transactionBase64 = SolanaTransactionBuilder.makeUnsignedTransactionBase64(message: message)
+            var result = try await rpcClient.simulateTransaction(transactionBase64: transactionBase64, network: draft.network)
+            result.estimatedFeeLamports = fee ?? result.estimatedFeeLamports
+
+            preparedTokenMessage = message
+            tokenSimulationResult = result
+            tokenApprovalState = result.status == .success ? .simulated : .failed(result.errorMessage ?? "Token simulation failed.")
+            record(
+                kind: .tokenTransferSimulated,
+                walletID: profile.id,
+                publicAddress: profile.publicAddress,
+                message: "SPL token transfer simulated.",
+                details: [
+                    "network": draft.network.rawValue,
+                    "mint": draft.mintAddress,
+                    "status": result.status.rawValue
+                ]
+            )
+            statusMessage = result.status == .success ? "Token simulation succeeded." : (result.errorMessage ?? "Token simulation failed.")
+        } catch {
+            tokenSimulationResult = .unavailable(error.localizedDescription)
+            tokenApprovalState = .failed(error.localizedDescription)
+            statusMessage = error.localizedDescription
+            recordTokenFailure(message: error.localizedDescription)
+        }
+    }
+
+    func approveAndSendToken(
+        mainnetConfirmation: String,
+        hasCompletedDevnetSmoke: Bool,
+        allowsUnavailableSimulation: Bool
+    ) async {
+        guard let draft = currentTokenDraft,
+              let profile = selectedProfile else {
+            return
+        }
+
+        guard TransactionApprovalPolicy.canApprove(
+            network: draft.network,
+            simulation: tokenSimulationResult,
+            mainnetConfirmation: mainnetConfirmation,
+            hasCompletedDevnetSmoke: hasCompletedDevnetSmoke,
+            allowsUnavailableSimulation: allowsUnavailableSimulation
+        ) else {
+            statusMessage = draft.network.isMainnet
+                ? "Mainnet token send requires simulation, exact confirmation, and a completed devnet smoke send for this build."
+                : "Complete token simulation before approval."
+            return
+        }
+
+        guard let secret = unlockedSecrets[profile.id] else {
+            vaultState = .locked
+            statusMessage = "Unlock the wallet before signing."
+            return
+        }
+
+        guard let message = preparedTokenMessage else {
+            tokenSimulationResult = .unavailable("Prepared token transaction message is missing. Simulate again.")
+            statusMessage = "Simulate again before signing."
+            return
+        }
+
+        record(
+            kind: .tokenTransferApproved,
+            walletID: profile.id,
+            publicAddress: profile.publicAddress,
+            message: "SPL token transfer approved by user.",
+            details: [
+                "network": draft.network.rawValue,
+                "mint": draft.mintAddress,
+                "amountRaw": "\(draft.amountRaw)"
+            ]
+        )
+
+        tokenApprovalState = .approved
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            tokenApprovalState = .sending
+            let signedTransactionBase64 = try SolanaTransactionBuilder.makeSignedTransactionBase64(
+                message: message,
+                seed: secret.seed
+            )
+            let signature = try await rpcClient.sendTransaction(
+                transactionBase64: signedTransactionBase64,
+                network: draft.network
+            )
+            lastTransactionSignature = signature
+            lastConfirmationStatus = try? await rpcClient.getSignatureStatus(signature: signature, network: draft.network)
+            tokenApprovalState = .sent(signature)
+            record(
+                kind: .tokenTransferSent,
+                walletID: profile.id,
+                publicAddress: profile.publicAddress,
+                transactionSignature: signature,
+                message: "SPL token transfer sent.",
+                details: [
+                    "network": draft.network.rawValue,
+                    "mint": draft.mintAddress,
+                    "sourceTokenAccount": draft.sourceTokenAccount,
+                    "recipientOwner": draft.recipientOwnerAddress,
+                    "recipientTokenAccount": draft.recipientTokenAccount ?? "",
+                    "amountRaw": "\(draft.amountRaw)",
+                    "decimals": "\(draft.decimals)"
+                ]
+            )
+            statusMessage = "SPL token transfer sent."
+        } catch {
+            tokenApprovalState = .failed(error.localizedDescription)
+            statusMessage = error.localizedDescription
+            recordTokenFailure(message: error.localizedDescription)
         }
     }
 
@@ -558,6 +870,15 @@ final class WalletManager: ObservableObject {
     private func recordFailure(message: String) {
         record(
             kind: .transactionFailed,
+            walletID: selectedWalletID,
+            publicAddress: selectedProfile?.publicAddress,
+            message: message
+        )
+    }
+
+    private func recordTokenFailure(message: String) {
+        record(
+            kind: .tokenTransferFailed,
             walletID: selectedWalletID,
             publicAddress: selectedProfile?.publicAddress,
             message: message

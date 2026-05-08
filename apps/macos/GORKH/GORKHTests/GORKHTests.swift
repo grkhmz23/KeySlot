@@ -291,6 +291,175 @@ struct GORKHTests {
         #expect(publicKey.isValidSignature(signature, for: message))
     }
 
+    @Test func tokenAmountFormatterUsesExactIntegerMath() throws {
+        #expect(TokenAmountFormatter.format(rawAmount: 1_234_500, decimals: 6) == "1.2345")
+        #expect(TokenAmountFormatter.format(rawAmount: 1, decimals: 6) == "0.000001")
+        #expect(TokenAmountFormatter.format(rawAmount: 42, decimals: 0) == "42")
+
+        #expect(try TokenAmountFormatter.rawAmount(fromUIAmount: "1.2345", decimals: 6) == 1_234_500)
+        #expect(try TokenAmountFormatter.rawAmount(fromUIAmount: "0.000001", decimals: 6) == 1)
+        #expect(try TokenAmountFormatter.rawAmount(fromUIAmount: "42", decimals: 0) == 42)
+        #expect(throws: SolanaValidationError.self) {
+            try TokenAmountFormatter.rawAmount(fromUIAmount: "0", decimals: 6)
+        }
+        #expect(throws: SolanaValidationError.self) {
+            try TokenAmountFormatter.rawAmount(fromUIAmount: "1.0000001", decimals: 6)
+        }
+        #expect(throws: SolanaValidationError.self) {
+            try TokenAmountFormatter.rawAmount(fromUIAmount: "1e2", decimals: 6)
+        }
+    }
+
+    @Test func parsedSplTokenAccountsExposeSafeBalanceFields() throws {
+        let result: [String: Any] = [
+            "value": [
+                [
+                    "pubkey": "TokenAccount111111111111111111111111111111",
+                    "account": [
+                        "owner": SolanaConstants.splTokenProgramID,
+                        "data": [
+                            "parsed": [
+                                "info": [
+                                    "mint": "Mint111111111111111111111111111111111111",
+                                    "owner": SolanaConstants.systemProgramID,
+                                    "state": "initialized",
+                                    "tokenAmount": [
+                                        "amount": "1234500",
+                                        "decimals": 6,
+                                        "uiAmountString": "1.2345"
+                                    ]
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ]
+        ]
+
+        let balances = try SplTokenParser.parseTokenAccounts(result: result, programKind: .splToken)
+        let balance = try #require(balances.first)
+
+        #expect(balance.tokenAccountAddress == "TokenAccount111111111111111111111111111111")
+        #expect(balance.mintAddress == "Mint111111111111111111111111111111111111")
+        #expect(balance.ownerAddress == SolanaConstants.systemProgramID)
+        #expect(balance.amountRaw == 1_234_500)
+        #expect(balance.decimals == 6)
+        #expect(balance.uiAmountString == "1.2345")
+        #expect(balance.programKind == .splToken)
+        #expect(balance.state == .initialized)
+    }
+
+    @Test func transferCheckedInstructionEncodingIsStable() {
+        let data = SplTokenInstructionBuilder.transferCheckedInstructionData(amountRaw: 42, decimals: 6)
+        #expect(data.hexString == "0c2a0000000000000006")
+    }
+
+    @Test func tokenTransferMessageContainsTransferCheckedInstruction() throws {
+        let owner = Base58.encode(Data(repeating: 2, count: 32))
+        let source = Base58.encode(Data(repeating: 3, count: 32))
+        let destination = Base58.encode(Data(repeating: 4, count: 32))
+        let mint = Base58.encode(Data(repeating: 5, count: 32))
+        let blockhash = Base58.encode(Data(repeating: 6, count: 32))
+        let draft = TokenTransferDraft(
+            network: .devnet,
+            ownerAddress: owner,
+            sourceTokenAccount: source,
+            mintAddress: mint,
+            tokenProgramKind: .splToken,
+            recipientOwnerAddress: Base58.encode(Data(repeating: 7, count: 32)),
+            recipientTokenAccount: destination,
+            amountRaw: 42,
+            amountText: "0.000042",
+            decimals: 6,
+            availableAmountRaw: 1_000_000,
+            ataPlan: AssociatedTokenAccount.existingPlan(
+                recipientOwner: Base58.encode(Data(repeating: 7, count: 32)),
+                mint: mint,
+                tokenProgramKind: .splToken,
+                recipientTokenAccount: destination
+            )
+        )
+
+        let message = try SplTokenInstructionBuilder.makeTransferCheckedMessage(
+            draft: draft,
+            recentBlockhash: blockhash
+        )
+
+        #expect(Data(message.prefix(3)).hexString == "010102")
+        #expect(message.range(of: SplTokenInstructionBuilder.transferCheckedInstructionData(amountRaw: 42, decimals: 6)) != nil)
+    }
+
+    @Test func tokenTransferRejectsToken2022UntilExtensionHandlingExists() throws {
+        let owner = Base58.encode(Data(repeating: 2, count: 32))
+        let source = Base58.encode(Data(repeating: 3, count: 32))
+        let destination = Base58.encode(Data(repeating: 4, count: 32))
+        let mint = Base58.encode(Data(repeating: 5, count: 32))
+        let draft = TokenTransferDraft(
+            network: .devnet,
+            ownerAddress: owner,
+            sourceTokenAccount: source,
+            mintAddress: mint,
+            tokenProgramKind: .token2022,
+            recipientOwnerAddress: Base58.encode(Data(repeating: 7, count: 32)),
+            recipientTokenAccount: destination,
+            amountRaw: 42,
+            amountText: "42",
+            decimals: 0,
+            availableAmountRaw: 100,
+            ataPlan: AssociatedTokenAccount.existingPlan(
+                recipientOwner: Base58.encode(Data(repeating: 7, count: 32)),
+                mint: mint,
+                tokenProgramKind: .token2022,
+                recipientTokenAccount: destination
+            )
+        )
+
+        #expect(throws: TokenTransferValidationError.self) {
+            try SplTokenInstructionBuilder.makeTransferCheckedMessage(draft: draft, recentBlockhash: Base58.encode(Data(repeating: 6, count: 32)))
+        }
+    }
+
+    @Test func missingAtaPlanIsVisibleAndDoesNotPretendCreationSupport() {
+        let plan = AssociatedTokenAccount.missingPlan(
+            recipientOwner: SolanaConstants.systemProgramID,
+            mint: Base58.encode(Data(repeating: 5, count: 32)),
+            tokenProgramKind: .splToken,
+            rentExemptLamports: 2_039_280
+        )
+
+        #expect(plan.shouldCreateAssociatedTokenAccount)
+        #expect(!plan.recipientTokenAccountExists)
+        #expect(!plan.creationSupported)
+        #expect(plan.rentExemptLamports == 2_039_280)
+        #expect(plan.message.lowercased().contains("missing"))
+    }
+
+    @Test func tokenAuditEventsDropSensitiveDetails() throws {
+        let event = AuditEvent(
+            kind: .tokenTransferSent,
+            walletID: UUID(),
+            network: .devnet,
+            publicAddress: SolanaConstants.systemProgramID,
+            transactionSignature: "signature",
+            message: "Token sent",
+            details: [
+                "mint": "safe",
+                "privateKey": "do-not-store",
+                "mnemonic": "do-not-store",
+                "seedPhrase": "do-not-store"
+            ]
+        )
+
+        let data = try JSONEncoder().encode(event)
+        let json = try #require(String(data: data, encoding: .utf8))
+
+        #expect(json.contains("safe"))
+        #expect(!json.contains("do-not-store"))
+        #expect(!json.contains("privateKey"))
+        #expect(!json.contains("mnemonic"))
+        #expect(!json.contains("seedPhrase"))
+    }
+
     @Test func devnetAirdropRejectsMainnet() async {
         var rejectedMainnet = false
         do {

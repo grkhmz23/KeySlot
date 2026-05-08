@@ -200,6 +200,13 @@ struct AuditEvent: Codable, Equatable, Identifiable {
         case transactionApproved = "transaction_approved"
         case transactionSent = "transaction_sent"
         case transactionFailed = "transaction_failed"
+        case tokenBalancesRefreshed = "token_balances_refreshed"
+        case tokenTransferDrafted = "token_transfer_drafted"
+        case tokenTransferSimulated = "token_transfer_simulated"
+        case tokenTransferApproved = "token_transfer_approved"
+        case tokenTransferSent = "token_transfer_sent"
+        case tokenTransferFailed = "token_transfer_failed"
+        case ataCreationPlanned = "ata_creation_planned"
     }
 
     let id: UUID
@@ -238,6 +245,9 @@ struct AuditEvent: Codable, Equatable, Identifiable {
 enum SolanaConstants {
     static let lamportsPerSol: UInt64 = 1_000_000_000
     static let systemProgramID = "11111111111111111111111111111111"
+    static let splTokenProgramID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+    static let associatedTokenAccountProgramID = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+    static let token2022ProgramID = "TokenzQdBNbLqP5VEhdkAS6EPFNoBxFH5u4V2dB5VF9Ss"
 }
 
 enum TransactionApprovalPolicy {

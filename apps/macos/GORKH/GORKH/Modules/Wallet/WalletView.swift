@@ -14,6 +14,7 @@ struct WalletView: View {
 
                     if walletManager.selectedProfile != nil {
                         WalletBalanceView()
+                        TokenBalancesView()
                         SendSolView()
                     }
 
