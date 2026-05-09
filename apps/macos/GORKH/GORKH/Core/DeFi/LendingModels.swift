@@ -46,6 +46,7 @@ enum LendingAdapterStatus: String, Codable, Equatable {
     case idle
     case loaded
     case empty
+    case partial
     case unavailable
     case error
     case stale
@@ -58,6 +59,8 @@ enum LendingAdapterStatus: String, Codable, Equatable {
             return "Loaded"
         case .empty:
             return "Empty"
+        case .partial:
+            return "Partial"
         case .unavailable:
             return "Unavailable"
         case .error:
@@ -202,6 +205,9 @@ struct LendingPositionSummary: Codable, Equatable, Identifiable {
     let errorMessage: String?
     let suppliedValueUSDOverride: Decimal?
     let borrowedValueUSDOverride: Decimal?
+    let unvaluedSuppliedPositionCount: Int
+    let unvaluedBorrowedPositionCount: Int
+    let metadataStatus: String?
 
     init(
         walletID: UUID,
@@ -218,7 +224,10 @@ struct LendingPositionSummary: Codable, Equatable, Identifiable {
         status: LendingAdapterStatus,
         errorMessage: String?,
         suppliedValueUSDOverride: Decimal? = nil,
-        borrowedValueUSDOverride: Decimal? = nil
+        borrowedValueUSDOverride: Decimal? = nil,
+        unvaluedSuppliedPositionCount: Int = 0,
+        unvaluedBorrowedPositionCount: Int = 0,
+        metadataStatus: String? = nil
     ) {
         self.walletID = walletID
         self.walletLabel = walletLabel
@@ -235,11 +244,17 @@ struct LendingPositionSummary: Codable, Equatable, Identifiable {
         self.errorMessage = errorMessage
         self.suppliedValueUSDOverride = suppliedValueUSDOverride
         self.borrowedValueUSDOverride = borrowedValueUSDOverride
+        self.unvaluedSuppliedPositionCount = unvaluedSuppliedPositionCount
+        self.unvaluedBorrowedPositionCount = unvaluedBorrowedPositionCount
+        self.metadataStatus = metadataStatus
     }
 
     var suppliedValueUSD: Decimal? {
         if let suppliedValueUSDOverride {
             return suppliedValueUSDOverride
+        }
+        guard unvaluedSuppliedPositionCount == 0 else {
+            return nil
         }
         return aggregate(values: suppliedAssets.compactMap(\.usdValue), expectedCount: suppliedAssets.count)
     }
@@ -247,6 +262,9 @@ struct LendingPositionSummary: Codable, Equatable, Identifiable {
     var borrowedValueUSD: Decimal? {
         if let borrowedValueUSDOverride {
             return borrowedValueUSDOverride
+        }
+        guard unvaluedBorrowedPositionCount == 0 else {
+            return nil
         }
         return aggregate(values: borrowedAssets.compactMap(\.usdValue), expectedCount: borrowedAssets.count)
     }
@@ -317,6 +335,8 @@ struct LendingProtocolSummary: Codable, Equatable, Identifiable {
     let netValueUSD: Decimal?
     let riskyPositionCount: Int
     let walletCount: Int
+    let suppliedPositionCount: Int
+    let borrowedPositionCount: Int
     let source: LendingDataSource
     let updatedAt: Date
     let errorMessage: String?
@@ -332,6 +352,9 @@ struct LendingPortfolioSummary: Codable, Equatable {
     let netValueUSD: Decimal?
     let positionCount: Int
     let riskyPositionCount: Int
+    let partialAdapterCount: Int
+    let suppliedPositionCount: Int
+    let borrowedPositionCount: Int
     let unavailableAdapterCount: Int
     let marketReserveCount: Int
     let source: String
@@ -348,6 +371,9 @@ struct LendingPortfolioSummary: Codable, Equatable {
             netValueUSD: 0,
             positionCount: 0,
             riskyPositionCount: 0,
+            partialAdapterCount: 0,
+            suppliedPositionCount: 0,
+            borrowedPositionCount: 0,
             unavailableAdapterCount: 0,
             marketReserveCount: 0,
             source: LendingConstants.source,

@@ -1135,6 +1135,7 @@ final class WalletManager: ObservableObject {
                 "stakeAccountCount": "\(result.summary.nativeStakeSummary.accountCount)",
                 "lstHoldingCount": "\(result.summary.lstSummary.holdingCount)",
                 "lendingPositionCount": "\(result.summary.lendingSummary.positionCount)",
+                "lendingPartialAdapterCount": "\(result.summary.lendingSummary.partialAdapterCount)",
                 "lendingUnavailableAdapterCount": "\(result.summary.lendingSummary.unavailableAdapterCount)",
                 "unavailablePriceCount": "\(result.summary.unavailablePriceCount)",
                 "priceSource": result.summary.priceSource
@@ -1188,6 +1189,9 @@ final class WalletManager: ObservableObject {
                 "portfolioScope": selectedPortfolioScope.rawValue,
                 "lendingPositionCount": "\(result.summary.lendingSummary.positionCount)",
                 "lendingRiskyPositionCount": "\(result.summary.lendingSummary.riskyPositionCount)",
+                "lendingPartialAdapterCount": "\(result.summary.lendingSummary.partialAdapterCount)",
+                "lendingSuppliedPositionCount": "\(result.summary.lendingSummary.suppliedPositionCount)",
+                "lendingBorrowedPositionCount": "\(result.summary.lendingSummary.borrowedPositionCount)",
                 "lendingUnavailableAdapterCount": "\(result.summary.lendingSummary.unavailableAdapterCount)",
                 "lendingMarketReserveCount": "\(result.summary.lendingSummary.marketReserveCount)",
                 "lendingProtocolStatuses": lendingProtocolStatuses,
@@ -1223,10 +1227,11 @@ final class WalletManager: ObservableObject {
                     "portfolioScope": selectedPortfolioScope.rawValue,
                     "assetCount": "\(snapshot.assetCount)",
                     "stakeAccountCount": "\(snapshot.stakeAccountCount)",
-                    "lstHoldingCount": "\(snapshot.lstHoldingCount)",
-                    "lendingPositionCount": "\(snapshot.lendingPositionCount)",
-                    "lendingUnavailableAdapterCount": "\(snapshot.lendingUnavailableAdapterCount)",
-                    "lendingMarketReserveCount": "\(snapshot.lendingMarketReserveCount)",
+                        "lstHoldingCount": "\(snapshot.lstHoldingCount)",
+                        "lendingPositionCount": "\(snapshot.lendingPositionCount)",
+                        "lendingPartialAdapterCount": "\(snapshot.lendingPartialAdapterCount)",
+                        "lendingUnavailableAdapterCount": "\(snapshot.lendingUnavailableAdapterCount)",
+                        "lendingMarketReserveCount": "\(snapshot.lendingMarketReserveCount)",
                     "lendingProtocolStatuses": snapshot.lendingProtocolStatuses
                         .map { "\($0.key):\($0.value)" }
                         .sorted()
@@ -1245,6 +1250,9 @@ final class WalletManager: ObservableObject {
                     "portfolioScope": selectedPortfolioScope.rawValue,
                     "lendingPositionCount": "\(snapshot.lendingPositionCount)",
                     "lendingRiskyPositionCount": "\(snapshot.lendingRiskyPositionCount)",
+                    "lendingPartialAdapterCount": "\(snapshot.lendingPartialAdapterCount)",
+                    "lendingSuppliedPositionCount": "\(snapshot.lendingSuppliedPositionCount)",
+                    "lendingBorrowedPositionCount": "\(snapshot.lendingBorrowedPositionCount)",
                     "lendingUnavailableAdapterCount": "\(snapshot.lendingUnavailableAdapterCount)",
                     "lendingMarketReserveCount": "\(snapshot.lendingMarketReserveCount)",
                     "lendingProtocolStatuses": snapshot.lendingProtocolStatuses
@@ -1282,7 +1290,7 @@ final class WalletManager: ObservableObject {
             return .lendingAdapterError
         case .unavailable:
             return .lendingAdapterUnavailable
-        case .idle, .loaded, .empty, .stale:
+        case .idle, .loaded, .empty, .partial, .stale:
             return .lendingRefreshed
         }
     }
@@ -1297,6 +1305,8 @@ final class WalletManager: ObservableObject {
             return "Lending adapters are unavailable; no positions are shown."
         case .error:
             return "Lending adapter refresh failed."
+        case .partial:
+            return "Lending positions refreshed with partial read-only parser data."
         case .stale:
             return "Lending positions refreshed with stale or partial data."
         case .idle:

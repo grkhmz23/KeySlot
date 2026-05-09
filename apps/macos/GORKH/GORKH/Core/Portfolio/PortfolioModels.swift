@@ -239,6 +239,9 @@ struct PortfolioSnapshot: Codable, Equatable, Identifiable {
     let lendingNetValueUSD: Decimal?
     let lendingPositionCount: Int
     let lendingRiskyPositionCount: Int
+    let lendingPartialAdapterCount: Int
+    let lendingSuppliedPositionCount: Int
+    let lendingBorrowedPositionCount: Int
     let lendingUnavailableAdapterCount: Int
     let lendingMarketReserveCount: Int
     let lendingProtocolStatuses: [String: String]
@@ -267,6 +270,9 @@ struct PortfolioSnapshot: Codable, Equatable, Identifiable {
         self.lendingNetValueUSD = summary.lendingSummary.netValueUSD
         self.lendingPositionCount = summary.lendingSummary.positionCount
         self.lendingRiskyPositionCount = summary.lendingSummary.riskyPositionCount
+        self.lendingPartialAdapterCount = summary.lendingSummary.partialAdapterCount
+        self.lendingSuppliedPositionCount = summary.lendingSummary.suppliedPositionCount
+        self.lendingBorrowedPositionCount = summary.lendingSummary.borrowedPositionCount
         self.lendingUnavailableAdapterCount = summary.lendingSummary.unavailableAdapterCount
         self.lendingMarketReserveCount = summary.lendingSummary.marketReserveCount
         self.lendingProtocolStatuses = Dictionary(uniqueKeysWithValues: summary.lendingSummary.protocols.map {
@@ -315,6 +321,9 @@ struct PortfolioSnapshot: Codable, Equatable, Identifiable {
         case lendingNetValueUSD
         case lendingPositionCount
         case lendingRiskyPositionCount
+        case lendingPartialAdapterCount
+        case lendingSuppliedPositionCount
+        case lendingBorrowedPositionCount
         case lendingUnavailableAdapterCount
         case lendingMarketReserveCount
         case lendingProtocolStatuses
@@ -345,6 +354,9 @@ struct PortfolioSnapshot: Codable, Equatable, Identifiable {
         lendingNetValueUSD = try container.decodeIfPresent(Decimal.self, forKey: .lendingNetValueUSD)
         lendingPositionCount = try container.decodeIfPresent(Int.self, forKey: .lendingPositionCount) ?? 0
         lendingRiskyPositionCount = try container.decodeIfPresent(Int.self, forKey: .lendingRiskyPositionCount) ?? 0
+        lendingPartialAdapterCount = try container.decodeIfPresent(Int.self, forKey: .lendingPartialAdapterCount) ?? 0
+        lendingSuppliedPositionCount = try container.decodeIfPresent(Int.self, forKey: .lendingSuppliedPositionCount) ?? 0
+        lendingBorrowedPositionCount = try container.decodeIfPresent(Int.self, forKey: .lendingBorrowedPositionCount) ?? 0
         lendingUnavailableAdapterCount = try container.decodeIfPresent(Int.self, forKey: .lendingUnavailableAdapterCount) ?? 0
         lendingMarketReserveCount = try container.decodeIfPresent(Int.self, forKey: .lendingMarketReserveCount) ?? 0
         lendingProtocolStatuses = try container.decodeIfPresent([String: String].self, forKey: .lendingProtocolStatuses) ?? [:]

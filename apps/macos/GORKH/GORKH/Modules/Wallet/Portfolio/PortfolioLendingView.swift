@@ -25,6 +25,7 @@ struct PortfolioLendingView: View {
                     metric("Borrowed", value: currency(summary.borrowedValueUSD))
                     metric("Net Lending", value: currency(summary.netValueUSD))
                     metric("Positions", value: "\(summary.positionCount)")
+                    metric("Partial", value: "\(summary.partialAdapterCount)")
                     metric("Risky", value: "\(summary.riskyPositionCount)")
                     metric("Unavailable", value: "\(summary.unavailableAdapterCount)")
                     metric("Markets", value: "\(summary.marketReserveCount)")
@@ -75,6 +76,8 @@ struct PortfolioLendingView: View {
             return "checkmark.seal"
         case .empty:
             return "tray"
+        case .partial:
+            return "exclamationmark.magnifyingglass"
         case .unavailable:
             return "exclamationmark.triangle"
         case .error:
@@ -90,7 +93,7 @@ struct PortfolioLendingView: View {
         switch status {
         case .loaded, .empty:
             return GorkhColors.success
-        case .unavailable, .stale, .idle:
+        case .partial, .unavailable, .stale, .idle:
             return GorkhColors.warning
         case .error:
             return GorkhColors.danger
@@ -121,6 +124,8 @@ private struct LendingProtocolCardView: View {
                 row("Borrowed", value: currency(summary.borrowedValueUSD))
                 row("Net", value: currency(summary.netValueUSD))
                 row("Wallets", value: "\(summary.walletCount)")
+                row("Supplied slots", value: "\(summary.suppliedPositionCount)")
+                row("Borrowed slots", value: "\(summary.borrowedPositionCount)")
                 row("Risky", value: "\(summary.riskyPositionCount)")
                 row("Markets", value: "\(summary.marketReserveCount)")
                 row("Source", value: summary.source.rawValue)
@@ -131,6 +136,12 @@ private struct LendingProtocolCardView: View {
             }
 
             if !summary.positions.isEmpty {
+                if summary.status == .partial, let errorMessage = summary.errorMessage {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(GorkhColors.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 LendingPositionTableView(positions: summary.positions)
             } else if !summary.marketReserves.isEmpty {
                 LendingMarketReserveListView(reserves: Array(summary.marketReserves.prefix(4)))
@@ -150,7 +161,7 @@ private struct LendingProtocolCardView: View {
         switch summary.status {
         case .loaded, .empty:
             return GorkhColors.success
-        case .unavailable, .stale, .idle:
+        case .partial, .unavailable, .stale, .idle:
             return GorkhColors.warning
         case .error:
             return GorkhColors.danger
@@ -177,7 +188,7 @@ private struct LendingProtocolCardView: View {
 
     private var emptyMessage: String {
         if summary.protocolKind == .marginFi,
-           summary.status == .unavailable {
+           summary.status == .unavailable || summary.status == .partial {
             return summary.errorMessage ?? "Read-only MarginFi position parsing is not connected yet. No funds are touched."
         }
         return summary.errorMessage ?? "No positions returned."
@@ -239,12 +250,24 @@ private struct LendingPositionTableView: View {
                         Spacer()
                         LendingRiskBadgeView(level: position.health.riskLevel)
                     }
-                    Text("\(position.suppliedAssets.count) supplied / \(position.borrowedAssets.count) borrowed")
+                    Text(positionCountText(position))
                         .font(.caption)
                         .foregroundStyle(GorkhColors.secondaryText)
+                    if let metadataStatus = position.metadataStatus {
+                        Text(metadataStatus)
+                            .font(.caption2)
+                            .foregroundStyle(GorkhColors.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
         }
+    }
+
+    private func positionCountText(_ position: LendingPositionSummary) -> String {
+        let supplied = position.suppliedAssets.count + position.unvaluedSuppliedPositionCount
+        let borrowed = position.borrowedAssets.count + position.unvaluedBorrowedPositionCount
+        return "\(supplied) supplied / \(borrowed) borrowed"
     }
 }
 

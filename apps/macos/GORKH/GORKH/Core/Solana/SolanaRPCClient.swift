@@ -149,6 +149,79 @@ struct SolanaRPCClient {
         return !(dictionary["value"] is NSNull) && dictionary["value"] != nil
     }
 
+    func getFilteredProgramAccountsBase64(
+        programID: String,
+        dataSize: Int,
+        memcmpOffset: Int,
+        memcmpBytes: String,
+        network: WalletNetwork
+    ) async throws -> [SolanaProgramAccountData] {
+        guard SolanaAddressValidator.isValidAddress(programID),
+              SolanaAddressValidator.isValidAddress(memcmpBytes),
+              dataSize > 0,
+              memcmpOffset >= 0 else {
+            throw SolanaRPCError.invalidResponse
+        }
+
+        let result = try await request(
+            method: "getProgramAccounts",
+            params: [
+                programID,
+                [
+                    "encoding": "base64",
+                    "commitment": "confirmed",
+                    "filters": [
+                        ["dataSize": dataSize],
+                        [
+                            "memcmp": [
+                                "offset": memcmpOffset,
+                                "bytes": memcmpBytes
+                            ]
+                        ]
+                    ]
+                ]
+            ],
+            network: network
+        )
+
+        guard let accounts = result as? [[String: Any]] else {
+            throw SolanaRPCError.invalidResponse
+        }
+
+        return try accounts.map { item in
+            guard let publicKey = item["pubkey"] as? String,
+                  let account = item["account"] as? [String: Any],
+                  let owner = account["owner"] as? String else {
+                throw SolanaRPCError.invalidResponse
+            }
+
+            let space: Int?
+            if let number = account["space"] as? NSNumber {
+                space = number.intValue
+            } else {
+                space = account["space"] as? Int
+            }
+            let base64: String?
+            if let dataArray = account["data"] as? [Any] {
+                base64 = dataArray.first as? String
+            } else {
+                base64 = account["data"] as? String
+            }
+
+            guard let base64,
+                  let data = Data(base64Encoded: base64) else {
+                throw SolanaRPCError.invalidResponse
+            }
+
+            return SolanaProgramAccountData(
+                publicKey: publicKey,
+                owner: owner,
+                data: data,
+                space: space
+            )
+        }
+    }
+
     func getMintDecimals(
         mintAddress: String,
         programKind: TokenProgramKind,
@@ -391,6 +464,13 @@ struct SolanaRPCClient {
 
         return result
     }
+}
+
+struct SolanaProgramAccountData: Equatable {
+    let publicKey: String
+    let owner: String
+    let data: Data
+    let space: Int?
 }
 
 enum SolanaRPCError: LocalizedError, Equatable {

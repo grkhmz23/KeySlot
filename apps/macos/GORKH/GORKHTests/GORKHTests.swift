@@ -1913,16 +1913,19 @@ struct GORKHTests {
     @Test func lendingUnavailableAdaptersAreHonestAndRiskMappingIsDeterministic() async {
         let profile = WalletProfile(label: "Read Only", publicAddress: SolanaConstants.systemProgramID)
         let kamino = await KaminoReadOnlyAdapter().fetchPositions(profiles: [profile], network: .devnet, prices: [:])
-        let margin = await MarginFiReadOnlyAdapter(programAccountExists: { _ in true })
+        let margin = await MarginFiReadOnlyAdapter(
+            programAccountExists: { _ in true },
+            accountFetcher: { _, _ in [] }
+        )
             .fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
         let summary = LendingPortfolioAggregator.aggregate(adapterResults: [kamino, margin], refreshedAt: Date(timeIntervalSince1970: 0))
 
         #expect(kamino.status == .unavailable)
-        #expect(margin.status == .unavailable)
+        #expect(margin.status == .empty)
         #expect(kamino.positions.isEmpty)
         #expect(margin.positions.isEmpty)
-        #expect(summary.status == .unavailable)
-        #expect(summary.unavailableAdapterCount == 2)
+        #expect(summary.status == .stale)
+        #expect(summary.unavailableAdapterCount == 1)
         #expect(LendingHealthSummary.riskLevel(healthFactor: Decimal(string: "2.0"), ltv: nil) == .healthy)
         #expect(LendingHealthSummary.riskLevel(healthFactor: Decimal(string: "1.3"), ltv: nil) == .caution)
         #expect(LendingHealthSummary.riskLevel(healthFactor: Decimal(string: "1.1"), ltv: nil) == .highRisk)
@@ -1933,8 +1936,9 @@ struct GORKHTests {
     @Test func marginFiGuardBlocksDangerousPathsAndAllowsOnlyReadOnlyProgramCheck() throws {
         try MarginFiEndpointGuard.validateProgramID(MarginFiConstants.programID)
         try MarginFiEndpointGuard.validateRPCMethod("getAccountInfo")
+        try MarginFiEndpointGuard.validateRPCMethod("getProgramAccounts")
 
-        for method in ["sendTransaction", "simulateTransaction", "getProgramAccounts"] {
+        for method in ["sendTransaction", "simulateTransaction", "getMultipleAccounts"] {
             #expect(throws: MarginFiEndpointGuardError.self) {
                 try MarginFiEndpointGuard.validateRPCMethod(method)
             }
@@ -1962,20 +1966,105 @@ struct GORKHTests {
 
     @Test func marginFiReadOnlyAdapterReportsProgramStatusWithoutPositions() async throws {
         let profile = WalletProfile(label: "MarginFi User", publicAddress: SolanaConstants.systemProgramID)
-        let adapter = MarginFiReadOnlyAdapter(programAccountExists: { network in
-            #expect(network == .mainnetBeta)
-            return true
-        })
+        let adapter = MarginFiReadOnlyAdapter(
+            programAccountExists: { network in
+                #expect(network == .mainnetBeta)
+                return true
+            },
+            accountFetcher: { profile, network in
+                #expect(profile.publicAddress == SolanaConstants.systemProgramID)
+                #expect(network == .mainnetBeta)
+                return []
+            }
+        )
         let result = await adapter.fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
         let summary = LendingPortfolioAggregator.aggregate(adapterResults: [result], refreshedAt: Date(timeIntervalSince1970: 0))
         let json = try #require(String(data: JSONEncoder().encode(result), encoding: .utf8)).lowercased()
 
         #expect(result.protocolKind == .marginFi)
-        #expect(result.status == .unavailable)
+        #expect(result.status == .empty)
         #expect(result.source == .solanaRPC)
         #expect(result.positions.isEmpty)
-        #expect(result.errorMessage?.contains("program is reachable") == true)
-        #expect(summary.unavailableAdapterCount == 1)
+        #expect(result.errorMessage?.contains("no MarginFi accounts were found") == true)
+        #expect(summary.unavailableAdapterCount == 0)
+        for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "serializedtransaction", "transactionpayload", "unsignedtransaction"] {
+            #expect(!json.contains(forbidden))
+        }
+    }
+
+    @Test func marginFiParserValidatesOfficialLayoutAndPartialBalanceSlots() throws {
+        let account = try makeSyntheticMarginFiAccount(
+            authority: SolanaConstants.systemProgramID,
+            suppliedBank: PortfolioConstants.nativeSolMint,
+            borrowedBank: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+        )
+
+        let parsed = try MarginFiAccountParser.parse(account: account, expectedAuthority: SolanaConstants.systemProgramID)
+
+        #expect(parsed.accountAddress == account.publicKey)
+        #expect(parsed.groupAddress == MarginFiConstants.mainGroupID)
+        #expect(parsed.authorityAddress == SolanaConstants.systemProgramID)
+        #expect(parsed.activeBalances.count == 2)
+        #expect(parsed.suppliedPositionCount == 1)
+        #expect(parsed.borrowedPositionCount == 1)
+        #expect(parsed.unknownPositionCount == 0)
+        #expect(parsed.activeBalances[0].bankAddress == PortfolioConstants.nativeSolMint)
+        #expect(parsed.activeBalances[0].side == .supplied)
+        #expect(parsed.activeBalances[1].side == .borrowed)
+
+        var invalidData = account.data
+        invalidData[0] = 0
+        let invalid = SolanaProgramAccountData(
+            publicKey: account.publicKey,
+            owner: account.owner,
+            data: invalidData,
+            space: account.space
+        )
+        #expect(throws: MarginFiAccountParserError.self) {
+            try MarginFiAccountParser.parse(account: invalid, expectedAuthority: SolanaConstants.systemProgramID)
+        }
+        #expect(throws: MarginFiAccountParserError.self) {
+            try MarginFiAccountParser.parse(account: account, expectedAuthority: PortfolioConstants.nativeSolMint)
+        }
+    }
+
+    @Test func marginFiAdapterReturnsPartialWithoutFakingValuesOrHealth() async throws {
+        let profile = WalletProfile(label: "MarginFi User", publicAddress: SolanaConstants.systemProgramID)
+        let account = try makeSyntheticMarginFiAccount(
+            authority: profile.publicAddress,
+            suppliedBank: PortfolioConstants.nativeSolMint,
+            borrowedBank: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+        )
+        let adapter = MarginFiReadOnlyAdapter(
+            programAccountExists: { _ in true },
+            accountFetcher: { fetchedProfile, network in
+                #expect(fetchedProfile.id == profile.id)
+                #expect(network == .mainnetBeta)
+                return [account]
+            }
+        )
+
+        let result = await adapter.fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
+        let summary = LendingPortfolioAggregator.aggregate(adapterResults: [result], refreshedAt: Date(timeIntervalSince1970: 0))
+        let position = try #require(result.positions.first)
+        let json = try #require(String(data: JSONEncoder().encode(result), encoding: .utf8)).lowercased()
+
+        #expect(result.status == .partial)
+        #expect(result.source == .solanaRPC)
+        #expect(position.status == .partial)
+        #expect(position.suppliedAssets.isEmpty)
+        #expect(position.borrowedAssets.isEmpty)
+        #expect(position.unvaluedSuppliedPositionCount == 1)
+        #expect(position.unvaluedBorrowedPositionCount == 1)
+        #expect(position.suppliedValueUSD == nil)
+        #expect(position.borrowedValueUSD == nil)
+        #expect(position.netValueUSD == nil)
+        #expect(position.health.riskLevel == .unavailable)
+        #expect(position.metadataStatus?.contains("bank parser not connected") == true)
+        #expect(summary.status == .partial)
+        #expect(summary.partialAdapterCount == 1)
+        #expect(summary.suppliedPositionCount == 1)
+        #expect(summary.borrowedPositionCount == 1)
         for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "serializedtransaction", "transactionpayload", "unsignedtransaction"] {
             #expect(!json.contains(forbidden))
         }
@@ -3369,6 +3458,79 @@ private func waitForMinimumBalance(
     }
 
     throw LiveDevnetSmokeError.timedOut("Timed out waiting for devnet balance.")
+}
+
+private func makeSyntheticMarginFiAccount(
+    authority: String,
+    suppliedBank: String,
+    borrowedBank: String
+) throws -> SolanaProgramAccountData {
+    guard let groupBytes = SolanaAddressValidator.decodeAddress(MarginFiConstants.mainGroupID),
+          let authorityBytes = SolanaAddressValidator.decodeAddress(authority),
+          let suppliedBankBytes = SolanaAddressValidator.decodeAddress(suppliedBank),
+          let borrowedBankBytes = SolanaAddressValidator.decodeAddress(borrowedBank) else {
+        throw SolanaValidationError.invalidAddress("Synthetic MarginFi fixture address is invalid.")
+    }
+
+    var bytes = [UInt8](repeating: 0, count: MarginFiAccountLayout.accountDataSize)
+    replace(&bytes, at: 0, with: MarginFiAccountLayout.accountDiscriminator)
+    replace(&bytes, at: MarginFiAccountLayout.groupOffset, with: Array(groupBytes))
+    replace(&bytes, at: MarginFiAccountLayout.authorityOffset, with: Array(authorityBytes))
+    writeBalance(
+        bytes: &bytes,
+        slot: 0,
+        bank: Array(suppliedBankBytes),
+        side: .supplied,
+        lastUpdate: 1_714_000_000
+    )
+    writeBalance(
+        bytes: &bytes,
+        slot: 1,
+        bank: Array(borrowedBankBytes),
+        side: .borrowed,
+        lastUpdate: 1_714_000_001
+    )
+
+    return SolanaProgramAccountData(
+        publicKey: "EN1WSBJmZR1NVdYvPbpwzPnRk7JhbNncS1kNEXqvK7ND",
+        owner: MarginFiConstants.programID,
+        data: Data(bytes),
+        space: MarginFiAccountLayout.accountDataSize
+    )
+}
+
+private enum SyntheticMarginFiBalanceSide {
+    case supplied
+    case borrowed
+}
+
+private func writeBalance(
+    bytes: inout [UInt8],
+    slot: Int,
+    bank: [UInt8],
+    side: SyntheticMarginFiBalanceSide,
+    lastUpdate: UInt64
+) {
+    let offset = MarginFiAccountLayout.lendingAccountOffset + (slot * MarginFiAccountLayout.balanceSlotSize)
+    bytes[offset + MarginFiAccountLayout.BalanceOffset.active] = 1
+    replace(&bytes, at: offset + MarginFiAccountLayout.BalanceOffset.bank, with: bank)
+    bytes[offset + MarginFiAccountLayout.BalanceOffset.bankAssetTag] = 0
+    replace(&bytes, at: offset + MarginFiAccountLayout.BalanceOffset.tag, with: [UInt8(slot + 1), 0])
+    switch side {
+    case .supplied:
+        bytes[offset + MarginFiAccountLayout.BalanceOffset.assetShares] = 1
+    case .borrowed:
+        bytes[offset + MarginFiAccountLayout.BalanceOffset.liabilityShares] = 1
+    }
+    replace(&bytes, at: offset + MarginFiAccountLayout.BalanceOffset.lastUpdate, with: littleEndianBytes(lastUpdate))
+}
+
+private func replace(_ bytes: inout [UInt8], at offset: Int, with replacement: [UInt8]) {
+    bytes.replaceSubrange(offset..<(offset + replacement.count), with: replacement)
+}
+
+private func littleEndianBytes(_ value: UInt64) -> [UInt8] {
+    (0..<8).map { UInt8((value >> ($0 * 8)) & 0xff) }
 }
 
 private extension Data {

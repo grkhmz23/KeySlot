@@ -46,7 +46,8 @@ enum MarginFiEndpointGuard {
     ]
 
     static let allowedRPCMethods = [
-        "getAccountInfo"
+        "getAccountInfo",
+        "getProgramAccounts"
     ]
 
     static func validateHTTPReadOnlyPath(_ path: String) throws {

@@ -3,11 +3,13 @@ import Foundation
 enum MarginFiConstants {
     static let programID = "MFv2hWf31Z9kbCa1snEPYctwafyhdvnV7FZnsebVacA"
     static let mainGroupID = "4qp6Fx6tnZkY5Wropq9wUYgtFxXKwE6viZxFHg3rdAG8"
-    static let source = "marginfi-v2-read-only-program-status"
+    static let source = "marginfi-v2-on-chain-read-only-parser"
     static let unsupportedNetworkReason = "MarginFi v2 read-only status is mainnet-beta only."
     static let positionParsingUnavailableReason = """
-    MarginFi v2 program is reachable on mainnet-beta, but read-only wallet-position parsing is not connected yet. \
-    Official SDK examples include account creation and lending actions, so GORKH keeps MarginFi execution and SDK action flows out of scope.
+    MarginFi v2 program is reachable on mainnet-beta, but no MarginFi accounts were found for this wallet through bounded read-only authority filters.
+    """
+    static let partialParsingReason = """
+    MarginFi account data was parsed from public on-chain accounts. Bank metadata, token values, LTV, and health are unavailable until the bank/oracle parser is audited.
     """
 }
 
