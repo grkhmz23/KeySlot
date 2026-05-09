@@ -13,6 +13,9 @@ import { ReadOnlyWallet } from "./readOnlyWallet.ts";
 
 type UnknownRecord = Record<string, unknown>;
 
+const MARGINFI_ACCOUNT_DATA_SIZE = 2312;
+const MARGINFI_ACCOUNT_DISCRIMINATOR_BASE58 = "CKkRR4La3xu";
+
 export async function sdkValidation(): Promise<MarginFiSdkValidation> {
   const sdk = await importSdk();
   const group = resolveGroupId(sdk.exports);
@@ -75,7 +78,7 @@ export async function fetchPositionsReadOnly(request: MarginFiReadOnlyRequest): 
     const connection = new Connection(request.rpcUrl, "confirmed");
     const wallet = new ReadOnlyWallet(publicKey);
     const clientClass = (sdk.exports as UnknownRecord).MarginfiClient as
-      | { fetch?: (config: unknown, wallet: ReadOnlyWallet, connection: Connection) => Promise<unknown> }
+      | { fetch?: (config: unknown, wallet: ReadOnlyWallet, connection: Connection, options?: UnknownRecord) => Promise<unknown> }
       | undefined;
     if (!clientClass?.fetch) {
       return response("positions", {
@@ -87,7 +90,7 @@ export async function fetchPositionsReadOnly(request: MarginFiReadOnlyRequest): 
       });
     }
 
-    const client = await clientClass.fetch(config, wallet, connection);
+    const client = await suppressSdkConsoleErrors(() => clientClass.fetch(config, wallet, connection, { readOnly: true }));
     const accounts = await getAccountsForAuthority(client, publicKey);
     if (accounts.length === 0) {
       return response("positions", {
@@ -122,6 +125,11 @@ export async function fetchPositionsReadOnly(request: MarginFiReadOnlyRequest): 
       borrowedPositionCount: borrowedCount,
     });
   } catch (error) {
+    const fallback = await fallbackAccountDiscovery(request, error);
+    if (fallback) {
+      return fallback;
+    }
+
     return response("positions", {
       requestId: request.requestId,
       status: "error",
@@ -130,6 +138,86 @@ export async function fetchPositionsReadOnly(request: MarginFiReadOnlyRequest): 
       sdkValidation: await sdkValidation().catch(() => undefined),
     });
   }
+}
+
+async function fallbackAccountDiscovery(
+  request: MarginFiReadOnlyRequest,
+  sourceError: unknown,
+): Promise<MarginFiReadOnlyResponse | undefined> {
+  if (request.network !== "mainnet-beta" || !request.walletPublicAddress || !request.rpcUrl) {
+    return undefined;
+  }
+
+  try {
+    const authority = new PublicKey(request.walletPublicAddress);
+    const connection = new Connection(request.rpcUrl, "confirmed");
+    const accounts = await connection.getProgramAccounts(new PublicKey(MARGINFI_PROGRAM_ID), {
+      commitment: "confirmed",
+      dataSlice: { offset: 0, length: 0 },
+      filters: [
+        { dataSize: MARGINFI_ACCOUNT_DATA_SIZE },
+        { memcmp: { offset: 0, bytes: MARGINFI_ACCOUNT_DISCRIMINATOR_BASE58 } },
+        { memcmp: { offset: 8, bytes: SDK_MAIN_GROUP_ID } },
+        { memcmp: { offset: 40, bytes: authority.toBase58() } },
+      ],
+    });
+
+    if (accounts.length === 0) {
+      return response("positions", {
+        requestId: request.requestId,
+        status: "empty",
+        errorCategory: "none",
+        message: "No MarginFi accounts returned by SDK fallback bounded read-only authority filters.",
+        sdkValidation: await sdkValidation().catch(() => undefined),
+        positions: [],
+        accountCount: 0,
+        suppliedPositionCount: 0,
+        borrowedPositionCount: 0,
+      });
+    }
+
+    return response("positions", {
+      requestId: request.requestId,
+      status: "partial",
+      errorCategory: "none",
+      message: `SDK client fetch did not complete (${safeErrorMessage(sourceError)}). Bounded read-only fallback found MarginFi account addresses only.`,
+      sdkValidation: await sdkValidation().catch(() => undefined),
+      positions: accounts.map((account) => ({
+        walletPublicAddress: authority.toBase58(),
+        accountAddress: account.pubkey.toBase58(),
+        groupAddress: SDK_MAIN_GROUP_ID,
+        suppliedAssets: [],
+        borrowedAssets: [],
+        suppliedPositionCount: 0,
+        borrowedPositionCount: 0,
+        riskLevel: "unavailable" as const,
+        status: "partial" as const,
+        metadataStatus: "Account address discovered through bounded read-only RPC fallback; asset values and health unavailable.",
+      })),
+      accountCount: accounts.length,
+      suppliedPositionCount: 0,
+      borrowedPositionCount: 0,
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+async function suppressSdkConsoleErrors<T>(operation: () => Promise<T>): Promise<T> {
+  const original = console.error;
+  console.error = () => {};
+  try {
+    return await operation();
+  } finally {
+    console.error = original;
+  }
+}
+
+function safeErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return "SDK read-only lookup failed";
+  }
+  return error.message.slice(0, 160);
 }
 
 async function importSdk(): Promise<{

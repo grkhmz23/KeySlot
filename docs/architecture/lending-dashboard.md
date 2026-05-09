@@ -1,6 +1,6 @@
 # Lending Dashboard
 
-Phase 3.4 adds a read-only lending dashboard inside Wallet -> Portfolio. Phase 3.4B wires Kamino to reviewed read-only public API data where safe. Phase 3.4C adds a strict MarginFi read-only adapter boundary. Phase 3.4D adds an isolated MarginFi SDK read-only helper boundary plus the audited on-chain parser fallback for fields whose layout is confirmed from official sources. It remains portfolio intelligence only.
+Phase 3.4 adds a read-only lending dashboard inside Wallet -> Portfolio. Phase 3.4B wires Kamino to reviewed read-only public API data where safe. Phase 3.4C adds a strict MarginFi read-only adapter boundary. Phase 3.4D adds an isolated MarginFi SDK read-only helper boundary plus the audited on-chain parser fallback for fields whose layout is confirmed from official sources. Phase 3.4E adds read-only smoke coverage and dependency audit documentation. It remains portfolio intelligence only.
 
 ## Scope
 
@@ -34,7 +34,14 @@ MarginFi uses the official protocol docs and program address:
 - Main group from SDK production config: `4qp6Fx6tnZkY5Wropq9wUYgtFxXKwE6viZxFHg3rdAG8`
 - Reviewed alternate group candidate tracked for mismatch review: `4qp6Fx6tnZkY5Wropq9wUYgtFxXKwE6viZxFHg3rdAG4`
 
-The preferred MarginFi path is the local helper under `tools/marginfi-readonly/`. It imports the official SDK only inside the helper process and exposes `health`, `env-check`, and `positions` commands. The helper accepts public wallet address, network, request ID, and optional RPC URL only. It never receives wallet private keys, seed phrases, mnemonics, signing seed bytes, wallet JSON, serialized transactions, or instruction payloads.
+The preferred MarginFi path is the local helper under `tools/marginfi-readonly/`. It imports the official SDK only inside the helper process and exposes `health`, `env-check`, `positions`, and a read-only smoke runner. The helper accepts public wallet address, network, request ID, and optional RPC URL only. It never receives wallet private keys, seed phrases, mnemonics, signing seed bytes, wallet JSON, serialized transactions, or instruction payloads.
+
+Pinned helper runtime dependencies:
+
+- `@mrgnlabs/marginfi-client-v2@4.0.4`
+- `@mrgnlabs/mrgn-common@2.0.7`
+- `@solana/web3.js@1.98.4`
+- `debug@4.4.1`
 
 Allowed SDK methods are limited to read-only calls:
 
@@ -106,6 +113,8 @@ Intentionally not parsed in Phase 3.4D:
 
 When SDK read-only positions include values, GORKH maps them into the lending summary with source `sdk-read-only`. If the SDK returns accounts without complete values/health, GORKH returns `partial`. When the helper is disabled or unavailable, the Swift parser fallback returns `partial` for discovered accounts: GORKH shows account count and supplied/borrowed share-slot counts, but leaves values and health unavailable. If no accounts are found, MarginFi returns `empty`. If the layout check fails, it returns `error` without showing fake positions.
 
+The helper smoke runner uses the SDK first. If SDK client initialization fails before account lookup, it falls back to bounded read-only `getProgramAccounts` discovery with official discriminator, data-size, group, and authority filters. That fallback can prove `empty` or account-address-only `partial`; it does not decode values, health, or raw account data.
+
 ## Endpoint Guard
 
 Kamino endpoints are rejected unless their path exactly matches the allowlist above and all market/user path parameters are valid Solana public keys. The guard blocks paths containing:
@@ -132,10 +141,29 @@ The helper process is fixed-path and fixed-command:
 
 - helper path: `tools/marginfi-readonly/src/index.ts`
 - commands: `health`, `env-check`, `positions`
+- smoke wrapper: `scripts/marginfi-readonly-smoke.sh`
 - direct `Process` invocation only in Swift, no shell string execution
 - JSON stdin/stdout only
 - process environment is empty
 - stderr is redacted
+
+## Smoke and Dependency Audit
+
+Run the public read-only smoke with:
+
+```bash
+scripts/marginfi-readonly-smoke.sh --expected empty
+```
+
+To test a known public MarginFi authority, provide:
+
+```bash
+GORKH_MARGINFI_SMOKE_WALLET=<public-wallet> scripts/marginfi-readonly-smoke.sh
+```
+
+The smoke output is a compact JSON summary: wallet public address, SDK version, program/group IDs, RPC status redacted, adapter status, account count, position counts, optional USD summaries, and reason. It does not print RPC URLs, raw SDK responses, raw oracle payloads, transaction payloads, or instruction payloads.
+
+Dependency audit details live in `docs/security/marginfi-readonly-dependency-audit.md`. `npm audit --json` currently reports high-severity findings through transitive `bigint-buffer` usage under `@mrgnlabs/mrgn-common`, nested `@solana/web3.js`, and `jito-ts`/Pyth dependencies. No automatic fix was applied because the suggested path requires dependency changes/downgrades that need MarginFi SDK compatibility review.
 
 ## Safe Storage
 

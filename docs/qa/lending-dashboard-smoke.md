@@ -1,6 +1,6 @@
 # Lending Dashboard Smoke Checklist
 
-Phase 3.4D is read-only. Do not run lending transactions.
+Phase 3.4E is read-only. Do not run lending transactions.
 
 ## Manual UI Smoke
 
@@ -46,7 +46,8 @@ Helper boundary:
 
 - path: `tools/marginfi-readonly/src/index.ts`
 - commands: `health`, `env-check`, `positions`
-- dependencies: `@mrgnlabs/marginfi-client-v2`, `@mrgnlabs/mrgn-common`, `@solana/web3.js`
+- smoke wrapper: `scripts/marginfi-readonly-smoke.sh`
+- dependencies: `@mrgnlabs/marginfi-client-v2@4.0.4`, `@mrgnlabs/mrgn-common@2.0.7`, `@solana/web3.js@1.98.4`, `debug@4.4.1`
 - input: public wallet address, network, optional RPC URL, request ID
 - forbidden input: private key, seed phrase, mnemonic, signing seed, wallet JSON, serialized transaction, instruction payload
 - read-only wallet stub: `signTransaction`, `signAllTransactions`, and `signMessage` throw
@@ -57,6 +58,20 @@ Run helper tests:
 cd tools/marginfi-readonly
 npm test
 ```
+
+Run read-only smoke against the default public empty wallet:
+
+```bash
+scripts/marginfi-readonly-smoke.sh --expected empty
+```
+
+Run read-only smoke against a known public MarginFi authority:
+
+```bash
+GORKH_MARGINFI_SMOKE_WALLET=<public-wallet> scripts/marginfi-readonly-smoke.sh
+```
+
+The smoke prints only a safe summary: wallet public address, status, SDK version, program/group IDs, redacted RPC status, account count, supplied/borrowed position counts, optional USD summaries, and a partial/unavailable reason. It must not print private keys, seed phrases, wallet JSON, raw SDK dumps, full oracle payloads, transaction payloads, or instruction payloads.
 
 Allowed MarginFi read-only RPC:
 
@@ -76,7 +91,20 @@ Expected state:
 - Bank token metadata, share-to-token amount conversion, USD value, LTV, and health remain unavailable until a bank/oracle parser is audited.
 - If no MarginFi accounts are found for the wallet, the adapter returns `Empty`.
 - If accounts are found but values/health cannot be computed, the adapter returns `Partial`.
+- If SDK client initialization fails before account lookup, the smoke/helper may fall back to bounded read-only account-address discovery.
 - No account creation, lending action, SDK action builder, signer, or transaction path is used.
+
+## Dependency Audit
+
+Run:
+
+```bash
+cd tools/marginfi-readonly
+npm audit --json
+npm ls --depth=0
+```
+
+Current audit details are tracked in `docs/security/marginfi-readonly-dependency-audit.md`. Do not run automatic audit fixes without reviewing MarginFi SDK compatibility and rerunning helper smoke/tests.
 
 ## Safety Checks
 
