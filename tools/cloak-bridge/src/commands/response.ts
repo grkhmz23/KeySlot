@@ -13,6 +13,7 @@ export function response(
     sdkValidation?: CloakBridgeResponse["sdkValidation"];
     feeValidation?: CloakBridgeResponse["feeValidation"];
     environmentValidation?: CloakBridgeResponse["environmentValidation"];
+    signerRequestSummary?: CloakBridgeResponse["signerRequestSummary"];
     nextRequiredGates?: CloakBridgeResponse["nextRequiredGates"];
   },
 ): CloakBridgeResponse {
@@ -29,6 +30,7 @@ export function response(
     sdkValidation: options.sdkValidation,
     feeValidation: options.feeValidation,
     environmentValidation: options.environmentValidation,
+    signerRequestSummary: options.signerRequestSummary,
     nextRequiredGates: options.nextRequiredGates,
     timestamp: new Date().toISOString(),
   };

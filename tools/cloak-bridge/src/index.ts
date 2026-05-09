@@ -18,7 +18,7 @@ export async function handleCommand(command: CloakBridgeCommand, request: unknow
       request: request as Record<string, never>,
       status: "locked",
       errorCategory: "locked-in-phase-2-3",
-      message: "Cloak transaction execution commands are locked in Phase 2.3.",
+      message: "Cloak transaction execution and signer commands are locked in Phase 2.4.",
     });
   }
 

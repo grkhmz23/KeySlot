@@ -1113,6 +1113,190 @@ struct GORKHTests {
         #expect(!json.contains("proofInput"))
     }
 
+    @Test func cloakSignerRequestSummarySerializationHasNoForbiddenFields() throws {
+        let draft = try CloakDepositDraft(
+            network: .mainnetBeta,
+            sourceWalletAddress: SolanaConstants.systemProgramID,
+            grossLamports: 50_000_000
+        )
+        let request = CloakSignerRequestSummary.depositPreview(draft: draft)
+
+        try CloakBridgeContractValidator.validate(request)
+        try CloakSignerBridgeValidator.validate(request, expectedWalletPublicKey: SolanaConstants.systemProgramID)
+
+        let data = try JSONEncoder().encode(request)
+        let json = try #require(String(data: data, encoding: .utf8)).lowercased()
+
+        #expect(json.contains("draftfingerprint"))
+        for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "utxoprivatekey", "viewingkey", "nullifier", "proofinput", "serializedtransaction", "transactionpayload", "transactionbytes", "messagebytes"] {
+            #expect(!json.contains(forbidden))
+        }
+    }
+
+    @Test func cloakSignerValidatorRejectsUnsafeOrMismatchedRequests() throws {
+        let valid = CloakSignerRequestSummary(
+            requestKind: .signTransactionPreview,
+            walletPublicKey: SolanaConstants.systemProgramID,
+            network: .mainnetBeta,
+            actionKind: .deposit,
+            amountLamports: 50_000_000,
+            mintAddress: CloakConstants.nativeSolMint,
+            feeQuote: try CloakFeeModel.quote(grossLamports: 50_000_000),
+            humanReadableSummary: "safe",
+            expectedTransactionPurpose: "safe",
+            expectedMessagePurpose: "safe",
+            draftFingerprint: "abc123"
+        )
+
+        #expect(throws: CloakSignerBridgeValidationError.self) {
+            try CloakSignerBridgeValidator.validate(CloakSignerRequestSummary(
+                requestKind: valid.requestKind,
+                walletPublicKey: valid.walletPublicKey,
+                network: valid.network,
+                actionKind: valid.actionKind,
+                amountLamports: valid.amountLamports,
+                mintAddress: valid.mintAddress,
+                programID: "bad-program",
+                feeQuote: valid.feeQuote,
+                humanReadableSummary: valid.humanReadableSummary,
+                expectedTransactionPurpose: valid.expectedTransactionPurpose,
+                expectedMessagePurpose: valid.expectedMessagePurpose,
+                draftFingerprint: valid.draftFingerprint
+            ))
+        }
+        #expect(throws: CloakSignerBridgeValidationError.self) {
+            try CloakSignerBridgeValidator.validate(CloakSignerRequestSummary(
+                requestKind: valid.requestKind,
+                walletPublicKey: valid.walletPublicKey,
+                network: .devnet,
+                actionKind: valid.actionKind,
+                amountLamports: valid.amountLamports,
+                mintAddress: valid.mintAddress,
+                feeQuote: valid.feeQuote,
+                humanReadableSummary: valid.humanReadableSummary,
+                expectedTransactionPurpose: valid.expectedTransactionPurpose,
+                expectedMessagePurpose: valid.expectedMessagePurpose,
+                draftFingerprint: valid.draftFingerprint
+            ))
+        }
+        #expect(throws: CloakSignerBridgeValidationError.self) {
+            try CloakSignerBridgeValidator.validate(CloakSignerRequestSummary(
+                requestKind: valid.requestKind,
+                walletPublicKey: valid.walletPublicKey,
+                network: valid.network,
+                actionKind: valid.actionKind,
+                amountLamports: 9_999_999,
+                mintAddress: valid.mintAddress,
+                feeQuote: nil,
+                humanReadableSummary: valid.humanReadableSummary,
+                expectedTransactionPurpose: valid.expectedTransactionPurpose,
+                expectedMessagePurpose: valid.expectedMessagePurpose,
+                draftFingerprint: valid.draftFingerprint
+            ))
+        }
+        #expect(throws: CloakSignerBridgeValidationError.self) {
+            try CloakSignerBridgeValidator.validate(CloakSignerRequestSummary(
+                requestKind: valid.requestKind,
+                walletPublicKey: valid.walletPublicKey,
+                network: valid.network,
+                actionKind: valid.actionKind,
+                amountLamports: valid.amountLamports,
+                mintAddress: valid.mintAddress,
+                feeQuote: valid.feeQuote,
+                humanReadableSummary: valid.humanReadableSummary,
+                expectedTransactionPurpose: valid.expectedTransactionPurpose,
+                expectedMessagePurpose: valid.expectedMessagePurpose,
+                draftFingerprint: ""
+            ))
+        }
+        #expect(throws: CloakSignerBridgeValidationError.self) {
+            try CloakSignerBridgeValidator.validate(valid, expectedWalletPublicKey: "different-wallet")
+        }
+    }
+
+    @Test func cloakSignerPolicyReturnsLockedAndRequiresAllApprovalGates() throws {
+        let draft = try CloakDepositDraft(
+            network: .mainnetBeta,
+            sourceWalletAddress: SolanaConstants.systemProgramID,
+            grossLamports: 50_000_000
+        )
+        let request = CloakSignerRequestSummary.depositPreview(draft: draft)
+        let result = CloakSignerBridgePolicy.locked.signingDecision(
+            request: request,
+            expectedWalletPublicKey: SolanaConstants.systemProgramID
+        )
+
+        #expect(result.state == .locked)
+        #expect(result.failures.contains("Signing is not enabled for Cloak in Phase 2.4."))
+        #expect(result.requirements.contains(.walletUnlocked))
+        #expect(result.requirements.contains(.localAuthentication))
+        #expect(result.requirements.contains(.shieldReviewCompleted))
+        #expect(result.requirements.contains(.explicitUserApproval))
+        #expect(result.requirements.contains(.mainnetConfirmationPhrase))
+        #expect(result.requirements.contains(.draftFingerprintMatch))
+        #expect(result.requirements.contains(.auditBeforeSigning))
+        #expect(result.requirements.contains(.auditAfterSigning))
+        #expect(result.requirements.contains(.executionLocked))
+    }
+
+    @Test func cloakBridgeDecodesLockedSignerPlaceholderFromHelper() throws {
+        let raw = """
+        {
+          "id":"11111111-1111-4111-8111-111111111111",
+          "requestId":"22222222-2222-4222-8222-222222222222",
+          "command":"deposit-plan",
+          "actionKind":"deposit",
+          "status":"locked",
+          "errorCategory":"locked-in-phase-2-3",
+          "message":"Deposit plan created with locked signer preview.",
+          "programId":"zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW",
+          "feeQuote":{
+            "grossLamports":"50000000",
+            "fixedFeeLamports":"5000000",
+            "variableFeeLamports":"150000",
+            "totalFeeLamports":"5150000",
+            "netLamports":"44850000",
+            "minimumDepositLamports":"10000000"
+          },
+          "signerRequestSummary":{
+            "id":"33333333-3333-4333-8333-333333333333",
+            "requestKind":"sign_transaction_preview",
+            "walletPublicKey":"11111111111111111111111111111111",
+            "network":"mainnet-beta",
+            "actionKind":"deposit",
+            "amountLamports":"50000000",
+            "mintAddress":"So11111111111111111111111111111111111111112",
+            "programId":"zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW",
+            "feeQuote":{
+              "grossLamports":"50000000",
+              "fixedFeeLamports":"5000000",
+              "variableFeeLamports":"150000",
+              "totalFeeLamports":"5150000",
+              "netLamports":"44850000",
+              "minimumDepositLamports":"10000000"
+            },
+            "humanReadableSummary":"Future Cloak SOL deposit review for 50000000 lamports.",
+            "expectedTransactionPurpose":"Create a reviewed Cloak public deposit into a shielded balance.",
+            "expectedMessagePurpose":"Future viewing-key registration may require a separately reviewed message signature.",
+            "draftFingerprint":"abc123",
+            "approvalState":"locked",
+            "bridgeState":"locked",
+            "timestamp":"2026-01-01T00:00:00Z"
+          },
+          "timestamp":"2026-01-01T00:00:00Z"
+        }
+        """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let response = try decoder.decode(CloakBridgeResponse.self, from: Data(raw.utf8))
+
+        #expect(response.signerRequestSummary?.requestKind == .signTransactionPreview)
+        #expect(response.signerRequestSummary?.amountLamports == 50_000_000)
+        #expect(response.signerRequestSummary?.bridgeState == .locked)
+        #expect(response.signerRequestSummary?.programID == CloakConstants.programID)
+        #expect(response.transactionSignature == nil)
+    }
+
     @Test func devnetAirdropRejectsMainnet() async {
         var rejectedMainnet = false
         do {

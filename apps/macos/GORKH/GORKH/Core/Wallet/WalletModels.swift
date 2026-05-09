@@ -226,6 +226,11 @@ struct AuditEvent: Codable, Equatable, Identifiable {
         case cloakDepositPlanDryRunChecked = "cloak_deposit_plan_dry_run_checked"
         case cloakHelperInvocationBlocked = "cloak_helper_invocation_blocked"
         case cloakHelperResponseRejected = "cloak_helper_response_rejected"
+        case cloakSignerPreflightChecked = "cloak_signer_preflight_checked"
+        case cloakSignerRequestRejected = "cloak_signer_request_rejected"
+        case cloakSignerRequestLocked = "cloak_signer_request_locked"
+        case cloakReviewFlowViewed = "cloak_review_flow_viewed"
+        case cloakApprovalRequirementGenerated = "cloak_approval_requirement_generated"
     }
 
     let id: UUID

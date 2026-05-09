@@ -1,6 +1,7 @@
 export const FORBIDDEN_FIELD_TOKENS = [
   "privatekey",
   "secretkey",
+  "signingseed",
   "seedphrase",
   "mnemonic",
   "walletjson",
@@ -16,6 +17,10 @@ export const FORBIDDEN_FIELD_TOKENS = [
   "proofinput",
   "serializedtransaction",
   "transactionpayload",
+  "transactionbytes",
+  "messagebytes",
+  "rawtransaction",
+  "rawmessage",
   "rawsignerbytes",
 ] as const;
 

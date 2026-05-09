@@ -1,3 +1,5 @@
+import { createHash, randomUUID } from "node:crypto";
+
 export const CLOAK_PROGRAM_ID = "zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW";
 export const NATIVE_SOL_MINT = "So11111111111111111111111111111111111111112";
 export const MINIMUM_DEPOSIT_LAMPORTS = 10_000_000n;
@@ -38,6 +40,33 @@ export type CloakBridgeErrorCategory =
   | "invalid-request"
   | "unsupported-command"
   | "helper-unavailable";
+
+export type CloakSignerRequestKind =
+  | "sign_transaction_preview"
+  | "sign_message_preview"
+  | "future_sign_transaction_locked"
+  | "future_sign_message_locked";
+
+export type CloakSignerBridgeState = "locked" | "unavailable" | "rejected";
+
+export type CloakSignerRequestSummary = {
+  id: string;
+  requestKind: CloakSignerRequestKind;
+  walletPublicKey: string;
+  network: "mainnet-beta" | "devnet";
+  actionKind: CloakActionKind;
+  amountLamports?: string;
+  mintAddress: string;
+  programId: string;
+  feeQuote?: CloakFeeQuote;
+  humanReadableSummary: string;
+  expectedTransactionPurpose?: string;
+  expectedMessagePurpose?: string;
+  draftFingerprint: string;
+  approvalState: "locked";
+  bridgeState: CloakSignerBridgeState;
+  timestamp: string;
+};
 
 export type CloakFeeQuote = {
   grossLamports: string;
@@ -113,6 +142,7 @@ export type CloakBridgeResponse = {
   sdkValidation?: CloakSdkValidation;
   feeValidation?: CloakFeeValidation;
   environmentValidation?: CloakEnvironmentValidation;
+  signerRequestSummary?: CloakSignerRequestSummary;
   nextRequiredGates?: string[];
   txSignature?: string;
   commitmentPrefix?: string;
@@ -148,7 +178,7 @@ export function calculateFeeQuote(amountLamports: string | number): CloakFeeQuot
 }
 
 export const NEXT_EXECUTION_GATES = [
-  "signer bridge",
+  "native signer bridge",
   "wallet unlock",
   "LocalAuthentication",
   "Shield review",
@@ -156,6 +186,65 @@ export const NEXT_EXECUTION_GATES = [
   "audit log",
   "tiny mainnet smoke",
 ] as const;
+
+export function buildDepositSignerRequestSummary(
+  request: CloakBridgeRequest,
+  feeQuote: CloakFeeQuote,
+): CloakSignerRequestSummary {
+  const walletPublicKey = request.walletPublicAddress ?? "";
+  const network = request.network ?? "mainnet-beta";
+  const amountLamports = feeQuote.grossLamports;
+  const mintAddress = request.mintAddress ?? NATIVE_SOL_MINT;
+  const draftFingerprint = signerDraftFingerprint({
+    walletPublicKey,
+    network,
+    actionKind: "deposit",
+    amountLamports,
+    mintAddress,
+    programId: CLOAK_PROGRAM_ID,
+    feeQuote,
+  });
+
+  return {
+    id: randomUUID(),
+    requestKind: "sign_transaction_preview",
+    walletPublicKey,
+    network,
+    actionKind: "deposit",
+    amountLamports,
+    mintAddress,
+    programId: CLOAK_PROGRAM_ID,
+    feeQuote,
+    humanReadableSummary: `Future Cloak SOL deposit review for ${amountLamports} lamports.`,
+    expectedTransactionPurpose: "Create a reviewed Cloak public deposit into a shielded balance.",
+    expectedMessagePurpose: "Future viewing-key registration may require a separately reviewed message signature.",
+    draftFingerprint,
+    approvalState: "locked",
+    bridgeState: "locked",
+    timestamp: new Date().toISOString(),
+  };
+}
+
+function signerDraftFingerprint(input: {
+  walletPublicKey: string;
+  network: "mainnet-beta" | "devnet";
+  actionKind: CloakActionKind;
+  amountLamports: string;
+  mintAddress: string;
+  programId: string;
+  feeQuote: CloakFeeQuote;
+}): string {
+  const source = [
+    input.walletPublicKey,
+    input.network,
+    input.actionKind,
+    input.amountLamports,
+    input.mintAddress,
+    input.programId,
+    `${input.feeQuote.grossLamports}:${input.feeQuote.totalFeeLamports}:${input.feeQuote.netLamports}`,
+  ].join("|");
+  return createHash("sha256").update(source).digest("hex");
+}
 
 export function parseLamports(value: string | number): bigint {
   if (typeof value === "number") {

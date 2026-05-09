@@ -18,6 +18,7 @@ enum CloakBridgeContractValidator {
     static let forbiddenFieldTokens = [
         "privatekey",
         "secretkey",
+        "signingseed",
         "seedphrase",
         "mnemonic",
         "walletjson",
@@ -31,8 +32,13 @@ enum CloakBridgeContractValidator {
         "nullifier",
         "nullifiersecret",
         "proofinput",
+        "rawtransaction",
+        "fullrawtransaction",
+        "rawmessage",
         "serializedtransaction",
         "transactionpayload",
+        "transactionbytes",
+        "messagebytes",
         "rawsignerbytes"
     ]
 

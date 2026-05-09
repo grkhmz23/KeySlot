@@ -186,6 +186,7 @@ struct CloakBridgeResponse: Codable, Equatable, Identifiable {
     let sdkValidation: CloakSDKValidation?
     let feeValidation: CloakFeeValidation?
     let environmentValidation: CloakEnvironmentValidation?
+    let signerRequestSummary: CloakSignerRequestSummary?
     let nextRequiredGates: [String]?
     let transactionSignature: String?
     let commitmentPrefix: String?
@@ -204,6 +205,7 @@ struct CloakBridgeResponse: Codable, Equatable, Identifiable {
         case sdkValidation
         case feeValidation
         case environmentValidation
+        case signerRequestSummary
         case nextRequiredGates
         case transactionSignature = "txSignature"
         case commitmentPrefix
@@ -223,6 +225,7 @@ struct CloakBridgeResponse: Codable, Equatable, Identifiable {
         sdkValidation: CloakSDKValidation? = nil,
         feeValidation: CloakFeeValidation? = nil,
         environmentValidation: CloakEnvironmentValidation? = nil,
+        signerRequestSummary: CloakSignerRequestSummary? = nil,
         nextRequiredGates: [String]? = nil,
         transactionSignature: String? = nil,
         commitmentPrefix: String? = nil,
@@ -240,6 +243,7 @@ struct CloakBridgeResponse: Codable, Equatable, Identifiable {
         self.sdkValidation = sdkValidation
         self.feeValidation = feeValidation
         self.environmentValidation = environmentValidation
+        self.signerRequestSummary = signerRequestSummary
         self.nextRequiredGates = nextRequiredGates
         self.transactionSignature = transactionSignature
         self.commitmentPrefix = commitmentPrefix

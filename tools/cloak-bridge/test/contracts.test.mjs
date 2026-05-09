@@ -94,18 +94,51 @@ test("deposit-plan uses integer fee math and returns no executable payload", asy
   assert.equal(response.sdkValidation.programIdMatches, true);
   assert.equal(response.feeValidation.available, true);
   assert.equal(response.feeValidation.samples.length, 3);
+  assert.equal(response.signerRequestSummary.requestKind, "sign_transaction_preview");
+  assert.equal(response.signerRequestSummary.bridgeState, "locked");
+  assert.equal(response.signerRequestSummary.amountLamports, "50000000");
+  assert.equal(response.signerRequestSummary.programId, "zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW");
+  assert.equal(response.signerRequestSummary.draftFingerprint.length, 64);
   assert.equal(response.nextRequiredGates.includes("Shield review"), true);
 });
 
 test("forbidden fields are rejected", async () => {
   assert.equal(hasForbiddenField("privateKey"), true);
   assert.equal(hasForbiddenField("PRIVATE_KEY"), true);
+  assert.equal(hasForbiddenField("signingSeed"), true);
   assert.equal(hasForbiddenField("serializedTransaction"), true);
+  assert.equal(hasForbiddenField("messageBytes"), true);
   assert.throws(() => validateNoForbiddenFields({ nested: { viewingKey: "no" } }));
   await assert.rejects(() => handleCommand("deposit-plan", {
     amountLamports: "50000000",
     utxoPrivateKey: "no",
   }));
+  await assert.rejects(() => handleCommand("deposit-plan", {
+    amountLamports: "50000000",
+    messageBytes: "no",
+  }));
+});
+
+test("deposit-plan signer placeholder is locked and contains no executable payload", async () => {
+  const response = await handleCommand("deposit-plan", {
+    requestId: "req-2",
+    network: "mainnet-beta",
+    walletPublicAddress: "11111111111111111111111111111111",
+    amountLamports: "50000000",
+  });
+  const json = JSON.stringify(response).toLowerCase();
+
+  assert.equal(response.signerRequestSummary.approvalState, "locked");
+  assert.equal(response.signerRequestSummary.bridgeState, "locked");
+  assert.equal(response.signerRequestSummary.walletPublicKey, "11111111111111111111111111111111");
+  assert.equal("serializedTransaction" in response.signerRequestSummary, false);
+  assert.equal("transactionPayload" in response.signerRequestSummary, false);
+  assert.equal("transactionBytes" in response.signerRequestSummary, false);
+  assert.equal("messageBytes" in response.signerRequestSummary, false);
+  assert.equal(json.includes("serializedtransaction"), false);
+  assert.equal(json.includes("transactionpayload"), false);
+  assert.equal(json.includes("transactionbytes"), false);
+  assert.equal(json.includes("messagebytes"), false);
 });
 
 test("future execution commands are locked", async () => {

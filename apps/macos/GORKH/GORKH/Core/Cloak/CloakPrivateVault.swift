@@ -4,7 +4,7 @@ enum CloakPrivateVaultError: LocalizedError, Equatable {
     case storageLockedInPhase20
 
     var errorDescription: String? {
-        "Cloak private data storage is locked in Phase 2.3."
+        "Cloak private data storage is locked in Phase 2.4."
     }
 }
 

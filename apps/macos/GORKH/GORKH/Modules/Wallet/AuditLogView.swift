@@ -146,7 +146,12 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
                 .cloakHelperEnvironmentChecked,
                 .cloakDepositPlanDryRunChecked,
                 .cloakHelperInvocationBlocked,
-                .cloakHelperResponseRejected
+                .cloakHelperResponseRejected,
+                .cloakSignerPreflightChecked,
+                .cloakSignerRequestRejected,
+                .cloakSignerRequestLocked,
+                .cloakReviewFlowViewed,
+                .cloakApprovalRequirementGenerated
             ].contains(event.kind)
         case .security:
             return [.walletAutoLocked, .securityPolicyUpdated, .localAuthenticationFailed].contains(event.kind)
@@ -158,7 +163,9 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
                 .cloakDepositExecutionBlocked,
                 .cloakBridgeExecutionRejected,
                 .cloakHelperInvocationBlocked,
-                .cloakHelperResponseRejected
+                .cloakHelperResponseRejected,
+                .cloakSignerRequestRejected,
+                .cloakSignerRequestLocked
             ].contains(event.kind)
         }
     }
@@ -184,6 +191,10 @@ private extension AuditEvent {
             "errorCategory",
             "vaultStatus",
             "requestID",
+            "signerState",
+            "draftFingerprint",
+            "requirementsCount",
+            "requiresMainnetPhrase",
             "status",
             "warningsCount"
         ]

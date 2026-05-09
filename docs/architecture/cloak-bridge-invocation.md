@@ -1,6 +1,6 @@
 # Cloak Bridge Invocation
 
-Phase 2.3 keeps native invocation disabled by default and extends the local Cloak helper to validate SDK import and environment state without executing SDK transaction methods.
+Phase 2.4 keeps native invocation disabled by default, validates SDK import and environment state, and adds locked signer request summaries without executing SDK transaction methods.
 
 ## Allowed Commands
 
@@ -40,7 +40,7 @@ No arbitrary executable path or helper path is accepted.
 
 Swift validates requests before invocation and validates responses after invocation. The helper also validates input before handling commands.
 
-Forbidden fields include private keys, secret keys, seed phrases, mnemonics, wallet JSON, UTXO private keys, notes, viewing keys, nullifiers, proof inputs, serialized transactions, transaction payloads, and raw signer bytes.
+Forbidden fields include private keys, secret keys, signing seeds, seed phrases, mnemonics, wallet JSON, UTXO private keys, notes, viewing keys, nullifiers, proof inputs, serialized transactions, transaction payloads, transaction bytes, message bytes, raw messages, raw transactions, and raw signer bytes.
 
 ## SDK Validation
 
@@ -51,10 +51,16 @@ The helper may import `@cloak.dev/sdk` for non-executing checks only:
 - `NATIVE_SOL_MINT`
 - SDK SOL fee helpers, if exported
 
-The helper must not call Cloak transaction, proof, scan, compliance, relay submit, signer, or serialized-transaction APIs in Phase 2.3.
+The helper must not call Cloak transaction, proof, scan, compliance, relay submit, signer, or serialized-transaction APIs in Phase 2.4.
+
+## Signer Bridge Summary
+
+`deposit-plan` may return a `signerRequestSummary` in locked mode. The summary is a review contract only and may contain safe fields such as public wallet address, network, amount lamports, mint, program id, fee quote, human-readable purpose, and draft fingerprint.
+
+The helper must not return transaction bytes, message bytes, serialized transaction payloads, or any field that could be signed directly. Swift validates the summary before showing it in Wallet -> Private.
 
 ## Execution State
 
-Even when dry-run invocation is enabled, `deposit-plan` returns SDK validation, environment-safe fee validation, a fee quote, and locked status only. It does not return a serialized transaction, signer bytes, SDK payload, proof input, note, UTXO, or executable instruction.
+Even when dry-run invocation is enabled, `deposit-plan` returns SDK validation, environment-safe fee validation, a fee quote, a locked signer request summary, and locked status only. It does not return a serialized transaction, signer bytes, SDK payload, proof input, note, UTXO, message bytes, transaction bytes, or executable instruction.
 
-Future live Cloak deposit work must add a separate review, approval, signing, and audit phase.
+Future live Cloak deposit work must add a separate reviewed payload, approval, native signing, execution, confirmation, and audit phase.

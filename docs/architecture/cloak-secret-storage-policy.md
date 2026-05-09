@@ -31,7 +31,7 @@ UserDefaults may store only public metadata and local security settings. It must
 
 macOS Keychain is the only approved local storage class for wallet signing material. Future Cloak secret storage must use a Keychain-backed private vault or a vault encrypted by a Keychain-protected key.
 
-Current Phase 2.3 private vault behavior is status-only:
+Current Phase 2.4 private vault behavior is status-only:
 
 - no Cloak notes are stored
 - no UTXOs are stored
@@ -87,6 +87,8 @@ Audit logs must not include:
 - nullifier secrets
 - proof inputs
 - serialized transactions
+- transaction bytes
+- message bytes
 - raw signer bytes
 - raw scan cache
 
@@ -120,11 +122,15 @@ Swift must not send:
 - serialized transaction payload
 - raw signer bytes
 
-Phase 2.3 helper invocation is disabled by default and limited to dry-run `health`, `env-check`, and `deposit-plan` when explicitly enabled by internal development policy. Transaction execution commands are locked.
+Phase 2.4 helper invocation is disabled by default and limited to dry-run `health`, `env-check`, and `deposit-plan` when explicitly enabled by internal development policy. Transaction execution commands are locked.
 
 The native adapter may invoke only the fixed local helper path and fixed allowlisted Node executable paths. It must not use shell command strings, user-provided executable paths, arbitrary arguments, secret environment variables, or wallet/Cloak secret stdin payloads.
 
-Phase 2.3 permits the helper to import `@cloak.dev/sdk` for package, program id, native SOL mint, and fee-helper validation only. It must not call transaction, proof, scan, compliance, relay submit, signer, or serialized-transaction SDK APIs.
+Phase 2.4 permits the helper to import `@cloak.dev/sdk` for package, program id, native SOL mint, and fee-helper validation only. It must not call transaction, proof, scan, compliance, relay submit, signer, or serialized-transaction SDK APIs.
+
+The helper may return a locked signer request summary for review. This summary may include public wallet address, network, amount, mint, program id, fee quote, purpose text, and draft fingerprint. It must not include transaction bytes, message bytes, serialized transactions, or any payload that can be signed directly.
+
+Swift native wallet code remains the only signing authority. Future `signTransaction` or `signMessage` support must require wallet unlock, LocalAuthentication, signer public key match, network match, action and amount match, Cloak program id match, fee acknowledgement, Shield review, explicit approval, mainnet confirmation phrase, draft fingerprint match, and audit before and after signing.
 
 The helper must reject or warn on wallet secret-like environment variable names including `PRIVATE_KEY`, `SECRET_KEY`, `SEED_PHRASE`, `MNEMONIC`, `WALLET_JSON`, `CLOAK_VIEWING_KEY`, and `ZERION_TOKEN`. Environment values must not be printed. `SOLANA_RPC_URL` may be checked only as present/missing with a redacted status.
 

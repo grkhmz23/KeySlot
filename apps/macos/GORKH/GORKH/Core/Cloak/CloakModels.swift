@@ -191,7 +191,7 @@ struct CloakDepositDraft: Codable, Equatable, Identifiable {
     }
 
     var networkWarning: String? {
-        network.isMainnet ? "Future Cloak deposits would use real mainnet SOL." : "Cloak is mainnet-oriented. Phase 2.3 does not create a fake devnet Cloak mode."
+        network.isMainnet ? "Future Cloak deposits would use real mainnet SOL." : "Cloak is mainnet-oriented. Phase 2.4 does not create a fake devnet Cloak mode."
     }
 }
 
@@ -294,7 +294,7 @@ struct CloakVaultStatus: Codable, Equatable {
             walletID: walletID,
             privateWalletStatus: .statusOnly,
             availableReferenceKinds: [],
-            storageDescription: "Phase 2.3 stores no Cloak notes, UTXOs, viewing keys, nullifiers, proof inputs, or scan cache in UserDefaults.",
+            storageDescription: "Phase 2.4 stores no Cloak notes, UTXOs, viewing keys, nullifiers, proof inputs, or scan cache in UserDefaults.",
             canClearPrivateData: false
         )
     }

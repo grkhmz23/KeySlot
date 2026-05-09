@@ -2,10 +2,11 @@ import SwiftUI
 
 struct CloakSafetyPanelView: View {
     private let items = [
-        "No Cloak SDK transaction is executed in Phase 2.3.",
+        "No Cloak SDK transaction is executed in Phase 2.4.",
         "No wallet signing seed is passed to a Node or TypeScript helper.",
+        "TypeScript cannot sign. Native Swift signer policy remains locked.",
         "No Cloak notes, UTXOs, viewing keys, nullifiers, proof inputs, or raw scan cache are stored in UserDefaults.",
-        "Future mainnet deposits require unlock, LocalAuthentication, Shield review, explicit approval, and audit.",
+        "Future mainnet deposits require unlock, LocalAuthentication, signer preflight, Shield review, explicit approval, and audit.",
         "Agent-controlled private wallet execution is not implemented."
     ]
 

@@ -53,7 +53,9 @@ struct CloakBridgeUnavailable: CloakBridgeProtocol {
             mintAddress: draft.mintAddress,
             feeQuote: draft.feeQuote
         )
-        return CloakBridgeResponse.locked(request: request)
+        return CloakBridgeResponse.locked(request: request).withSignerRequestSummary(
+            CloakSignerRequestSummary.depositPreview(draft: draft)
+        )
     }
 
     func validateEnvironment(network: WalletNetwork) -> CloakBridgeResponseSummary {
@@ -62,7 +64,7 @@ struct CloakBridgeUnavailable: CloakBridgeProtocol {
             actionKind: nil,
             status: .locked,
             message: network.isMainnet
-                ? "Cloak is mainnet-oriented, but transaction execution is locked in Phase 2.3."
+                ? "Cloak is mainnet-oriented, but transaction execution is locked in Phase 2.4."
                 : "Cloak docs describe mainnet flows. GORKH does not create a fake devnet Cloak mode.",
             programID: CloakConstants.programID,
             createdAt: Date()
@@ -81,5 +83,29 @@ struct CloakBridgeUnavailable: CloakBridgeProtocol {
 
     func executeDeposit(request: CloakBridgeRequestSummary) async -> CloakBridgeResponseSummary {
         .locked(request: request)
+    }
+}
+
+private extension CloakBridgeResponse {
+    func withSignerRequestSummary(_ signerRequestSummary: CloakSignerRequestSummary) -> CloakBridgeResponse {
+        CloakBridgeResponse(
+            id: id,
+            requestID: requestID,
+            command: command,
+            actionKind: actionKind,
+            status: status,
+            errorCategory: errorCategory,
+            message: message,
+            programID: programID,
+            feeQuote: feeQuote,
+            sdkValidation: sdkValidation,
+            feeValidation: feeValidation,
+            environmentValidation: environmentValidation,
+            signerRequestSummary: signerRequestSummary,
+            nextRequiredGates: nextRequiredGates,
+            transactionSignature: transactionSignature,
+            commitmentPrefix: commitmentPrefix,
+            createdAt: createdAt
+        )
     }
 }

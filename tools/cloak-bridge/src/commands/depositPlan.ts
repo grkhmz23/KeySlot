@@ -1,4 +1,9 @@
-import { calculateFeeQuote, type CloakBridgeRequest, type CloakBridgeResponse } from "../contracts.ts";
+import {
+  buildDepositSignerRequestSummary,
+  calculateFeeQuote,
+  type CloakBridgeRequest,
+  type CloakBridgeResponse,
+} from "../contracts.ts";
 import { loadFeeValidation, loadSdkValidation, nextRequiredGates } from "../sdk.ts";
 import { response } from "./response.ts";
 
@@ -22,10 +27,11 @@ export async function depositPlan(request: unknown): Promise<CloakBridgeResponse
       actionKind: "deposit",
       status: "locked",
       errorCategory: "locked-in-phase-2-3",
-      message: "Deposit plan created with SDK import validation. No transaction payload is returned in Phase 2.3.",
+      message: "Deposit plan created with SDK import validation and locked signer preview. No transaction payload is returned in Phase 2.4.",
       feeQuote,
       sdkValidation,
       feeValidation,
+      signerRequestSummary: buildDepositSignerRequestSummary(parsed, feeQuote),
       nextRequiredGates: nextRequiredGates(),
     });
   } catch (error) {

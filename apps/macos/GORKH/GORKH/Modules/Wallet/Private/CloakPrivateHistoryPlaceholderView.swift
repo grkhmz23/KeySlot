@@ -9,7 +9,7 @@ struct CloakPrivateHistoryPlaceholderView: View {
                     GorkhStatusChip(title: "No private cache", systemImage: "tray", color: GorkhColors.accent)
                 }
 
-                Text("Future scanning will use Cloak viewing-key based history and compliance reports. Phase 2.3 stores no scan cache or private note material.")
+                Text("Future scanning will use Cloak viewing-key based history and compliance reports. Phase 2.4 stores no scan cache or private note material.")
                     .font(.caption)
                     .foregroundStyle(GorkhColors.secondaryText)
             }
