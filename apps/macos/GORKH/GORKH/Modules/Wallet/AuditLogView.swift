@@ -171,7 +171,12 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
                 .multiWalletPortfolioRefreshed,
                 .portfolioPriceRefreshFailed,
                 .portfolioSnapshotStored,
-                .portfolioHistoryCleared
+                .portfolioHistoryCleared,
+                .stakeAccountsRefreshed,
+                .stakeRefreshFailed,
+                .lstComparisonRefreshed,
+                .lstDataUnavailable,
+                .portfolioStakeSnapshotStored
             ].contains(event.kind)
         case .security:
             return [.walletAutoLocked, .securityPolicyUpdated, .localAuthenticationFailed].contains(event.kind)
@@ -186,7 +191,9 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
                 .cloakHelperResponseRejected,
                 .cloakSignerRequestRejected,
                 .cloakSignerRequestLocked,
-                .portfolioPriceRefreshFailed
+                .portfolioPriceRefreshFailed,
+                .stakeRefreshFailed,
+                .lstDataUnavailable
             ].contains(event.kind)
         }
     }
@@ -221,6 +228,12 @@ private extension AuditEvent {
             "tag",
             "walletCount",
             "assetCount",
+            "stakeAccountCount",
+            "activeStakeLamports",
+            "deactivatingStakeLamports",
+            "nativeStakeLamports",
+            "lstHoldingCount",
+            "lstPriceUnavailableCount",
             "unavailablePriceCount",
             "priceSource",
             "status",

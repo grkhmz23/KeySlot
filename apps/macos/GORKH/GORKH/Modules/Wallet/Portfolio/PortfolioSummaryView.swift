@@ -16,9 +16,12 @@ struct PortfolioSummaryView: View {
                         .foregroundStyle(GorkhColors.secondaryText)
                 }
 
-                HStack(spacing: 10) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], alignment: .leading, spacing: 10) {
                     metric("Wallets", value: "\(summary.wallets.count)")
                     metric("Assets", value: "\(summary.assetCount)")
+                    metric("Liquid SOL", value: "\(TokenAmountFormatter.format(rawAmount: summary.liquidSolLamports, decimals: 9)) SOL")
+                    metric("Staked SOL", value: "\(TokenAmountFormatter.format(rawAmount: summary.nativeStakeSummary.totalDelegatedLamports, decimals: 9)) SOL")
+                    metric("LSTs", value: "\(summary.lstSummary.holdingCount)")
                     metric("Missing Prices", value: "\(summary.unavailablePriceCount)")
                     metric("Source", value: summary.priceSource)
                 }

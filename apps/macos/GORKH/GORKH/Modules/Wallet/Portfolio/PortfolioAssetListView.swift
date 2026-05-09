@@ -29,6 +29,9 @@ struct PortfolioAssetListView: View {
                     if asset.isNativeSOL {
                         GorkhStatusChip(title: "SOL", systemImage: "circle.grid.cross", color: GorkhColors.accent)
                     }
+                    if LSTComparisonProvider.knownToken(mintAddress: asset.mintAddress, network: summary.network) != nil {
+                        GorkhStatusChip(title: "LST", systemImage: "leaf", color: GorkhColors.success)
+                    }
                     if asset.walletBreakdown.contains(where: { $0.asset.walletProfileKind == .watchOnly }) {
                         GorkhStatusChip(title: "Includes watch-only", systemImage: "eye", color: GorkhColors.warning)
                     }

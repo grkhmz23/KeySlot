@@ -1,14 +1,16 @@
 import SwiftUI
 
-struct PortfolioDeFiPlaceholderView: View {
-    private let items = [
+enum PortfolioDeFiPlaceholderContent {
+    static let items = [
         ("DeFi positions", "coming later"),
         ("LP positions", "coming later"),
         ("Lending positions", "coming later"),
-        ("Stake accounts", "coming later"),
+        ("Yield routes", "coming later"),
         ("PnL", "coming later")
     ]
+}
 
+struct PortfolioDeFiPlaceholderView: View {
     var body: some View {
         GorkhPanel("DeFi-Ready Summary") {
             VStack(alignment: .leading, spacing: 10) {
@@ -17,7 +19,7 @@ struct PortfolioDeFiPlaceholderView: View {
                     .foregroundStyle(GorkhColors.secondaryText)
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 8)], alignment: .leading, spacing: 8) {
-                    ForEach(items, id: \.0) { item in
+                    ForEach(PortfolioDeFiPlaceholderContent.items, id: \.0) { item in
                         HStack {
                             Text(item.0)
                                 .font(.caption)

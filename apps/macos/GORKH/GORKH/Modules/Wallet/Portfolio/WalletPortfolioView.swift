@@ -61,6 +61,8 @@ struct WalletPortfolioView: View {
             WatchOnlyWalletView()
             PortfolioAssetListView(summary: walletManager.portfolioSummary)
             PortfolioWalletBreakdownView(summary: walletManager.portfolioSummary)
+            PortfolioStakeView(summary: walletManager.portfolioSummary.nativeStakeSummary)
+            PortfolioLSTView(summary: walletManager.portfolioSummary.lstSummary)
             PortfolioHistoryView(
                 snapshots: walletManager.portfolioHistory,
                 clearAction: walletManager.clearPortfolioHistory(confirmation:)

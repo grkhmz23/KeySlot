@@ -326,6 +326,11 @@ struct AuditEvent: Codable, Equatable, Identifiable {
         case watchOnlyWalletRemoved = "watch_only_wallet_removed"
         case walletLabelUpdated = "wallet_label_updated"
         case multiWalletPortfolioRefreshed = "multi_wallet_portfolio_refreshed"
+        case stakeAccountsRefreshed = "stake_accounts_refreshed"
+        case stakeRefreshFailed = "stake_refresh_failed"
+        case lstComparisonRefreshed = "lst_comparison_refreshed"
+        case lstDataUnavailable = "lst_data_unavailable"
+        case portfolioStakeSnapshotStored = "portfolio_stake_snapshot_stored"
     }
 
     let id: UUID

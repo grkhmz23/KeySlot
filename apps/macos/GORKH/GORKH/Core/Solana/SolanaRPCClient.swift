@@ -48,6 +48,60 @@ struct SolanaRPCClient {
         }
     }
 
+    func getCurrentEpoch(network: WalletNetwork) async throws -> UInt64 {
+        let result = try await request(
+            method: "getEpochInfo",
+            params: [["commitment": "confirmed"]],
+            network: network
+        )
+
+        guard let dictionary = result as? [String: Any],
+              let epoch = dictionary["epoch"] as? NSNumber else {
+            throw SolanaRPCError.invalidResponse
+        }
+        return epoch.uint64Value
+    }
+
+    func getStakeAccounts(profile: WalletProfile, network: WalletNetwork) async throws -> [StakeAccountSummary] {
+        let currentEpoch = try? await getCurrentEpoch(network: network)
+        let fetchedAt = Date()
+        var merged: [String: StakeAccountSummary] = [:]
+
+        for authorityOffset in [12, 44] {
+            let result = try await request(
+                method: "getProgramAccounts",
+                params: [
+                    StakeConstants.stakeProgramID,
+                    [
+                        "encoding": "jsonParsed",
+                        "commitment": "confirmed",
+                        "filters": [
+                            ["dataSize": 200],
+                            [
+                                "memcmp": [
+                                    "offset": authorityOffset,
+                                    "bytes": profile.publicAddress
+                                ]
+                            ]
+                        ]
+                    ]
+                ],
+                network: network
+            )
+
+            let accounts = try StakeAccountParser.parseStakeAccounts(
+                result: result,
+                profile: profile,
+                network: network,
+                currentEpoch: currentEpoch,
+                fetchedAt: fetchedAt
+            )
+            accounts.forEach { merged[$0.stakeAccountAddress] = $0 }
+        }
+
+        return merged.values.sorted { $0.stakeAccountAddress < $1.stakeAccountAddress }
+    }
+
     func getTokenAccounts(
         ownerAddress: String,
         mintAddress: String,

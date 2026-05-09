@@ -8,10 +8,12 @@ struct PortfolioRefreshResult: Equatable {
 struct PortfolioManager {
     let rpcClient: SolanaRPCClient
     let priceClient: any PortfolioPriceClient
+    let stakeClient: StakeAccountClient
 
     init(rpcClient: SolanaRPCClient, priceClient: any PortfolioPriceClient) {
         self.rpcClient = rpcClient
         self.priceClient = priceClient
+        self.stakeClient = StakeAccountClient(rpcClient: rpcClient)
     }
 
     func refresh(
@@ -30,9 +32,16 @@ struct PortfolioManager {
 
         var solBalances: [UUID: UInt64] = [:]
         var tokenBalances: [UUID: [TokenBalance]] = [:]
+        var stakeAccounts: [UUID: [StakeAccountSummary]] = [:]
         var walletErrors: [UUID: String] = [:]
+        var stakeErrors: [UUID: String] = [:]
         var mintAddresses = Set<String>()
         mintAddresses.insert(PortfolioConstants.nativeSolMint)
+        if network == .mainnetBeta {
+            LSTComparisonProvider.knownTokens
+                .filter { $0.network == network }
+                .forEach { mintAddresses.insert($0.mintAddress) }
+        }
 
         for profile in scopedProfiles {
             do {
@@ -51,6 +60,13 @@ struct PortfolioManager {
                     .compactMap { $0 }
                     .joined(separator: " ")
                 tokenBalances[profile.id] = []
+            }
+
+            do {
+                stakeAccounts[profile.id] = try await stakeClient.fetchStakeAccounts(profile: profile, network: network)
+            } catch {
+                stakeErrors[profile.id] = error.localizedDescription
+                stakeAccounts[profile.id] = []
             }
         }
 
@@ -71,6 +87,8 @@ struct PortfolioManager {
             solBalances: solBalances,
             tokenBalances: tokenBalances,
             prices: prices,
+            stakeAccounts: stakeAccounts,
+            stakeErrors: stakeErrors,
             fetchedAt: Date(),
             errors: walletErrors
         )
@@ -82,6 +100,10 @@ struct PortfolioManager {
                     network: summary.network,
                     wallets: summary.wallets,
                     consolidatedAssets: summary.consolidatedAssets,
+                    liquidSolLamports: summary.liquidSolLamports,
+                    liquidAssetsUSD: summary.liquidAssetsUSD,
+                    nativeStakeSummary: summary.nativeStakeSummary,
+                    lstSummary: summary.lstSummary,
                     totalUSD: summary.totalUSD,
                     unavailablePriceCount: summary.unavailablePriceCount,
                     assetCount: summary.assetCount,

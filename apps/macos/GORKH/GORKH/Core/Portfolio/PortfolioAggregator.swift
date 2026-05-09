@@ -8,6 +8,8 @@ enum PortfolioAggregator {
         solBalances: [UUID: UInt64],
         tokenBalances: [UUID: [TokenBalance]],
         prices: [String: PortfolioPriceQuote],
+        stakeAccounts: [UUID: [StakeAccountSummary]] = [:],
+        stakeErrors: [UUID: String] = [:],
         fetchedAt: Date = Date(),
         errors: [UUID: String] = [:]
     ) -> PortfolioAggregateSummary {
@@ -23,24 +25,50 @@ enum PortfolioAggregator {
             )
         }
 
-        let totalUSD = walletSummaries.reduce(Decimal(0)) { $0 + $1.totalUSD }
-        let unavailablePriceCount = walletSummaries.reduce(0) { $0 + $1.unavailablePriceCount }
+        let liquidAssetsUSD = walletSummaries.reduce(Decimal(0)) { $0 + $1.totalUSD }
+        let assetUnavailablePriceCount = walletSummaries.reduce(0) { $0 + $1.unavailablePriceCount }
         let assetCount = walletSummaries.reduce(0) { $0 + $1.assets.count }
-        let status: PortfolioDataStatus = errors.isEmpty ? .loaded : (walletSummaries.isEmpty ? .error : .stale)
+        let combinedErrors = errors.merging(stakeErrors) { first, second in
+            [first, second].filter { !$0.isEmpty }.joined(separator: " ")
+        }
+        let status: PortfolioDataStatus = combinedErrors.isEmpty ? .loaded : (walletSummaries.isEmpty ? .error : .stale)
         let consolidatedAssets = consolidateAssets(walletSummaries.flatMap(\.assets))
+        let nativeStakeSummary = StakePortfolioAggregator.aggregate(
+            profiles: profiles,
+            accounts: stakeAccounts,
+            errors: stakeErrors,
+            solPrice: prices[PortfolioConstants.nativeSolMint],
+            fetchedAt: fetchedAt
+        )
+        let lstSummary = LSTComparisonProvider.buildSummary(
+            consolidatedAssets: consolidatedAssets,
+            prices: prices,
+            network: network,
+            refreshedAt: fetchedAt
+        )
+        let totalUSD = liquidAssetsUSD + (nativeStakeSummary.estimatedUSD ?? 0)
+        let unavailablePriceCount = assetUnavailablePriceCount + (nativeStakeSummary.priceUnavailable ? 1 : 0)
+        let liquidSolLamports = solBalances.values.reduce(UInt64(0)) { partial, lamports in
+            let result = partial.addingReportingOverflow(lamports)
+            return result.overflow ? UInt64.max : result.partialValue
+        }
 
         return PortfolioAggregateSummary(
             scope: scope,
             network: network,
             wallets: walletSummaries,
             consolidatedAssets: consolidatedAssets,
+            liquidSolLamports: liquidSolLamports,
+            liquidAssetsUSD: liquidAssetsUSD,
+            nativeStakeSummary: nativeStakeSummary,
+            lstSummary: lstSummary,
             totalUSD: totalUSD,
             unavailablePriceCount: unavailablePriceCount,
             assetCount: assetCount,
             priceSource: PortfolioConstants.priceSource,
             status: status,
             refreshedAt: fetchedAt,
-            errorMessage: errors.values.sorted().joined(separator: " ")
+            errorMessage: combinedErrors.values.sorted().joined(separator: " ")
         )
     }
 

@@ -59,6 +59,14 @@ enum TokenMetadataRegistry {
             warning: "Liquid staking token. Review protocol risk before sending."
         ),
         TokenMetadata(
+            mintAddress: "Bybit4u1pWg2s5YmtfsEfHZjUdsAaGYmHvcJVyzmFqLm",
+            symbol: "bbSOL",
+            name: "Bybit Staked SOL",
+            decimals: nil,
+            network: .mainnetBeta,
+            warning: "Liquid staking token. Decimals are resolved from on-chain token account data."
+        ),
+        TokenMetadata(
             mintAddress: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
             symbol: "BONK",
             name: "Bonk",

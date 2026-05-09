@@ -1588,6 +1588,209 @@ struct GORKHTests {
         }
     }
 
+    @Test func stakeParserParsesAuthorityMatchedParsedStakeAccount() throws {
+        let profile = WalletProfile(label: "Staker", publicAddress: Base58.encode(Data(repeating: 12, count: 32)))
+        let voteAccount = Base58.encode(Data(repeating: 13, count: 32))
+        let stakeAccount = Base58.encode(Data(repeating: 14, count: 32))
+        let result: [[String: Any]] = [
+            [
+                "pubkey": stakeAccount,
+                "account": [
+                    "owner": StakeConstants.stakeProgramID,
+                    "data": [
+                        "parsed": [
+                            "type": "delegated",
+                            "info": [
+                                "meta": [
+                                    "authorized": [
+                                        "staker": profile.publicAddress,
+                                        "withdrawer": Base58.encode(Data(repeating: 15, count: 32))
+                                    ],
+                                    "rentExemptReserve": "2282880"
+                                ],
+                                "stake": [
+                                    "delegation": [
+                                        "voter": voteAccount,
+                                        "stake": "2000000000",
+                                        "activationEpoch": "10",
+                                        "deactivationEpoch": "\(StakeConstants.deactivationEpochNever)"
+                                    ]
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ]
+        ]
+
+        let parsed = try StakeAccountParser.parseStakeAccounts(
+            result: result,
+            profile: profile,
+            network: .mainnetBeta,
+            currentEpoch: 20,
+            fetchedAt: Date(timeIntervalSince1970: 0)
+        )
+        let account = try #require(parsed.first)
+
+        #expect(account.stakeAccountAddress == stakeAccount)
+        #expect(account.state == .active)
+        #expect(account.delegatedLamports == 2_000_000_000)
+        #expect(account.validator?.voteAccount == voteAccount)
+        #expect(account.stakerAuthorityMatches)
+        #expect(!account.withdrawerAuthorityMatches)
+    }
+
+    @Test func stakeStateMappingHandlesActivationAndDeactivation() {
+        #expect(StakeAccountParser.stateForParsedType(
+            "delegated",
+            delegatedLamports: 1,
+            activationEpoch: 12,
+            deactivationEpoch: StakeConstants.deactivationEpochNever,
+            currentEpoch: 10
+        ) == .activating)
+        #expect(StakeAccountParser.stateForParsedType(
+            "delegated",
+            delegatedLamports: 1,
+            activationEpoch: 5,
+            deactivationEpoch: 12,
+            currentEpoch: 10
+        ) == .deactivating)
+        #expect(StakeAccountParser.stateForParsedType(
+            "delegated",
+            delegatedLamports: 1,
+            activationEpoch: 5,
+            deactivationEpoch: 8,
+            currentEpoch: 10
+        ) == .inactive)
+        #expect(StakeAccountParser.stateForParsedType(
+            "initialized",
+            delegatedLamports: 0,
+            activationEpoch: nil,
+            deactivationEpoch: nil,
+            currentEpoch: 10
+        ) == .inactive)
+    }
+
+    @Test func nativeStakeValueAddsWithoutDoubleCountingLiquidSol() throws {
+        let profile = WalletProfile(label: "Stake Wallet", publicAddress: SolanaConstants.systemProgramID)
+        let stakeAccount = sampleStakeAccount(profile: profile, delegatedLamports: 2_000_000_000, state: .active)
+        let prices = [
+            PortfolioConstants.nativeSolMint: PortfolioPriceQuote(
+                mintAddress: PortfolioConstants.nativeSolMint,
+                usdPrice: 100,
+                source: PortfolioConstants.priceSource,
+                blockID: 1,
+                priceChange24h: nil,
+                fetchedAt: Date(),
+                errorMessage: nil
+            )
+        ]
+
+        let summary = PortfolioAggregator.aggregate(
+            scope: .activeWallet,
+            network: .mainnetBeta,
+            profiles: [profile],
+            solBalances: [profile.id: 1_000_000_000],
+            tokenBalances: [:],
+            prices: prices,
+            stakeAccounts: [profile.id: [stakeAccount]]
+        )
+        let snapshot = PortfolioSnapshot(summary: summary)
+
+        #expect(summary.liquidSolLamports == 1_000_000_000)
+        #expect(summary.liquidAssetsUSD == 100)
+        #expect(summary.nativeStakeSummary.totalDelegatedLamports == 2_000_000_000)
+        #expect(summary.nativeStakeSummary.estimatedUSD == 200)
+        #expect(summary.totalUSD == 300)
+        #expect(snapshot.nativeStakeLamports == 2_000_000_000)
+        #expect(snapshot.stakeAccountCount == 1)
+    }
+
+    @Test func lstHoldingsAreDetectedFromSplBalancesWithoutDoubleCounting() throws {
+        let profile = WalletProfile(label: "LST Wallet", publicAddress: SolanaConstants.systemProgramID)
+        let jitoMint = "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn"
+        let jito = sampleTokenBalance(owner: profile.publicAddress, mint: jitoMint, amountRaw: 1_000_000_000, decimals: 9)
+        let prices = [
+            PortfolioConstants.nativeSolMint: PortfolioPriceQuote(
+                mintAddress: PortfolioConstants.nativeSolMint,
+                usdPrice: 100,
+                source: PortfolioConstants.priceSource,
+                blockID: 1,
+                priceChange24h: nil,
+                fetchedAt: Date(),
+                errorMessage: nil
+            ),
+            jitoMint: PortfolioPriceQuote(
+                mintAddress: jitoMint,
+                usdPrice: 120,
+                source: PortfolioConstants.priceSource,
+                blockID: 1,
+                priceChange24h: nil,
+                fetchedAt: Date(),
+                errorMessage: nil
+            )
+        ]
+
+        let summary = PortfolioAggregator.aggregate(
+            scope: .activeWallet,
+            network: .mainnetBeta,
+            profiles: [profile],
+            solBalances: [profile.id: 1_000_000_000],
+            tokenBalances: [profile.id: [jito]],
+            prices: prices
+        )
+        let jitoHolding = try #require(summary.lstSummary.holdings.first { $0.mintAddress == jitoMint })
+        let jitoComparison = try #require(summary.lstSummary.comparison.first { $0.mintAddress == jitoMint })
+
+        #expect(summary.liquidAssetsUSD == 220)
+        #expect(summary.nativeStakeSummary.totalDelegatedLamports == 0)
+        #expect(summary.totalUSD == 220)
+        #expect(summary.lstSummary.totalUSD == 120)
+        #expect(jitoHolding.symbol == "JitoSOL")
+        #expect(jitoComparison.apy == nil)
+        #expect(jitoComparison.tvlUSD == nil)
+        #expect(jitoComparison.exchangeRate == nil)
+        #expect(jitoComparison.availability == .priceOnly)
+    }
+
+    @Test func stakeAndLSTModelsSerializeWithoutSecretFields() throws {
+        let profile = WalletProfile(label: "Safe", publicAddress: SolanaConstants.systemProgramID)
+        let stakeAccount = sampleStakeAccount(profile: profile, delegatedLamports: 1_000_000_000, state: .delegated)
+        let stakeSummary = StakePortfolioAggregator.aggregate(
+            profiles: [profile],
+            accounts: [profile.id: [stakeAccount]],
+            errors: [:],
+            solPrice: nil,
+            fetchedAt: Date(timeIntervalSince1970: 0)
+        )
+        let lstSummary = LSTComparisonProvider.buildSummary(
+            consolidatedAssets: [],
+            prices: [:],
+            network: .mainnetBeta,
+            refreshedAt: Date(timeIntervalSince1970: 0)
+        )
+        let json = try #require(String(data: JSONEncoder().encode([stakeSummary, stakeSummary]), encoding: .utf8)).lowercased()
+        let lstJSON = try #require(String(data: JSONEncoder().encode(lstSummary), encoding: .utf8)).lowercased()
+
+        #expect(stakeSummary.priceUnavailable)
+        #expect(lstSummary.comparison.allSatisfy { $0.apy == nil && $0.tvlUSD == nil && $0.exchangeRate == nil })
+        for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "serializedtransaction", "transactionpayload"] {
+            #expect(!json.contains(forbidden))
+            #expect(!lstJSON.contains(forbidden))
+        }
+    }
+
+    @Test func portfolioVisibleRoadmapDoesNotContainNFTCopy() {
+        let visibleCopy = PortfolioDeFiPlaceholderContent.items
+            .flatMap { [$0.0, $0.1] }
+            .joined(separator: " ")
+            .lowercased()
+
+        #expect(!visibleCopy.contains("nft"))
+        #expect(visibleCopy.contains("yield"))
+        #expect(visibleCopy.contains("lending"))
+    }
+
     @Test func devnetAirdropRejectsMainnet() async {
         var rejectedMainnet = false
         do {
@@ -2232,6 +2435,37 @@ private func sampleTokenBalance(
         delegatedAmountRaw: delegatedAmountRaw,
         closeAuthorityAddress: closeAuthorityAddress,
         fetchedAt: Date(timeIntervalSince1970: 0)
+    )
+}
+
+private func sampleStakeAccount(
+    profile: WalletProfile,
+    stakeAccountAddress: String = Base58.encode(Data(repeating: 10, count: 32)),
+    voteAccount: String = Base58.encode(Data(repeating: 11, count: 32)),
+    delegatedLamports: UInt64,
+    state: StakeAccountState
+) -> StakeAccountSummary {
+    StakeAccountSummary(
+        stakeAccountAddress: stakeAccountAddress,
+        walletID: profile.id,
+        walletLabel: profile.label,
+        walletPublicAddress: profile.publicAddress,
+        network: profile.selectedNetwork,
+        state: state,
+        delegation: StakeDelegationSummary(
+            voteAccount: voteAccount,
+            delegatedLamports: delegatedLamports,
+            activationEpoch: 1,
+            deactivationEpoch: state == .deactivating ? 10 : StakeConstants.deactivationEpochNever,
+            state: state
+        ),
+        validator: StakeValidatorSummary(voteAccount: voteAccount, validatorIdentity: nil, name: nil, source: StakeConstants.source),
+        rentExemptReserveLamports: 2_282_880,
+        stakerAuthorityMatches: true,
+        withdrawerAuthorityMatches: false,
+        source: StakeConstants.source,
+        fetchedAt: Date(timeIntervalSince1970: 0),
+        errorMessage: nil
     )
 }
 

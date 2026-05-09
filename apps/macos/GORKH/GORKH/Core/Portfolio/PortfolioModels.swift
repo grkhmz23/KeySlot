@@ -164,6 +164,10 @@ struct PortfolioAggregateSummary: Codable, Equatable {
     let network: WalletNetwork
     let wallets: [PortfolioWalletSummary]
     let consolidatedAssets: [PortfolioConsolidatedAsset]
+    let liquidSolLamports: UInt64
+    let liquidAssetsUSD: Decimal
+    let nativeStakeSummary: StakePortfolioSummary
+    let lstSummary: LSTPortfolioSummary
     let totalUSD: Decimal
     let unavailablePriceCount: Int
     let assetCount: Int
@@ -178,6 +182,10 @@ struct PortfolioAggregateSummary: Codable, Equatable {
             network: network,
             wallets: [],
             consolidatedAssets: [],
+            liquidSolLamports: 0,
+            liquidAssetsUSD: 0,
+            nativeStakeSummary: .empty(),
+            lstSummary: .empty(),
             totalUSD: 0,
             unavailablePriceCount: 0,
             assetCount: 0,
@@ -216,6 +224,14 @@ struct PortfolioSnapshot: Codable, Equatable, Identifiable {
     let assetCount: Int
     let unavailablePriceCount: Int
     let priceSource: String
+    let nativeStakeLamports: UInt64
+    let activeStakeLamports: UInt64
+    let activatingStakeLamports: UInt64
+    let deactivatingStakeLamports: UInt64
+    let inactiveStakeLamports: UInt64
+    let stakeAccountCount: Int
+    let lstHoldingCount: Int
+    let lstEstimatedUSD: Decimal?
     let assets: [PortfolioSnapshotAsset]
 
     init(id: UUID = UUID(), summary: PortfolioAggregateSummary, createdAt: Date = Date()) {
@@ -228,6 +244,14 @@ struct PortfolioSnapshot: Codable, Equatable, Identifiable {
         self.assetCount = summary.assetCount
         self.unavailablePriceCount = summary.unavailablePriceCount
         self.priceSource = summary.priceSource
+        self.nativeStakeLamports = summary.nativeStakeSummary.totalDelegatedLamports
+        self.activeStakeLamports = summary.nativeStakeSummary.activeLamports
+        self.activatingStakeLamports = summary.nativeStakeSummary.activatingLamports
+        self.deactivatingStakeLamports = summary.nativeStakeSummary.deactivatingLamports
+        self.inactiveStakeLamports = summary.nativeStakeSummary.inactiveLamports
+        self.stakeAccountCount = summary.nativeStakeSummary.accountCount
+        self.lstHoldingCount = summary.lstSummary.holdingCount
+        self.lstEstimatedUSD = summary.lstSummary.totalUSD
         self.assets = summary.wallets.flatMap { wallet in
             wallet.assets.map { value in
                 PortfolioSnapshotAsset(
@@ -247,6 +271,49 @@ struct PortfolioSnapshot: Codable, Equatable, Identifiable {
             }
         }
     }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case createdAt
+        case scope
+        case network
+        case totalUSD
+        case walletCount
+        case assetCount
+        case unavailablePriceCount
+        case priceSource
+        case nativeStakeLamports
+        case activeStakeLamports
+        case activatingStakeLamports
+        case deactivatingStakeLamports
+        case inactiveStakeLamports
+        case stakeAccountCount
+        case lstHoldingCount
+        case lstEstimatedUSD
+        case assets
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        scope = try container.decode(PortfolioWalletScope.self, forKey: .scope)
+        network = try container.decode(WalletNetwork.self, forKey: .network)
+        totalUSD = try container.decode(Decimal.self, forKey: .totalUSD)
+        walletCount = try container.decode(Int.self, forKey: .walletCount)
+        assetCount = try container.decode(Int.self, forKey: .assetCount)
+        unavailablePriceCount = try container.decode(Int.self, forKey: .unavailablePriceCount)
+        priceSource = try container.decode(String.self, forKey: .priceSource)
+        nativeStakeLamports = try container.decodeIfPresent(UInt64.self, forKey: .nativeStakeLamports) ?? 0
+        activeStakeLamports = try container.decodeIfPresent(UInt64.self, forKey: .activeStakeLamports) ?? 0
+        activatingStakeLamports = try container.decodeIfPresent(UInt64.self, forKey: .activatingStakeLamports) ?? 0
+        deactivatingStakeLamports = try container.decodeIfPresent(UInt64.self, forKey: .deactivatingStakeLamports) ?? 0
+        inactiveStakeLamports = try container.decodeIfPresent(UInt64.self, forKey: .inactiveStakeLamports) ?? 0
+        stakeAccountCount = try container.decodeIfPresent(Int.self, forKey: .stakeAccountCount) ?? 0
+        lstHoldingCount = try container.decodeIfPresent(Int.self, forKey: .lstHoldingCount) ?? 0
+        lstEstimatedUSD = try container.decodeIfPresent(Decimal.self, forKey: .lstEstimatedUSD)
+        assets = try container.decode([PortfolioSnapshotAsset].self, forKey: .assets)
+    }
 }
 
 struct PortfolioHistoryPoint: Codable, Equatable, Identifiable {
@@ -258,6 +325,9 @@ struct PortfolioHistoryPoint: Codable, Equatable, Identifiable {
     let walletCount: Int
     let assetCount: Int
     let unavailablePriceCount: Int
+    let nativeStakeLamports: UInt64
+    let stakeAccountCount: Int
+    let lstHoldingCount: Int
 
     init(snapshot: PortfolioSnapshot) {
         self.snapshotID = snapshot.id
@@ -266,6 +336,9 @@ struct PortfolioHistoryPoint: Codable, Equatable, Identifiable {
         self.walletCount = snapshot.walletCount
         self.assetCount = snapshot.assetCount
         self.unavailablePriceCount = snapshot.unavailablePriceCount
+        self.nativeStakeLamports = snapshot.nativeStakeLamports
+        self.stakeAccountCount = snapshot.stakeAccountCount
+        self.lstHoldingCount = snapshot.lstHoldingCount
     }
 }
 

@@ -1032,8 +1032,43 @@ final class WalletManager: ObservableObject {
                 "portfolioScope": selectedPortfolioScope.rawValue,
                 "walletCount": "\(result.summary.wallets.count)",
                 "assetCount": "\(result.summary.assetCount)",
+                "stakeAccountCount": "\(result.summary.nativeStakeSummary.accountCount)",
+                "lstHoldingCount": "\(result.summary.lstSummary.holdingCount)",
                 "unavailablePriceCount": "\(result.summary.unavailablePriceCount)",
                 "priceSource": result.summary.priceSource
+            ]
+        )
+
+        record(
+            kind: result.summary.nativeStakeSummary.errorMessage?.isEmpty == false ? .stakeRefreshFailed : .stakeAccountsRefreshed,
+            walletID: selectedWalletID,
+            publicAddress: selectedProfile?.publicAddress,
+            message: result.summary.nativeStakeSummary.errorMessage?.isEmpty == false
+                ? "Stake account refresh failed or partially failed."
+                : "Stake accounts refreshed with read-only RPC.",
+            details: [
+                "network": selectedNetwork.rawValue,
+                "portfolioScope": selectedPortfolioScope.rawValue,
+                "stakeAccountCount": "\(result.summary.nativeStakeSummary.accountCount)",
+                "activeStakeLamports": "\(result.summary.nativeStakeSummary.activeLamports)",
+                "deactivatingStakeLamports": "\(result.summary.nativeStakeSummary.deactivatingLamports)",
+                "source": result.summary.nativeStakeSummary.source
+            ]
+        )
+
+        record(
+            kind: result.summary.lstSummary.priceUnavailableCount > 0 ? .lstDataUnavailable : .lstComparisonRefreshed,
+            walletID: selectedWalletID,
+            publicAddress: selectedProfile?.publicAddress,
+            message: result.summary.lstSummary.priceUnavailableCount > 0
+                ? "LST comparison refreshed with unavailable price data."
+                : "LST comparison refreshed.",
+            details: [
+                "network": selectedNetwork.rawValue,
+                "portfolioScope": selectedPortfolioScope.rawValue,
+                "lstHoldingCount": "\(result.summary.lstSummary.holdingCount)",
+                "lstPriceUnavailableCount": "\(result.summary.lstSummary.priceUnavailableCount)",
+                "source": result.summary.lstSummary.dataSource
             ]
         )
 
@@ -1063,10 +1098,27 @@ final class WalletManager: ObservableObject {
                     "network": selectedNetwork.rawValue,
                     "portfolioScope": selectedPortfolioScope.rawValue,
                     "assetCount": "\(snapshot.assetCount)",
+                    "stakeAccountCount": "\(snapshot.stakeAccountCount)",
+                    "lstHoldingCount": "\(snapshot.lstHoldingCount)",
                     "unavailablePriceCount": "\(snapshot.unavailablePriceCount)",
                     "priceSource": snapshot.priceSource
                 ]
             )
+            if snapshot.stakeAccountCount > 0 || snapshot.lstHoldingCount > 0 {
+                record(
+                    kind: .portfolioStakeSnapshotStored,
+                    walletID: selectedWalletID,
+                    publicAddress: selectedProfile?.publicAddress,
+                    message: "Portfolio stake and LST snapshot summary stored locally.",
+                    details: [
+                        "network": selectedNetwork.rawValue,
+                        "portfolioScope": selectedPortfolioScope.rawValue,
+                        "nativeStakeLamports": "\(snapshot.nativeStakeLamports)",
+                        "stakeAccountCount": "\(snapshot.stakeAccountCount)",
+                        "lstHoldingCount": "\(snapshot.lstHoldingCount)"
+                    ]
+                )
+            }
         } catch {
             portfolioErrorMessage = error.localizedDescription
             statusMessage = error.localizedDescription
