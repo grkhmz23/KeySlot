@@ -46,7 +46,7 @@ struct WalletView: View {
     @ViewBuilder
     private var selectedSectionView: some View {
         if walletManager.selectedProfile?.canSign == false,
-           [.send, .privateWallet, .security].contains(selectedSection) {
+           [.send, .swap, .privateWallet, .security].contains(selectedSection) {
             WalletPortfolioView()
         } else {
             switch selectedSection {
@@ -58,6 +58,8 @@ struct WalletView: View {
             case .send:
                 SendSolView()
                 TokenBalancesView()
+            case .swap:
+                WalletSwapView()
             case .privateWallet:
                 WalletPrivateView()
             case .security:
@@ -229,6 +231,7 @@ private enum WalletSection: String, CaseIterable, Identifiable {
     case assets
     case portfolio
     case send
+    case swap
     case privateWallet
     case security
     case audit
@@ -243,6 +246,8 @@ private enum WalletSection: String, CaseIterable, Identifiable {
             return "Portfolio"
         case .send:
             return "Send"
+        case .swap:
+            return "Swap"
         case .privateWallet:
             return "Private"
         case .security:

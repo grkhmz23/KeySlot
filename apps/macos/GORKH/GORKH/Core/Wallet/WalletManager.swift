@@ -37,6 +37,14 @@ final class WalletManager: ObservableObject {
     @Published private(set) var portfolioHistory: [PortfolioSnapshot] = []
     @Published private(set) var portfolioStatus: PortfolioDataStatus = .idle
     @Published private(set) var portfolioErrorMessage: String?
+    @Published private(set) var currentSwapQuote: JupiterQuoteSummary?
+    @Published private(set) var currentSwapBuild: JupiterSwapTransactionBuild?
+    @Published private(set) var currentSwapReview: SwapTransactionReview?
+    @Published private(set) var swapSimulationResult: SimulationResult?
+    @Published private(set) var swapApprovalState: ApprovalState = .idle
+    @Published private(set) var swapErrorMessage: String?
+    @Published private(set) var lastSwapSignature: String?
+    @Published private(set) var lastSwapConfirmationStatus: String?
 
     private let vault: WalletVault
     private let rpcClient: SolanaRPCClient
@@ -51,6 +59,8 @@ final class WalletManager: ObservableObject {
     private let cloakSignerBridgePolicy: CloakSignerBridgePolicy
     private let portfolioRefreshService: PortfolioManager
     private let portfolioSnapshotStore: PortfolioSnapshotStore
+    private let jupiterQuoteClient: JupiterQuoteClient
+    private let jupiterSwapClient: JupiterSwapClient
     private let derivationService: SolanaDerivationService
     private var lockController: WalletLockController
     private var unlockedSecrets: [UUID: WalletSecret] = [:]
@@ -58,6 +68,7 @@ final class WalletManager: ObservableObject {
     private var preparedTokenMessage: Data?
     private var preparedDraftFingerprint: String?
     private var preparedTokenDraftFingerprint: String?
+    private var preparedSwapFingerprint: String?
 
     var selectedProfile: WalletProfile? {
         profiles.first { $0.id == selectedWalletID }
@@ -72,6 +83,74 @@ final class WalletManager: ObservableObject {
             return nil
         }
         return URL(string: "https://explorer.solana.com/tx/\(signature)\(selectedNetwork.explorerClusterQuery)")
+    }
+
+    var explorerURLForLastSwapSignature: URL? {
+        guard let signature = lastSwapSignature else {
+            return nil
+        }
+        return URL(string: "https://explorer.solana.com/tx/\(signature)\(selectedNetwork.explorerClusterQuery)")
+    }
+
+    var swapInputTokenOptions: [SwapTokenOption] {
+        var options: [SwapTokenOption] = []
+        if let balance {
+            options.append(SwapTokenOption(
+                mintAddress: SwapConstants.nativeSolMint,
+                symbol: "SOL",
+                name: "Solana",
+                decimals: 9,
+                balanceRaw: balance.lamports,
+                uiAmountString: TokenAmountFormatter.format(rawAmount: balance.lamports, decimals: 9),
+                isNativeSOL: true,
+                tokenProgramKind: nil,
+                warnings: []
+            ))
+        }
+
+        let grouped = Dictionary(grouping: tokenBalances) { $0.mintAddress }
+        for (mint, balances) in grouped {
+            guard let first = balances.first else {
+                continue
+            }
+            let metadata = TokenMetadataResolver.resolve(balance: first, network: selectedNetwork)
+            let warnings = balances.reduce(into: [TokenWarning]()) { partial, balance in
+                TokenMetadataResolver.warnings(for: balance, metadata: metadata).forEach { warning in
+                    if !partial.contains(warning) {
+                        partial.append(warning)
+                    }
+                }
+            }
+            let totalRaw = balances.reduce(UInt64(0)) { partial, balance in
+                let result = partial.addingReportingOverflow(balance.amountRaw)
+                return result.overflow ? UInt64.max : result.partialValue
+            }
+            let decimals = metadata.decimals
+            options.append(SwapTokenOption(
+                mintAddress: mint,
+                symbol: metadata.symbol,
+                name: metadata.name,
+                decimals: decimals,
+                balanceRaw: totalRaw,
+                uiAmountString: decimals.map { TokenAmountFormatter.format(rawAmount: totalRaw, decimals: $0) } ?? "\(totalRaw)",
+                isNativeSOL: false,
+                tokenProgramKind: first.programKind,
+                warnings: warnings.sorted { $0.rawValue < $1.rawValue }
+            ))
+        }
+
+        return options.sorted {
+            if $0.isNativeSOL != $1.isNativeSOL {
+                return $0.isNativeSOL
+            }
+            return $0.symbol < $1.symbol
+        }
+    }
+
+    var swapOutputTokenOptions: [TokenMetadata] {
+        TokenMetadataRegistry.knownTokens
+            .filter { $0.network == selectedNetwork || $0.network == nil }
+            .sorted { $0.symbol < $1.symbol }
     }
 
     convenience init() {
@@ -116,9 +195,12 @@ final class WalletManager: ObservableObject {
         cloakBridge: any CloakBridgeProtocol,
         cloakPrivateVault: any CloakPrivateVault,
         cloakHelperInvocationAdapter: CloakHelperInvocationAdapter,
-        portfolioPriceClient: any PortfolioPriceClient = JupiterPriceClient(),
-        portfolioSnapshotStore: PortfolioSnapshotStore = PortfolioSnapshotStore()
+        portfolioPriceClient: (any PortfolioPriceClient)? = nil,
+        portfolioSnapshotStore: PortfolioSnapshotStore? = nil,
+        jupiterQuoteClient: JupiterQuoteClient? = nil,
+        jupiterSwapClient: JupiterSwapClient? = nil
     ) {
+        let resolvedPortfolioPriceClient = portfolioPriceClient ?? JupiterPriceClient()
         self.vault = vault
         self.rpcClient = rpcClient
         self.auditLog = auditLog
@@ -130,8 +212,10 @@ final class WalletManager: ObservableObject {
         self.cloakPrivateVault = cloakPrivateVault
         self.cloakHelperInvocationAdapter = cloakHelperInvocationAdapter
         self.cloakSignerBridgePolicy = .locked
-        self.portfolioRefreshService = PortfolioManager(rpcClient: rpcClient, priceClient: portfolioPriceClient)
-        self.portfolioSnapshotStore = portfolioSnapshotStore
+        self.portfolioRefreshService = PortfolioManager(rpcClient: rpcClient, priceClient: resolvedPortfolioPriceClient)
+        self.portfolioSnapshotStore = portfolioSnapshotStore ?? PortfolioSnapshotStore()
+        self.jupiterQuoteClient = jupiterQuoteClient ?? JupiterQuoteClient()
+        self.jupiterSwapClient = jupiterSwapClient ?? JupiterSwapClient()
         self.derivationService = SolanaDerivationService(mnemonicService: mnemonicService)
         let policy = securitySettingsStore.loadPolicy()
         self.securityPolicy = policy
@@ -140,7 +224,7 @@ final class WalletManager: ObservableObject {
         self.lockController = WalletLockController(policy: policy)
         loadMetadata()
         auditEvents = auditLog.loadRecent()
-        portfolioHistory = Array(portfolioSnapshotStore.load().reversed())
+        portfolioHistory = Array(self.portfolioSnapshotStore.load().reversed())
         refreshVaultState()
         refreshCloakVaultStatus(recordAudit: false)
     }
@@ -173,6 +257,7 @@ final class WalletManager: ObservableObject {
         portfolioSummary = .empty(scope: selectedPortfolioScope, network: selectedNetwork)
         portfolioStatus = .idle
         portfolioErrorMessage = nil
+        resetSwapState()
         refreshVaultState()
         refreshCloakVaultStatus(recordAudit: false)
     }
@@ -207,6 +292,7 @@ final class WalletManager: ObservableObject {
         portfolioSummary = .empty(scope: selectedPortfolioScope, network: selectedNetwork)
         portfolioStatus = .idle
         portfolioErrorMessage = nil
+        resetSwapState()
         cloakBridgeResponse = cloakBridge.validateEnvironment(network: network)
         cloakBridgeContractResponse = cloakBridge.environmentCheck(network: network)
     }
@@ -1154,6 +1240,343 @@ final class WalletManager: ObservableObject {
         }
     }
 
+    func resetSwapState() {
+        currentSwapQuote = nil
+        currentSwapBuild = nil
+        currentSwapReview = nil
+        swapSimulationResult = nil
+        swapApprovalState = .idle
+        swapErrorMessage = nil
+        preparedSwapFingerprint = nil
+        lastSwapSignature = nil
+        lastSwapConfirmationStatus = nil
+    }
+
+    func requestSwapQuote(
+        inputMint: String,
+        outputMint: String,
+        amountText: String,
+        slippageBps: Int
+    ) async {
+        noteUserActivity()
+        guard let profile = selectedProfile else {
+            swapErrorMessage = "Select a wallet before requesting a quote."
+            return
+        }
+        guard profile.canSign else {
+            swapErrorMessage = "Watch-only wallets cannot request executable swap quotes."
+            return
+        }
+
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            if inputMint == SwapConstants.nativeSolMint, balance == nil {
+                let lamports = try await rpcClient.getBalance(address: profile.publicAddress, network: selectedNetwork)
+                balance = WalletBalance(lamports: lamports, network: selectedNetwork, fetchedAt: Date(), errorMessage: nil)
+            }
+            if inputMint != SwapConstants.nativeSolMint, tokenBalances.isEmpty {
+                tokenBalances = try await rpcClient.getTokenBalances(ownerAddress: profile.publicAddress, network: selectedNetwork)
+                tokenBalancesFetchedAt = Date()
+            }
+
+            guard let input = swapInputTokenOptions.first(where: { $0.mintAddress == inputMint }) else {
+                throw SwapError.invalidInput("Input token is not available in this wallet.")
+            }
+            guard let decimals = input.decimals else {
+                throw SwapError.invalidInput("Input token decimals are unavailable.")
+            }
+            let amountRaw = try TokenAmountFormatter.rawAmount(fromUIAmount: amountText, decimals: decimals)
+            try SwapValidation.validateQuoteRequest(
+                inputMint: inputMint,
+                outputMint: outputMint.trimmingCharacters(in: .whitespacesAndNewlines),
+                amountRaw: amountRaw,
+                availableRaw: input.balanceRaw,
+                inputDecimals: input.decimals,
+                slippageBps: slippageBps
+            )
+
+            resetSwapState()
+            swapApprovalState = .drafted
+            record(
+                kind: .swapQuoteRequested,
+                walletID: profile.id,
+                publicAddress: profile.publicAddress,
+                message: "Jupiter swap quote requested.",
+                details: [
+                    "network": selectedNetwork.rawValue,
+                    "inputMint": inputMint,
+                    "outputMint": outputMint,
+                    "amountRaw": "\(amountRaw)",
+                    "slippageBps": "\(slippageBps)"
+                ]
+            )
+
+            let quote = try await jupiterQuoteClient.fetchQuote(
+                inputMint: inputMint,
+                outputMint: outputMint.trimmingCharacters(in: .whitespacesAndNewlines),
+                amountRaw: amountRaw,
+                slippageBps: slippageBps,
+                network: selectedNetwork
+            )
+            currentSwapQuote = quote
+            swapErrorMessage = nil
+            statusMessage = "Jupiter quote received."
+            record(
+                kind: .swapQuoteReceived,
+                walletID: profile.id,
+                publicAddress: profile.publicAddress,
+                message: "Jupiter swap quote received.",
+                details: [
+                    "network": selectedNetwork.rawValue,
+                    "inputMint": quote.inputMint,
+                    "outputMint": quote.outputMint,
+                    "amountRaw": "\(quote.inAmount)",
+                    "expectedOutputRaw": "\(quote.outAmount)",
+                    "minimumOutputRaw": "\(quote.otherAmountThreshold)",
+                    "slippageBps": "\(quote.slippageBps)",
+                    "route": quote.routeLabel
+                ]
+            )
+        } catch {
+            swapApprovalState = .failed(error.localizedDescription)
+            swapErrorMessage = error.localizedDescription
+            statusMessage = error.localizedDescription
+            recordSwapFailure(kind: .swapQuoteFailed, message: error.localizedDescription)
+        }
+    }
+
+    func buildCurrentSwapTransaction() async {
+        noteUserActivity()
+        guard let profile = selectedProfile else {
+            return
+        }
+        guard let quote = currentSwapQuote else {
+            swapErrorMessage = SwapError.missingQuote.localizedDescription
+            return
+        }
+
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            guard !quote.isStale() else {
+                throw SwapError.quoteStale
+            }
+            let build = try await jupiterSwapClient.buildSwapTransaction(
+                quote: quote,
+                userPublicKey: profile.publicAddress,
+                network: selectedNetwork
+            )
+            let review = try SwapTransactionReviewer.review(
+                serializedTransactionBase64: build.swapTransactionBase64,
+                expectedWallet: profile.publicAddress
+            )
+            currentSwapBuild = build
+            currentSwapReview = review
+            swapSimulationResult = nil
+            preparedSwapFingerprint = nil
+            swapApprovalState = review.canApprove ? .drafted : .failed(review.blockingReasons.joined(separator: " "))
+            swapErrorMessage = review.canApprove ? nil : review.blockingReasons.joined(separator: " ")
+            record(
+                kind: .swapTransactionBuilt,
+                walletID: profile.id,
+                publicAddress: profile.publicAddress,
+                message: "Jupiter swap transaction built and reviewed.",
+                details: [
+                    "network": selectedNetwork.rawValue,
+                    "inputMint": quote.inputMint,
+                    "outputMint": quote.outputMint,
+                    "amountRaw": "\(quote.inAmount)",
+                    "expectedOutputRaw": "\(quote.outAmount)",
+                    "transactionVersion": review.transactionVersion,
+                    "feePayer": review.feePayer ?? "",
+                    "programCount": "\(review.programSummaries.count)",
+                    "warningsCount": "\(review.warnings.count)",
+                    "blockingReasonsCount": "\(review.blockingReasons.count)"
+                ]
+            )
+            statusMessage = review.canApprove ? "Swap transaction reviewed." : "Swap transaction review blocked approval."
+        } catch {
+            swapApprovalState = .failed(error.localizedDescription)
+            swapErrorMessage = error.localizedDescription
+            statusMessage = error.localizedDescription
+            recordSwapFailure(kind: .swapFailed, message: error.localizedDescription)
+        }
+    }
+
+    func simulateCurrentSwap() async {
+        noteUserActivity()
+        guard let profile = selectedProfile,
+              let quote = currentSwapQuote,
+              let build = currentSwapBuild,
+              let review = currentSwapReview else {
+            swapErrorMessage = "Build and review the swap transaction before simulation."
+            return
+        }
+
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            guard review.canApprove else {
+                throw SwapError.reviewFailed(review.blockingReasons.joined(separator: " "))
+            }
+            let fee = try? await rpcClient.getFeeForMessage(messageBase64: review.messageBase64, network: selectedNetwork)
+            var result = try await rpcClient.simulateTransaction(
+                transactionBase64: build.swapTransactionBase64,
+                network: selectedNetwork
+            )
+            result.estimatedFeeLamports = fee ?? result.estimatedFeeLamports
+            swapSimulationResult = result
+            if result.status == .success {
+                preparedSwapFingerprint = SwapFingerprint.approvalFingerprint(quote: quote, build: build)
+                swapApprovalState = .simulated
+                record(
+                    kind: .swapSimulationPassed,
+                    walletID: profile.id,
+                    publicAddress: profile.publicAddress,
+                    message: "Jupiter swap transaction simulated.",
+                    details: [
+                        "network": selectedNetwork.rawValue,
+                        "inputMint": quote.inputMint,
+                        "outputMint": quote.outputMint,
+                        "amountRaw": "\(quote.inAmount)",
+                        "status": result.status.rawValue,
+                        "estimatedFeeLamports": "\(result.estimatedFeeLamports ?? 0)"
+                    ]
+                )
+                statusMessage = "Swap simulation succeeded."
+            } else {
+                swapApprovalState = .failed(result.errorMessage ?? "Swap simulation failed.")
+                recordSwapFailure(kind: .swapSimulationFailed, message: result.errorMessage ?? "Swap simulation failed.")
+                statusMessage = result.errorMessage ?? "Swap simulation failed."
+            }
+        } catch {
+            swapSimulationResult = .unavailable(error.localizedDescription)
+            swapApprovalState = .failed(error.localizedDescription)
+            swapErrorMessage = error.localizedDescription
+            statusMessage = error.localizedDescription
+            recordSwapFailure(kind: .swapSimulationFailed, message: error.localizedDescription)
+        }
+    }
+
+    func approveAndSendSwap(
+        mainnetConfirmation: String,
+        hasCompletedDevnetSmoke: Bool
+    ) async {
+        guard let profile = selectedProfile,
+              let quote = currentSwapQuote,
+              let build = currentSwapBuild,
+              let review = currentSwapReview else {
+            return
+        }
+
+        enforceAutoLockIfNeeded()
+        let currentFingerprint = SwapFingerprint.approvalFingerprint(quote: quote, build: build)
+        do {
+            try SwapApprovalGuard.validate(SwapApprovalContext(
+                quote: quote,
+                build: build,
+                review: review,
+                simulation: swapSimulationResult,
+                network: selectedNetwork,
+                walletPublicKey: profile.publicAddress,
+                mainnetConfirmation: mainnetConfirmation,
+                hasCompletedDevnetSmoke: hasCompletedDevnetSmoke,
+                vaultState: vaultState,
+                hasUnlockedSecret: unlockedSecrets[profile.id] != nil,
+                currentFingerprint: currentFingerprint,
+                preparedFingerprint: preparedSwapFingerprint
+            ))
+        } catch {
+            swapApprovalState = .failed(error.localizedDescription)
+            swapErrorMessage = error.localizedDescription
+            statusMessage = selectedNetwork.isMainnet
+                ? "Mainnet swap requires unlock, simulation, exact confirmation, and matching approval."
+                : error.localizedDescription
+            recordSwapFailure(kind: .swapBlockedByGuard, message: error.localizedDescription)
+            return
+        }
+
+        guard await authenticateIfNeeded(
+            required: securityPolicy.requireLocalAuthenticationForSigning,
+            reason: "Authorize local signing for this Jupiter swap."
+        ) else {
+            swapApprovalState = .failed("Device authentication failed.")
+            return
+        }
+
+        guard let secret = unlockedSecrets[profile.id] else {
+            swapApprovalState = .failed(WalletSigningPreflightError.missingSecret.localizedDescription)
+            return
+        }
+
+        noteUserActivity()
+        record(
+            kind: .swapApproved,
+            walletID: profile.id,
+            publicAddress: profile.publicAddress,
+            message: "Jupiter swap approved by user.",
+            details: [
+                "network": selectedNetwork.rawValue,
+                "inputMint": quote.inputMint,
+                "outputMint": quote.outputMint,
+                "amountRaw": "\(quote.inAmount)",
+                "expectedOutputRaw": "\(quote.outAmount)",
+                "minimumOutputRaw": "\(quote.otherAmountThreshold)",
+                "slippageBps": "\(quote.slippageBps)",
+                "route": quote.routeLabel,
+                "warningsCount": "\(review.warnings.count)"
+            ]
+        )
+
+        swapApprovalState = .approved
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            swapApprovalState = .sending
+            let signedBase64 = try SolanaSerializedTransaction.sign(
+                base64: build.swapTransactionBase64,
+                seed: secret.seed,
+                expectedSigner: profile.publicAddress
+            )
+            let signature = try await rpcClient.sendTransaction(transactionBase64: signedBase64, network: selectedNetwork)
+            lastTransactionSignature = signature
+            let status = try? await waitForConfirmation(signature: signature, network: selectedNetwork, timeoutSeconds: 20)
+            lastConfirmationStatus = status?.confirmationStatus
+            lastSwapSignature = signature
+            lastSwapConfirmationStatus = status?.confirmationStatus
+            swapApprovalState = .sent(signature)
+            record(
+                kind: .swapSent,
+                walletID: profile.id,
+                publicAddress: profile.publicAddress,
+                transactionSignature: signature,
+                message: "Jupiter swap sent.",
+                details: [
+                    "network": selectedNetwork.rawValue,
+                    "inputMint": quote.inputMint,
+                    "outputMint": quote.outputMint,
+                    "amountRaw": "\(quote.inAmount)",
+                    "expectedOutputRaw": "\(quote.outAmount)",
+                    "minimumOutputRaw": "\(quote.otherAmountThreshold)",
+                    "slippageBps": "\(quote.slippageBps)",
+                    "route": quote.routeLabel,
+                    "confirmationStatus": status?.confirmationStatus ?? ""
+                ]
+            )
+            statusMessage = "Swap sent."
+        } catch {
+            swapApprovalState = .failed(error.localizedDescription)
+            swapErrorMessage = error.localizedDescription
+            statusMessage = error.localizedDescription
+            recordSwapFailure(kind: .swapFailed, message: error.localizedDescription)
+        }
+    }
+
     func draftTokenTransfer(token: TokenBalance, recipient: String, amountText: String) async {
         noteUserActivity()
         guard let profile = selectedProfile else {
@@ -1762,6 +2185,25 @@ final class WalletManager: ObservableObject {
         }
     }
 
+    private func waitForConfirmation(
+        signature: String,
+        network: WalletNetwork,
+        timeoutSeconds: Int
+    ) async throws -> SolanaSignatureStatus {
+        for _ in 0..<timeoutSeconds {
+            if let status = try await rpcClient.getSignatureStatusInfo(signature: signature, network: network) {
+                if let errorDescription = status.errorDescription {
+                    throw SwapError.transport(errorDescription)
+                }
+                if status.isConfirmedOrFinalized {
+                    return status
+                }
+            }
+            try await Task.sleep(nanoseconds: 1_000_000_000)
+        }
+        throw SwapError.transport("Timed out waiting for swap confirmation.")
+    }
+
     private func record(
         kind: AuditEvent.Kind,
         walletID: UUID?,
@@ -1798,6 +2240,19 @@ final class WalletManager: ObservableObject {
             walletID: selectedWalletID,
             publicAddress: selectedProfile?.publicAddress,
             message: message
+        )
+    }
+
+    private func recordSwapFailure(kind: AuditEvent.Kind = .swapFailed, message: String) {
+        record(
+            kind: kind,
+            walletID: selectedWalletID,
+            publicAddress: selectedProfile?.publicAddress,
+            message: message,
+            details: [
+                "network": selectedNetwork.rawValue,
+                "status": "failed"
+            ]
         )
     }
 }

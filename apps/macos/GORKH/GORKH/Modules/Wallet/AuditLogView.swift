@@ -88,6 +88,7 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
     case wallet
     case sol
     case spl
+    case swap
     case portfolio
     case privateWallet
     case security
@@ -105,6 +106,8 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
             return "SOL"
         case .spl:
             return "SPL"
+        case .swap:
+            return "Swap"
         case .portfolio:
             return "Portfolio"
         case .privateWallet:
@@ -142,6 +145,19 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
                 .tokenTransferSent,
                 .ataCreationPlanned,
                 .ataCreationIncluded
+            ].contains(event.kind)
+        case .swap:
+            return [
+                .swapQuoteRequested,
+                .swapQuoteReceived,
+                .swapQuoteFailed,
+                .swapTransactionBuilt,
+                .swapSimulationPassed,
+                .swapSimulationFailed,
+                .swapApproved,
+                .swapSent,
+                .swapFailed,
+                .swapBlockedByGuard
             ].contains(event.kind)
         case .privateWallet:
             return [
@@ -193,7 +209,11 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
                 .cloakSignerRequestLocked,
                 .portfolioPriceRefreshFailed,
                 .stakeRefreshFailed,
-                .lstDataUnavailable
+                .lstDataUnavailable,
+                .swapQuoteFailed,
+                .swapSimulationFailed,
+                .swapFailed,
+                .swapBlockedByGuard
             ].contains(event.kind)
         }
     }
@@ -205,7 +225,17 @@ private extension AuditEvent {
             "network",
             "amountLamports",
             "amountRaw",
+            "expectedOutputRaw",
+            "minimumOutputRaw",
             "tokenSymbol",
+            "inputMint",
+            "outputMint",
+            "slippageBps",
+            "route",
+            "transactionVersion",
+            "feePayer",
+            "programCount",
+            "estimatedFeeLamports",
             "mint",
             "to",
             "recipientOwner",

@@ -331,6 +331,16 @@ struct AuditEvent: Codable, Equatable, Identifiable {
         case lstComparisonRefreshed = "lst_comparison_refreshed"
         case lstDataUnavailable = "lst_data_unavailable"
         case portfolioStakeSnapshotStored = "portfolio_stake_snapshot_stored"
+        case swapQuoteRequested = "swap_quote_requested"
+        case swapQuoteReceived = "swap_quote_received"
+        case swapQuoteFailed = "swap_quote_failed"
+        case swapTransactionBuilt = "swap_transaction_built"
+        case swapSimulationPassed = "swap_simulation_passed"
+        case swapSimulationFailed = "swap_simulation_failed"
+        case swapApproved = "swap_approved"
+        case swapSent = "swap_sent"
+        case swapFailed = "swap_failed"
+        case swapBlockedByGuard = "swap_blocked_by_guard"
     }
 
     let id: UUID

@@ -1791,6 +1791,222 @@ struct GORKHTests {
         #expect(visibleCopy.contains("lending"))
     }
 
+    @Test func swapQuoteRequestValidationAndEndpointGuard() throws {
+        let usdcMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+        let url = try JupiterQuoteClient.quoteURL(
+            baseURL: URL(string: "https://lite-api.jup.ag/swap/v1")!,
+            inputMint: PortfolioConstants.nativeSolMint,
+            outputMint: usdcMint,
+            amountRaw: 1_000_000,
+            slippageBps: 50
+        )
+        let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        let query = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).compactMap { item in
+            item.value.map { (item.name, $0) }
+        })
+
+        #expect(components.host == "lite-api.jup.ag")
+        #expect(components.path == "/swap/v1/quote")
+        #expect(query["inputMint"] == PortfolioConstants.nativeSolMint)
+        #expect(query["outputMint"] == usdcMint)
+        #expect(query["amount"] == "1000000")
+        #expect(query["slippageBps"] == "50")
+        #expect(query["swapMode"] == "ExactIn")
+
+        try SwapValidation.validateQuoteRequest(
+            inputMint: PortfolioConstants.nativeSolMint,
+            outputMint: usdcMint,
+            amountRaw: 1_000_000,
+            availableRaw: 2_000_000,
+            inputDecimals: 9,
+            slippageBps: 50
+        )
+
+        #expect(throws: SwapError.self) {
+            try JupiterQuoteClient.quoteURL(
+                baseURL: URL(string: "https://lite-api.jup.ag/swap/v1/swap")!,
+                inputMint: PortfolioConstants.nativeSolMint,
+                outputMint: usdcMint,
+                amountRaw: 1_000_000,
+                slippageBps: 50
+            )
+        }
+        #expect(throws: SwapError.self) {
+            try SwapValidation.validateSlippageBps(0)
+        }
+        #expect(throws: SwapError.self) {
+            try SwapValidation.validateQuoteRequest(
+                inputMint: PortfolioConstants.nativeSolMint,
+                outputMint: PortfolioConstants.nativeSolMint,
+                amountRaw: 1,
+                availableRaw: 1,
+                inputDecimals: 9,
+                slippageBps: 50
+            )
+        }
+        #expect(throws: SwapError.self) {
+            try SwapValidation.validateQuoteRequest(
+                inputMint: PortfolioConstants.nativeSolMint,
+                outputMint: usdcMint,
+                amountRaw: 3,
+                availableRaw: 2,
+                inputDecimals: 9,
+                slippageBps: 50
+            )
+        }
+    }
+
+    @Test func jupiterQuoteDecodeKeepsRawPayloadOutOfSafeSummary() throws {
+        let quote = try JupiterQuoteClient.decodeQuote(
+            data: sampleJupiterQuoteData(),
+            quotedAt: Date(timeIntervalSince1970: 1_000)
+        )
+        let encodedSafeSummary = try JSONEncoder().encode(quote.safeSummary)
+        let json = try #require(String(data: encodedSafeSummary, encoding: .utf8)).lowercased()
+
+        #expect(quote.inputMint == PortfolioConstants.nativeSolMint)
+        #expect(quote.outputMint == "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
+        #expect(quote.inAmount == 1_000_000)
+        #expect(quote.outAmount == 142_000)
+        #expect(quote.otherAmountThreshold == 140_000)
+        #expect(quote.slippageBps == 50)
+        #expect(quote.routePlan.first?.label == "Test AMM")
+        #expect(!json.contains("rawquotejson"))
+        #expect(!json.contains("serializedtransaction"))
+        #expect(!json.contains("swaptransaction"))
+        #expect(!json.contains("transactionpayload"))
+    }
+
+    @Test func jupiterSwapBuildResponseStaysInMemoryAndReviewable() throws {
+        let fixture = try sampleSwapTransactionFixture()
+        let response = """
+        {
+          "swapTransaction": "\(fixture.unsignedTransactionBase64)",
+          "lastValidBlockHeight": 123,
+          "prioritizationFeeLamports": 5000,
+          "computeUnitLimit": 1400000
+        }
+        """
+        let quoteID = UUID()
+        let build = try JupiterSwapClient.decodeSwapResponse(
+            data: Data(response.utf8),
+            quoteID: quoteID,
+            userPublicKey: fixture.keypair.publicAddress,
+            builtAt: Date(timeIntervalSince1970: 2_000)
+        )
+        let review = try SwapTransactionReviewer.review(
+            serializedTransactionBase64: build.swapTransactionBase64,
+            expectedWallet: fixture.keypair.publicAddress
+        )
+
+        #expect(build.quoteID == quoteID)
+        #expect(build.userPublicKey == fixture.keypair.publicAddress)
+        #expect(build.lastValidBlockHeight == 123)
+        #expect(build.transactionFingerprint == SwapFingerprint.transactionFingerprint(base64: fixture.unsignedTransactionBase64))
+        #expect(review.canApprove)
+        #expect(review.transactionVersion == "legacy")
+        #expect(review.feePayer == fixture.keypair.publicAddress)
+        #expect(review.signerAccounts == [fixture.keypair.publicAddress])
+        #expect(review.programSummaries.contains { $0.label == "System Program" })
+    }
+
+    @Test func swapTransactionReviewBlocksWrongFeePayerAndSignsExpectedSignerOnly() throws {
+        let fixture = try sampleSwapTransactionFixture()
+        let wrongWallet = Base58.encode(Data(repeating: 8, count: 32))
+        let review = try SwapTransactionReviewer.review(
+            serializedTransactionBase64: fixture.unsignedTransactionBase64,
+            expectedWallet: wrongWallet
+        )
+
+        #expect(!review.canApprove)
+        #expect(review.blockingReasons.contains("Fee payer does not match the selected wallet."))
+        #expect(review.blockingReasons.contains("Selected wallet is not a required signer."))
+        #expect(throws: SwapTransactionReviewError.self) {
+            try SolanaSerializedTransaction.sign(
+                base64: fixture.unsignedTransactionBase64,
+                seed: fixture.keypair.seed,
+                expectedSigner: wrongWallet
+            )
+        }
+
+        let signedTransaction = try SolanaSerializedTransaction.sign(
+            base64: fixture.unsignedTransactionBase64,
+            seed: fixture.keypair.seed,
+            expectedSigner: fixture.keypair.publicAddress
+        )
+        let decodedSigned = try SolanaSerializedTransaction.decode(base64: signedTransaction)
+        let signedBytes = try #require(Data(base64Encoded: signedTransaction))
+        let signature = Data(signedBytes[decodedSigned.signaturesOffset..<(decodedSigned.signaturesOffset + 64)])
+        let publicKey = try Curve25519.Signing.PublicKey(rawRepresentation: fixture.keypair.publicKey)
+
+        #expect(signature.count == 64)
+        #expect(signature != Data(repeating: 0, count: 64))
+        #expect(publicKey.isValidSignature(signature, for: decodedSigned.messageData))
+        #expect(decodedSigned.messageData == fixture.message)
+    }
+
+    @Test func swapApprovalGuardRequiresFreshReviewSimulationAndFingerprint() throws {
+        try SwapApprovalGuard.validate(try sampleSwapApprovalContext())
+
+        #expect(throws: SwapError.self) {
+            try SwapApprovalGuard.validate(try sampleSwapApprovalContext(simulation: nil))
+        }
+        #expect(throws: SwapError.self) {
+            try SwapApprovalGuard.validate(try sampleSwapApprovalContext(
+                simulation: SimulationResult(
+                    status: .failed,
+                    logs: ["Program failed"],
+                    estimatedFeeLamports: nil,
+                    errorMessage: "Simulation failed",
+                    simulatedAt: Date()
+                )
+            ))
+        }
+        #expect(throws: SwapError.self) {
+            try SwapApprovalGuard.validate(try sampleSwapApprovalContext(quoteAgeSeconds: 120))
+        }
+        #expect(throws: SwapError.self) {
+            try SwapApprovalGuard.validate(try sampleSwapApprovalContext(preparedFingerprint: "changed"))
+        }
+        #expect(throws: SwapError.self) {
+            try SwapApprovalGuard.validate(try sampleSwapApprovalContext(
+                network: .mainnetBeta,
+                mainnetConfirmation: "I understand",
+                hasCompletedDevnetSmoke: true
+            ))
+        }
+        try SwapApprovalGuard.validate(try sampleSwapApprovalContext(
+            network: .mainnetBeta,
+            mainnetConfirmation: TransactionApprovalPolicy.requiredMainnetConfirmation,
+            hasCompletedDevnetSmoke: true
+        ))
+    }
+
+    @Test func swapAuditEventsRedactSerializedPayloads() throws {
+        let event = AuditEvent(
+            kind: .swapTransactionBuilt,
+            walletID: UUID(),
+            network: .mainnetBeta,
+            publicAddress: SolanaConstants.systemProgramID,
+            message: "Swap built",
+            details: [
+                "inputMint": PortfolioConstants.nativeSolMint,
+                "outputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+                "serializedTransaction": "do-not-store",
+                "swapTransaction": "do-not-store",
+                "transactionPayload": "do-not-store"
+            ]
+        )
+        let json = try #require(String(data: JSONEncoder().encode(event), encoding: .utf8)).lowercased()
+
+        #expect(json.contains("swap_transaction_built"))
+        #expect(json.contains("inputmint"))
+        #expect(!json.contains("do-not-store"))
+        #expect(!json.contains("serializedtransaction"))
+        #expect(!json.contains("swaptransaction"))
+        #expect(!json.contains("transactionpayload"))
+    }
+
     @Test func devnetAirdropRejectsMainnet() async {
         var rejectedMainnet = false
         do {
@@ -2466,6 +2682,118 @@ private func sampleStakeAccount(
         source: StakeConstants.source,
         fetchedAt: Date(timeIntervalSince1970: 0),
         errorMessage: nil
+    )
+}
+
+private struct SampleSwapTransactionFixture {
+    let keypair: SolanaKeypair
+    let message: Data
+    let unsignedTransactionBase64: String
+}
+
+private func sampleJupiterQuoteData() -> Data {
+    let raw = """
+    {
+      "inputMint": "\(PortfolioConstants.nativeSolMint)",
+      "outputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "inAmount": "1000000",
+      "outAmount": "142000",
+      "otherAmountThreshold": "140000",
+      "swapMode": "ExactIn",
+      "slippageBps": 50,
+      "priceImpactPct": "0.01",
+      "contextSlot": 123456,
+      "timeTaken": 0.02,
+      "routePlan": [
+        {
+          "percent": 100,
+          "bps": 10000,
+          "swapInfo": {
+            "ammKey": "11111111111111111111111111111111",
+            "label": "Test AMM",
+            "inputMint": "\(PortfolioConstants.nativeSolMint)",
+            "outputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+            "inAmount": "1000000",
+            "outAmount": "142000",
+            "feeAmount": "10",
+            "feeMint": "\(PortfolioConstants.nativeSolMint)"
+          }
+        }
+      ]
+    }
+    """
+    return Data(raw.utf8)
+}
+
+private func sampleJupiterQuote(quoteAgeSeconds: TimeInterval = 0) throws -> JupiterQuoteSummary {
+    try JupiterQuoteClient.decodeQuote(
+        data: sampleJupiterQuoteData(),
+        quotedAt: Date().addingTimeInterval(-quoteAgeSeconds)
+    )
+}
+
+private func sampleSwapTransactionFixture() throws -> SampleSwapTransactionFixture {
+    let seed = Data(hex: "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
+    let keypair = try SolanaKeypair(seed: seed)
+    let blockhash = Base58.encode(Data(repeating: 4, count: 32))
+    let draft = TransactionDraft(
+        network: .mainnetBeta,
+        fromAddress: keypair.publicAddress,
+        toAddress: Base58.encode(Data(repeating: 3, count: 32)),
+        amountLamports: 42
+    )
+    let message = try SolanaTransactionBuilder.makeTransferMessage(draft: draft, recentBlockhash: blockhash)
+    return SampleSwapTransactionFixture(
+        keypair: keypair,
+        message: message,
+        unsignedTransactionBase64: SolanaTransactionBuilder.makeUnsignedTransactionBase64(message: message)
+    )
+}
+
+private func sampleSwapApprovalContext(
+    network: WalletNetwork = .devnet,
+    quoteAgeSeconds: TimeInterval = 0,
+    simulation: SimulationResult? = SimulationResult(
+        status: .success,
+        logs: ["ok"],
+        estimatedFeeLamports: 5_000,
+        errorMessage: nil,
+        simulatedAt: Date()
+    ),
+    mainnetConfirmation: String = "",
+    hasCompletedDevnetSmoke: Bool = false,
+    preparedFingerprint: String? = nil
+) throws -> SwapApprovalContext {
+    let quote = try sampleJupiterQuote(quoteAgeSeconds: quoteAgeSeconds)
+    let fixture = try sampleSwapTransactionFixture()
+    let build = JupiterSwapTransactionBuild(
+        quoteID: quote.id,
+        userPublicKey: fixture.keypair.publicAddress,
+        swapTransactionBase64: fixture.unsignedTransactionBase64,
+        lastValidBlockHeight: 123,
+        prioritizationFeeLamports: nil,
+        computeUnitLimit: nil,
+        builtAt: Date(),
+        transactionFingerprint: SwapFingerprint.transactionFingerprint(base64: fixture.unsignedTransactionBase64)
+    )
+    let review = try SwapTransactionReviewer.review(
+        serializedTransactionBase64: build.swapTransactionBase64,
+        expectedWallet: fixture.keypair.publicAddress
+    )
+    let fingerprint = SwapFingerprint.approvalFingerprint(quote: quote, build: build)
+    return SwapApprovalContext(
+        quote: quote,
+        build: build,
+        review: review,
+        simulation: simulation,
+        network: network,
+        walletPublicKey: fixture.keypair.publicAddress,
+        mainnetConfirmation: mainnetConfirmation,
+        hasCompletedDevnetSmoke: hasCompletedDevnetSmoke,
+        vaultState: .unlocked,
+        hasUnlockedSecret: true,
+        currentFingerprint: fingerprint,
+        preparedFingerprint: preparedFingerprint ?? fingerprint
     )
 }
 

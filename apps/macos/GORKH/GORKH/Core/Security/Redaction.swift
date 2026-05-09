@@ -16,7 +16,11 @@ enum Redaction {
         "nullifier",
         "proof",
         "rawscan",
-        "chainnote"
+        "chainnote",
+        "serializedtransaction",
+        "transactionpayload",
+        "swaptransaction",
+        "signedtransaction"
     ]
 
     static func isSensitiveKey(_ key: String) -> Bool {
