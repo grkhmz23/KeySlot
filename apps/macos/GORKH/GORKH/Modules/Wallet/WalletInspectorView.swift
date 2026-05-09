@@ -2,9 +2,14 @@ import SwiftUI
 
 struct WalletInspectorView: View {
     @EnvironmentObject private var walletManager: WalletManager
+    let sectionTitle: String
+
+    init(sectionTitle: String = "Overview") {
+        self.sectionTitle = sectionTitle
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Status")
                 .font(.title2)
                 .fontWeight(.semibold)
@@ -12,6 +17,10 @@ struct WalletInspectorView: View {
 
             GorkhPanel {
                 VStack(alignment: .leading, spacing: 10) {
+                    inspectorRow("Section", sectionTitle)
+                    if let profile = walletManager.selectedProfile {
+                        inspectorRow("Wallet", profile.label)
+                    }
                     inspectorRow("Network", walletManager.selectedNetwork.displayName)
                     inspectorRow("RPC", walletManager.rpcFastEndpoint.provider.displayName)
                     inspectorRow("Endpoint", walletManager.rpcFastEndpoint.httpHost)
@@ -30,12 +39,12 @@ struct WalletInspectorView: View {
 
             GorkhPanel("Safety") {
                 VStack(alignment: .leading, spacing: 8) {
-                    safetyLine("No hidden signing")
+                    safetyLine("Signing always requires approval")
                     safetyLine("No automatic send")
                     safetyLine("No backend secret upload")
-                    safetyLine("No agent signer access")
+                    safetyLine("Agent signer access disabled")
                     safetyLine("Swaps require review and approval")
-                    safetyLine("No lending or DeFi execution")
+                    safetyLine("Lending and yield are read-only")
                 }
             }
 

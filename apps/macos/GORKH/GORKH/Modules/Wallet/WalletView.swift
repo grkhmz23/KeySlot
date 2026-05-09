@@ -3,7 +3,7 @@ import SwiftUI
 
 struct WalletView: View {
     @EnvironmentObject private var walletManager: WalletManager
-    @State private var selectedSection: WalletSection = .assets
+    @State private var selectedSection: WalletSection = .overview
     private let autoLockTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -12,9 +12,10 @@ struct WalletView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     header
 
-                    WalletCreateView()
-                    WalletImportView()
                     if walletManager.profiles.isEmpty {
+                        WalletEmptyStateView(content: .noWallet)
+                        WalletCreateView()
+                        WalletImportView()
                         AddWatchOnlyWalletView()
                     }
 
@@ -22,7 +23,7 @@ struct WalletView: View {
                         sectionPicker
                         selectedSectionView
                     } else {
-                        AuditLogView()
+                        WalletActivityView()
                     }
                 }
                 .padding(24)
@@ -32,7 +33,7 @@ struct WalletView: View {
             Divider()
                 .overlay(GorkhColors.border)
 
-            WalletInspectorView()
+            WalletInspectorView(sectionTitle: selectedSection.title)
                 .frame(width: 310)
         }
         .onReceive(autoLockTimer) { now in
@@ -47,15 +48,17 @@ struct WalletView: View {
     private var selectedSectionView: some View {
         if walletManager.selectedProfile?.canSign == false,
            [.send, .swap, .privateWallet, .security].contains(selectedSection) {
-            WalletPortfolioView()
+            WalletOverviewView { selectedSection = $0 }
         } else {
             switch selectedSection {
-            case .assets:
-                WalletBalanceView()
-                TokenBalancesView()
+            case .overview:
+                WalletOverviewView { section in
+                    selectedSection = section
+                }
             case .portfolio:
                 WalletPortfolioView()
             case .send:
+                WalletReceiveView()
                 SendSolView()
                 TokenBalancesView()
             case .swap:
@@ -64,8 +67,8 @@ struct WalletView: View {
                 WalletPrivateView()
             case .security:
                 WalletSecurityView()
-            case .audit:
-                AuditLogView()
+            case .activity:
+                WalletActivityView()
             }
         }
     }
@@ -81,9 +84,9 @@ struct WalletView: View {
 
     private var availableSections: [WalletSection] {
         guard walletManager.selectedProfile?.canSign == false else {
-            return WalletSection.allCases
+            return WalletSection.productionOrder
         }
-        return [.assets, .portfolio, .audit]
+        return WalletSection.watchOnlyOrder
     }
 
     private var header: some View {
@@ -94,7 +97,7 @@ struct WalletView: View {
                         .font(.largeTitle)
                         .fontWeight(.semibold)
                         .foregroundStyle(GorkhColors.primaryText)
-                    Text("Native Solana signer with explicit review before send.")
+                    Text("Own, review, send, protect, and understand your Solana assets.")
                         .foregroundStyle(GorkhColors.secondaryText)
                 }
 
@@ -175,6 +178,8 @@ struct WalletView: View {
                             GorkhStatusChip(title: "No signer", systemImage: "eye.slash", color: GorkhColors.warning)
                         }
                     }
+
+                    WalletSecurityStatusStripView()
                 }
             }
         }
@@ -229,38 +234,7 @@ struct WalletView: View {
 
     private func normalizeSelectedSection() {
         if !availableSections.contains(selectedSection) {
-            selectedSection = .portfolio
-        }
-    }
-}
-
-private enum WalletSection: String, CaseIterable, Identifiable {
-    case assets
-    case portfolio
-    case send
-    case swap
-    case privateWallet
-    case security
-    case audit
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .assets:
-            return "Assets"
-        case .portfolio:
-            return "Portfolio"
-        case .send:
-            return "Send"
-        case .swap:
-            return "Swap"
-        case .privateWallet:
-            return "Private"
-        case .security:
-            return "Security"
-        case .audit:
-            return "Audit"
+            selectedSection = .overview
         }
     }
 }

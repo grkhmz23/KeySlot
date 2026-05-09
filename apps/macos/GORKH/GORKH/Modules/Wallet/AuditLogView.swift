@@ -1,17 +1,21 @@
 import SwiftUI
 
-struct AuditLogView: View {
+struct WalletActivityView: View {
     @EnvironmentObject private var walletManager: WalletManager
     @State private var filter: AuditLogFilter = .all
 
     var body: some View {
-        GorkhPanel("Audit Log") {
+        GorkhPanel("Activity") {
             if walletManager.auditEvents.isEmpty {
-                Text("No sensitive wallet actions have been recorded yet.")
-                    .foregroundStyle(GorkhColors.secondaryText)
+                WalletEmptyStateView(content: WalletEmptyStateContent(
+                    title: "No recent activity",
+                    message: "Wallet actions, portfolio refreshes, security events, and transaction status will appear here.",
+                    systemImage: "clock",
+                    actionTitle: nil
+                ))
             } else {
                 VStack(alignment: .leading, spacing: 10) {
-                    Picker("Audit filter", selection: $filter) {
+                    Picker("Activity filter", selection: $filter) {
                         ForEach(AuditLogFilter.allCases) { filter in
                             Text(filter.displayName).tag(filter)
                         }
@@ -19,8 +23,12 @@ struct AuditLogView: View {
                     .pickerStyle(.segmented)
 
                     ForEach(filteredEvents.prefix(20)) { event in
-                        auditRow(event)
+                        activityRow(event)
                     }
+
+                    Text("Technical audit details are available inside each activity row. Raw transaction payloads and secrets are never shown.")
+                        .font(.caption)
+                        .foregroundStyle(GorkhColors.secondaryText)
                 }
             }
         }
@@ -30,22 +38,28 @@ struct AuditLogView: View {
         walletManager.auditEvents.filter { filter.includes($0) }
     }
 
-    private func auditRow(_ event: AuditEvent) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private func activityRow(_ event: AuditEvent) -> some View {
+        let category = WalletActivityCategory.category(for: event.kind)
+        let status = WalletActivityStatus.status(for: event.kind)
+        return VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(event.kind.rawValue.replacingOccurrences(of: "_", with: " ").capitalized)
-                    .font(.callout)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(GorkhColors.primaryText)
+                GorkhStatusChip(title: category.title, systemImage: category.systemImage, color: category.color)
+                GorkhStatusChip(title: status.title, systemImage: status == .failed ? "xmark.octagon" : "checkmark.circle", color: status.color)
                 Spacer()
                 Text(event.createdAt.formatted(date: .abbreviated, time: .standard))
                     .font(.caption)
                     .foregroundStyle(GorkhColors.secondaryText)
             }
 
-            Text(event.message)
-                .font(.caption)
-                .foregroundStyle(GorkhColors.secondaryText)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(actionLabel(for: event))
+                    .font(.callout)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(GorkhColors.primaryText)
+                Text(event.message)
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.secondaryText)
+            }
 
             HStack(spacing: 8) {
                 if let network = event.network {
@@ -71,15 +85,41 @@ struct AuditLogView: View {
 
             let summary = event.summaryDetails
             if !summary.isEmpty {
-                Text(summary)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(GorkhColors.secondaryText)
-                    .lineLimit(2)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
+                DisclosureGroup("Technical details") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Event \(event.kind.rawValue)")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(GorkhColors.secondaryText)
+                            .textSelection(.enabled)
+                        Text(summary)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(GorkhColors.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
+                    .padding(.top, 4)
+                }
+                .font(.caption)
+                .foregroundStyle(GorkhColors.secondaryText)
             }
         }
-        .padding(.vertical, 6)
+        .padding(10)
+        .background(GorkhColors.panelElevated)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(GorkhColors.border)
+        }
+    }
+
+    private func actionLabel(for event: AuditEvent) -> String {
+        event.kind.rawValue.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+}
+
+struct AuditLogView: View {
+    var body: some View {
+        WalletActivityView()
     }
 }
 

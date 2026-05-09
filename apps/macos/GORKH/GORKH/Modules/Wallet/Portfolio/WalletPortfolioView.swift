@@ -58,12 +58,26 @@ struct WalletPortfolioView: View {
                 }
             }
 
+            portfolioSectionHeader(
+                "Summary",
+                subtitle: "Estimated value, PUSD treasury, and read-only scope."
+            )
             PortfolioSummaryView(summary: walletManager.portfolioSummary)
             PUSDTreasuryView()
-            AddWatchOnlyWalletView()
-            WatchOnlyWalletView()
+
+            portfolioSectionHeader(
+                "Assets & Wallets",
+                subtitle: "Token balances and per-wallet exposure."
+            )
             PortfolioAssetListView(summary: walletManager.portfolioSummary)
             PortfolioWalletBreakdownView(summary: walletManager.portfolioSummary)
+            AddWatchOnlyWalletView()
+            WatchOnlyWalletView()
+
+            portfolioSectionHeader(
+                "DeFi",
+                subtitle: "Stake, LSTs, lending, liquidity, and yield are separated from wallet token balances to avoid double-counting."
+            )
             PortfolioStakeView(summary: walletManager.portfolioSummary.nativeStakeSummary)
             PortfolioLSTView(summary: walletManager.portfolioSummary.lstSummary)
             PortfolioLendingView(summary: walletManager.portfolioSummary.lendingSummary)
@@ -93,9 +107,19 @@ struct WalletPortfolioView: View {
                 resetHarvestAction: walletManager.resetOrcaHarvestState
             )
             PortfolioYieldView(summary: walletManager.portfolioSummary.yieldSummary)
+
+            portfolioSectionHeader(
+                "Performance",
+                subtitle: "Snapshot-based performance estimates and local cost-basis completeness."
+            )
             PortfolioPnLView(
                 summary: walletManager.portfolioPnLSummary,
                 costBasisEntries: walletManager.costBasisEntries
+            )
+
+            portfolioSectionHeader(
+                "History",
+                subtitle: "Local snapshots used for trend and performance estimates."
             )
             PortfolioHistoryView(
                 snapshots: walletManager.portfolioHistory,
@@ -103,5 +127,18 @@ struct WalletPortfolioView: View {
             )
             PortfolioDeFiPlaceholderView()
         }
+    }
+
+    private func portfolioSectionHeader(_ title: String, subtitle: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.title3)
+                .fontWeight(.semibold)
+                .foregroundStyle(GorkhColors.primaryText)
+            Text(subtitle)
+                .font(.caption)
+                .foregroundStyle(GorkhColors.secondaryText)
+        }
+        .padding(.top, 4)
     }
 }

@@ -12,7 +12,7 @@ struct WalletPrivateView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Shielded SOL deposits and private pay / full withdraw powered by Cloak.")
                                 .foregroundStyle(GorkhColors.primaryText)
-                            Text("Cloak is mainnet-only. These are real transactions after explicit approval, LocalAuthentication, native signing, and audit.")
+                            Text("Cloak is mainnet-only. These are real transactions after explicit approval, LocalAuthentication, native signing, and Activity logging.")
                                 .font(.caption)
                                 .foregroundStyle(GorkhColors.warning)
                         }

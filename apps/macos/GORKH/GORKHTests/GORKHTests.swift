@@ -3786,6 +3786,97 @@ struct GORKHTests {
         }
     }
 
+    @Test func walletProductionNavigationUsesOverviewAndActivity() {
+        #expect(WalletSection.productionOrder.map(\.title) == [
+            "Overview",
+            "Portfolio",
+            "Send",
+            "Swap",
+            "Private",
+            "Security",
+            "Activity"
+        ])
+        #expect(WalletSection.productionOrder.first == .overview)
+        #expect(WalletSection.watchOnlyOrder == [.overview, .portfolio, .activity])
+        #expect(!WalletSection.productionOrder.map(\.title).contains("Audit"))
+    }
+
+    @Test func walletActivityCategoriesAndTechnicalDetailsRemainAvailable() throws {
+        #expect(WalletActivityCategory.category(for: .swapSent) == .swap)
+        #expect(WalletActivityCategory.category(for: .pusdTreasuryViewed) == .pusd)
+        #expect(WalletActivityCategory.category(for: .lendingRefreshed) == .lending)
+        #expect(WalletActivityCategory.category(for: .lpPositionsRefreshed) == .liquidity)
+        #expect(WalletActivityCategory.category(for: .yieldComparisonRefreshed) == .yield)
+        #expect(WalletActivityCategory.category(for: .pnlRefreshed) == .pnl)
+        #expect(WalletActivityStatus.status(for: .swapSimulationFailed) == .failed)
+
+        let activitySource = try sourceText(relativePath: "GORKH/Modules/Wallet/AuditLogView.swift")
+        #expect(activitySource.contains("GorkhPanel(\"Activity\")"))
+        #expect(activitySource.contains("DisclosureGroup(\"Technical details\")"))
+        #expect(!activitySource.contains("GorkhPanel(\"Audit Log\")"))
+    }
+
+    @Test func walletSecurityStripAndReceiveStatesAreSafe() {
+        let profile = WalletProfile(
+            label: "Primary",
+            publicAddress: SolanaConstants.systemProgramID,
+            selectedNetwork: .devnet,
+            walletOrigin: .generatedRecovery
+        )
+        let content = WalletSecurityStatusStripContent.make(
+            profile: profile,
+            vaultState: .unlocked,
+            policy: .default,
+            backupStatus: WalletBackupStatus.evaluate(profile: profile),
+            network: .mainnetBeta,
+            rpcHealth: RPCHealthSnapshot.unchecked(network: .mainnetBeta),
+            rpcSecurity: RPCProviderSecurityStatus(
+                provider: .rpcFast,
+                network: .mainnetBeta,
+                tokenStatus: .present,
+                tokenEnvironmentNames: ["GORKH_RPCFAST_MAINNET_TOKEN"],
+                beamStatus: RPCFastConfiguration.beamStatus
+            )
+        )
+
+        #expect(content.lockTitle == "Unlocked")
+        #expect(content.lockIsHealthy)
+        #expect(content.localAuthenticationIsHealthy)
+        #expect(content.backupIsHealthy)
+        #expect(content.mainnetProtectionTitle == "Mainnet phrase on")
+        #expect(content.signingGuardTitle == "Signing guard active")
+        #expect(content.agentSignerAccessTitle == "Agent signer off")
+        #expect(content.rpcIsHealthy)
+        #expect(WalletEmptyStateContent.noWallet.message.lowercased().contains("private") == false)
+    }
+
+    @Test func walletProductionUXSourceDoesNotAddExecutionOrForbiddenProductCopy() throws {
+        let files = [
+            "GORKH/Modules/Wallet/WalletOverviewView.swift",
+            "GORKH/Modules/Wallet/WalletReceiveView.swift",
+            "GORKH/Modules/Wallet/WalletSectionNavigation.swift",
+            "GORKH/Modules/Wallet/WalletSecurityStatusStripView.swift",
+            "GORKH/Modules/Wallet/WalletEmptyStateView.swift",
+            "GORKH/Modules/Wallet/WalletView.swift"
+        ]
+        let source = try files.map(sourceText(relativePath:)).joined(separator: "\n").lowercased()
+
+        for forbidden in [
+            "sendtransaction",
+            "signtransaction",
+            "transactionpayload",
+            "serializedtransaction",
+            "hiddensigning",
+            "agent execute",
+            "nft"
+        ] {
+            #expect(!source.contains(forbidden))
+        }
+        #expect(source.contains("overview"))
+        #expect(source.contains("receive"))
+        #expect(source.contains("activity"))
+    }
+
     @Test func raydiumAdapterReportsPartialWhenEnrichmentMissingAndAggregatesWithOtherLPs() async throws {
         let profile = WalletProfile(label: "LP", publicAddress: SolanaConstants.systemProgramID)
         let meteora = LPAdapterResult(
@@ -5677,6 +5768,12 @@ private func replace(_ bytes: inout [UInt8], at offset: Int, with replacement: [
 
 private func littleEndianBytes(_ value: UInt64) -> [UInt8] {
     (0..<8).map { UInt8((value >> ($0 * 8)) & 0xff) }
+}
+
+private func sourceText(relativePath: String) throws -> String {
+    let testsDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    let projectDirectory = testsDirectory.deletingLastPathComponent()
+    return try String(contentsOf: projectDirectory.appendingPathComponent(relativePath), encoding: .utf8)
 }
 
 private extension Data {

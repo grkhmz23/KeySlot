@@ -10,7 +10,7 @@ struct CloakShieldReviewPlaceholderView: View {
         "Explicit approval",
         "Local signing",
         "Cloak SDK execution",
-        "Audit"
+        "Activity log"
     ]
 
     var body: some View {

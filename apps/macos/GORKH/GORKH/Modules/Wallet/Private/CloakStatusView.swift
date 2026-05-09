@@ -43,7 +43,7 @@ struct CloakStatusView: View {
                     Text("Cloak is mainnet-only. Shield and full-withdraw flows can execute real transactions after every native approval gate passes.")
                         .font(.caption)
                         .foregroundStyle(GorkhColors.secondaryText)
-                    Text("Every execution requires wallet unlock, LocalAuthentication, signer preflight, Shield review, explicit approval, exact mainnet phrase, and audit.")
+                    Text("Every execution requires wallet unlock, LocalAuthentication, signer preflight, Shield review, explicit approval, exact mainnet phrase, and Activity logging.")
                         .font(.caption)
                         .foregroundStyle(GorkhColors.secondaryText)
                     Text("Helper execution is fixed-path, command-allowlisted, JSON-framed, and never receives wallet seed or private key material.")

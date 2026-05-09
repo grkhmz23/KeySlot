@@ -6,6 +6,8 @@ struct WalletSecurityView: View {
     var body: some View {
         GorkhPanel("Wallet Security") {
             VStack(alignment: .leading, spacing: 14) {
+                WalletSecurityStatusStripView()
+
                 HStack(spacing: 8) {
                     GorkhStatusChip(
                         title: "Auto-lock \(walletManager.securityPolicy.autoLockTimeout.displayName)",
