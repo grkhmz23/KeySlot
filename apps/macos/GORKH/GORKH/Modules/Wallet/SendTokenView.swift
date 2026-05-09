@@ -9,17 +9,24 @@ struct SendTokenView: View {
     @State private var amount = ""
 
     var body: some View {
+        let metadata = TokenMetadataResolver.resolve(balance: token, network: walletManager.selectedNetwork)
+        let warnings = TokenMetadataResolver.warnings(for: token, metadata: metadata)
+        let canPrepare = TokenMetadataResolver.canSend(balance: token, metadata: metadata)
+
         VStack(alignment: .leading, spacing: 12) {
             Divider()
                 .overlay(GorkhColors.border)
 
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Send \(token.displayLabel)")
+                    Text("Send \(metadata.displayTitle)")
                         .font(.headline)
                         .foregroundStyle(GorkhColors.primaryText)
-                    Text("Available \(token.uiAmountString), decimals \(token.decimals)")
+                    Text("Available \(token.uiAmountString), decimals \(metadata.decimals.map(String.init) ?? "unavailable")")
                         .font(.caption)
+                        .foregroundStyle(GorkhColors.secondaryText)
+                    Text("Mint \(token.mintAddress.shortAddress) / \(token.programKind.displayName)")
+                        .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(GorkhColors.secondaryText)
                 }
 
@@ -38,6 +45,16 @@ struct SendTokenView: View {
                 Text("Mainnet token sends can move real funds and require the exact confirmation phrase.")
                     .font(.caption)
                     .foregroundStyle(GorkhColors.warning)
+            }
+
+            if !warnings.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(warnings) { warning in
+                        Text("\(warning.blocksSend ? "Blocked" : "Caution"): \(warning.message)")
+                            .font(.caption)
+                            .foregroundStyle(warning.blocksSend ? GorkhColors.danger : GorkhColors.warning)
+                    }
+                }
             }
 
             TextField("Recipient owner address", text: $recipient)
@@ -60,7 +77,7 @@ struct SendTokenView: View {
                     Label("Prepare Token Draft", systemImage: "doc.badge.plus")
                 }
                 .buttonStyle(.gorkhPrimary)
-                .disabled(walletManager.vaultState != .unlocked || walletManager.isBusy || !token.canSend)
+                .disabled(walletManager.vaultState != .unlocked || walletManager.isBusy || !canPrepare)
 
                 Button {
                     Task { await walletManager.simulateCurrentTokenDraft() }
@@ -87,14 +104,19 @@ private struct TokenTransferDraftSummaryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             row("Network", draft.network.displayName)
+            row("Token", draft.tokenDisplayName)
             row("Token program", draft.tokenProgramKind.displayName)
             row("Mint", draft.mintAddress)
             row("Source", draft.sourceTokenAccount)
+            row("Source state", draft.sourceAccountState.rawValue)
             row("Recipient owner", draft.recipientOwnerAddress)
             row("Recipient token account", draft.recipientTokenAccount ?? "Missing")
             row("ATA creation", draft.ataPlan.shouldCreateAssociatedTokenAccount ? "Included before transfer" : "Not needed")
             row("Amount", "\(draft.formattedAmount) (\(draft.amountRaw) raw)")
             row("ATA plan", draft.ataPlan.message)
+            if !draft.warnings.isEmpty {
+                row("Warnings", draft.warnings.map(\.title).joined(separator: ", "))
+            }
 
             if let rent = draft.ataPlan.rentExemptLamports, draft.ataPlan.shouldCreateAssociatedTokenAccount {
                 row("Rent estimate", "\(rent) lamports")

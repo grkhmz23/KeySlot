@@ -17,6 +17,27 @@ struct TokenTransferApprovalView: View {
                 .font(.headline)
                 .foregroundStyle(GorkhColors.primaryText)
 
+            VStack(alignment: .leading, spacing: 6) {
+                approvalRow("Token", draft.tokenDisplayName)
+                approvalRow("Mint", draft.mintAddress)
+                approvalRow("Program", draft.tokenProgramKind.displayName)
+                approvalRow("Source account", draft.sourceTokenAccount)
+                approvalRow("Source state", draft.sourceAccountState.rawValue)
+                approvalRow("Recipient owner", draft.recipientOwnerAddress)
+                approvalRow("Recipient ATA", draft.recipientTokenAccount ?? "Missing")
+                approvalRow("Amount", "\(draft.formattedAmount) (\(draft.amountRaw) raw)")
+            }
+
+            if !draft.warnings.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(draft.warnings) { warning in
+                        Text("\(warning.blocksSend ? "Blocked" : "Caution"): \(warning.message)")
+                            .font(.caption)
+                            .foregroundStyle(warning.blocksSend ? GorkhColors.danger : GorkhColors.warning)
+                    }
+                }
+            }
+
             if draft.ataPlan.shouldCreateAssociatedTokenAccount {
                 GorkhStatusChip(
                     title: "ATA creation included",
@@ -118,6 +139,19 @@ struct TokenTransferApprovalView: View {
             mainnetConfirmation: mainnetConfirmation,
             hasCompletedDevnetSmoke: completedDevnetSmoke,
             allowsUnavailableSimulation: allowUnavailableSimulation
-        )
+        ) && !draft.warnings.contains { $0.blocksSend }
+    }
+
+    private func approvalRow(_ title: String, _ value: String) -> some View {
+        HStack(alignment: .top) {
+            Text(title)
+                .foregroundStyle(GorkhColors.secondaryText)
+                .frame(width: 120, alignment: .leading)
+            Text(value)
+                .font(.system(.caption, design: title == "Token" || title == "Program" || title == "Source state" || title == "Amount" ? .default : .monospaced))
+                .foregroundStyle(GorkhColors.primaryText)
+                .textSelection(.enabled)
+            Spacer()
+        }
     }
 }

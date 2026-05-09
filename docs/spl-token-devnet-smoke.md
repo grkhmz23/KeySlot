@@ -92,6 +92,12 @@ To force a specific mint:
 scripts/live-devnet-spl-smoke.sh --mint <SPL_TOKEN_MINT>
 ```
 
+To validate the existing-recipient ATA path, rerun the smoke with a recipient owner that already received the same mint. This should produce a transfer transaction without ATA creation:
+
+```sh
+scripts/live-devnet-spl-smoke.sh --mint <SPL_TOKEN_MINT> --recipient-owner <OWNER_WITH_EXISTING_ATA>
+```
+
 If the smoke wallet has devnet SOL but no SPL balance, and local `solana` and `spl-token` CLIs are installed, create a temporary devnet-only SPL mint and mint test tokens to the smoke wallet:
 
 ```sh
@@ -100,4 +106,4 @@ scripts/live-devnet-spl-smoke.sh --prepare-token-balance
 
 Then run the `nextCommand` printed by the setup step.
 
-The harness creates a fresh throwaway recipient owner, derives the missing recipient ATA, simulates create-ATA + `transferChecked`, signs locally, sends to devnet, waits for confirmation, and verifies the recipient token balance. It prints only public addresses, token account addresses, the transaction signature, and the devnet explorer link.
+The default harness creates a fresh throwaway recipient owner, derives the missing recipient ATA, simulates create-ATA + `transferChecked`, signs locally, sends to devnet, waits for confirmation, and verifies the recipient token balance. When `--recipient-owner` is supplied, the harness uses that owner; if the ATA exists, it validates the transfer-only path. It prints only public addresses, token account addresses, the transaction signature, and the devnet explorer link.

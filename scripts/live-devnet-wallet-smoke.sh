@@ -36,6 +36,9 @@ rm -f "$BINARY_PATH"
   "$ROOT_DIR/apps/macos/GORKH/GORKH/Core/Solana/SolanaKeypair.swift" \
   "$ROOT_DIR/apps/macos/GORKH/GORKH/Core/Solana/SolanaNetwork.swift" \
   "$ROOT_DIR/apps/macos/GORKH/GORKH/Core/Solana/ProgramDerivedAddress.swift" \
+  "$ROOT_DIR/apps/macos/GORKH/GORKH/Core/Solana/TokenMetadata.swift" \
+  "$ROOT_DIR/apps/macos/GORKH/GORKH/Core/Solana/TokenMetadataRegistry.swift" \
+  "$ROOT_DIR/apps/macos/GORKH/GORKH/Core/Solana/TokenMetadataResolver.swift" \
   "$ROOT_DIR/apps/macos/GORKH/GORKH/Core/Solana/SplTokenModels.swift" \
   "$ROOT_DIR/apps/macos/GORKH/GORKH/Core/Solana/SplTokenParser.swift" \
   "$ROOT_DIR/apps/macos/GORKH/GORKH/Core/Solana/TokenAmountFormatter.swift" \

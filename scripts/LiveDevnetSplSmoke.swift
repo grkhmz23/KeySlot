@@ -11,8 +11,8 @@ enum LiveDevnetSplSmoke {
     static func main() async {
         do {
             switch try SmokeMode(arguments: CommandLine.arguments) {
-            case .run(let mintFilter):
-                let result = try await run(mintFilter: mintFilter)
+            case .run(let mintFilter, let recipientOwner):
+                let result = try await run(mintFilter: mintFilter, recipientOwner: recipientOwner)
                 try printResult(result)
             case .prepareTokenBalance:
                 let setup = try prepareTokenBalance()
@@ -26,9 +26,12 @@ enum LiveDevnetSplSmoke {
         }
     }
 
-    private static func run(mintFilter: String?) async throws -> LiveDevnetSplSmokeResult {
+    private static func run(mintFilter: String?, recipientOwner: String?) async throws -> LiveDevnetSplSmokeResult {
         if let mintFilter, !SolanaAddressValidator.isValidAddress(mintFilter) {
             throw LiveDevnetSplSmokeError.invalidArgument("Mint filter is not a valid Solana address.")
+        }
+        if let recipientOwner, !SolanaAddressValidator.isValidAddress(recipientOwner) {
+            throw LiveDevnetSplSmokeError.invalidArgument("Recipient owner is not a valid Solana address.")
         }
 
         let state = try loadManualFundingState()
@@ -73,9 +76,10 @@ enum LiveDevnetSplSmoke {
             throw LiveDevnetSplSmokeError.missingTokenBalance("Selected token balance is below one raw token unit.")
         }
 
-        let recipient = try SolanaKeypair.generate()
+        let generatedRecipient = recipientOwner == nil ? try SolanaKeypair.generate() : nil
+        let recipientOwnerAddress = recipientOwner ?? generatedRecipient?.publicAddress ?? ""
         let recipientAccounts = try await rpcClient.getTokenAccounts(
-            ownerAddress: recipient.publicAddress,
+            ownerAddress: recipientOwnerAddress,
             mintAddress: token.mintAddress,
             programKind: .splToken,
             network: .devnet
@@ -86,7 +90,7 @@ enum LiveDevnetSplSmoke {
 
         if let existingRecipientTokenAccount {
             ataPlan = AssociatedTokenAccount.existingPlan(
-                recipientOwner: recipient.publicAddress,
+                recipientOwner: recipientOwnerAddress,
                 mint: token.mintAddress,
                 tokenProgramKind: .splToken,
                 recipientTokenAccount: existingRecipientTokenAccount,
@@ -94,7 +98,7 @@ enum LiveDevnetSplSmoke {
             )
         } else {
             ataPlan = AssociatedTokenAccount.missingPlan(
-                recipientOwner: recipient.publicAddress,
+                recipientOwner: recipientOwnerAddress,
                 mint: token.mintAddress,
                 tokenProgramKind: .splToken,
                 rentExemptLamports: rent
@@ -105,25 +109,36 @@ enum LiveDevnetSplSmoke {
             throw LiveDevnetSplSmokeError.transactionFailed(ataPlan.message)
         }
 
-        let amountText = TokenAmountFormatter.format(rawAmount: smokeAmountRaw, decimals: token.decimals)
+        let metadata = TokenMetadataResolver.resolve(balance: token, network: .devnet)
+        guard let decimals = metadata.decimals else {
+            throw LiveDevnetSplSmokeError.transactionFailed("Selected token decimals are unavailable.")
+        }
+        let amountText = TokenAmountFormatter.format(rawAmount: smokeAmountRaw, decimals: decimals)
         let draft = TokenTransferDraft(
             network: .devnet,
             ownerAddress: sender.publicAddress,
             sourceTokenAccount: token.tokenAccountAddress,
             mintAddress: token.mintAddress,
             tokenProgramKind: .splToken,
-            recipientOwnerAddress: recipient.publicAddress,
+            recipientOwnerAddress: recipientOwnerAddress,
             recipientTokenAccount: destinationTokenAccount,
             amountRaw: smokeAmountRaw,
             amountText: amountText,
-            decimals: token.decimals,
+            decimals: decimals,
             availableAmountRaw: token.amountRaw,
-            ataPlan: ataPlan
+            ataPlan: ataPlan,
+            tokenSymbol: metadata.symbol,
+            tokenName: metadata.name,
+            metadataSource: metadata.source,
+            sourceAccountState: token.state,
+            sourceDelegateAddress: token.delegateAddress,
+            sourceCloseAuthorityAddress: token.closeAuthorityAddress,
+            warnings: TokenMetadataResolver.warnings(for: token, metadata: metadata)
         )
 
         fputs("Selected mint: \(token.mintAddress)\n", stderr)
         fputs("Source token account: \(token.tokenAccountAddress)\n", stderr)
-        fputs("Recipient owner: \(recipient.publicAddress)\n", stderr)
+        fputs("Recipient owner: \(recipientOwnerAddress)\n", stderr)
         fputs("Recipient ATA: \(destinationTokenAccount)\n", stderr)
         fputs("ATA creation included: \(ataPlan.shouldCreateAssociatedTokenAccount)\n", stderr)
         fputs("Building and simulating SPL transfer...\n", stderr)
@@ -165,7 +180,7 @@ enum LiveDevnetSplSmoke {
 
         fputs("Verifying recipient token balance and audit-safe event...\n", stderr)
         let endingRecipientRaw = try await waitForRecipientTokenBalance(
-            owner: recipient.publicAddress,
+            owner: recipientOwnerAddress,
             mint: token.mintAddress,
             minimumRawAmount: smokeAmountRaw,
             rpcClient: rpcClient,
@@ -174,7 +189,7 @@ enum LiveDevnetSplSmoke {
 
         try verifyAuditEventContainsNoSecret(
             sender: sender,
-            recipientOwner: recipient.publicAddress,
+            recipientOwner: recipientOwnerAddress,
             destinationTokenAccount: destinationTokenAccount,
             token: token,
             transactionSignature: transactionSignature,
@@ -186,7 +201,7 @@ enum LiveDevnetSplSmoke {
             senderAddress: sender.publicAddress,
             sourceTokenAccount: token.tokenAccountAddress,
             mintAddress: token.mintAddress,
-            recipientOwnerAddress: recipient.publicAddress,
+            recipientOwnerAddress: recipientOwnerAddress,
             recipientTokenAccount: destinationTokenAccount,
             createdAssociatedTokenAccount: ataPlan.shouldCreateAssociatedTokenAccount,
             transferAmountRaw: smokeAmountRaw,
@@ -398,7 +413,7 @@ enum LiveDevnetSplSmoke {
                 "recipientOwner": recipientOwner,
                 "recipientTokenAccount": destinationTokenAccount,
                 "amountRaw": "\(smokeAmountRaw)",
-                "decimals": "\(token.decimals)",
+                "decimals": "\(token.decimalsText)",
                 "createsAssociatedTokenAccount": "\(createsAssociatedTokenAccount)",
                 "estimatedFeeLamports": estimatedFee.map(String.init) ?? "unknown"
             ]
@@ -467,6 +482,7 @@ enum LiveDevnetSplSmoke {
           scripts/live-devnet-spl-smoke.sh
           scripts/live-devnet-spl-smoke.sh --prepare-token-balance
           scripts/live-devnet-spl-smoke.sh --mint <SPL_TOKEN_MINT>
+          scripts/live-devnet-spl-smoke.sh --mint <SPL_TOKEN_MINT> --recipient-owner <OWNER_WITH_EXISTING_ATA>
           scripts/live-devnet-spl-smoke.sh --help
 
         This devnet-only smoke uses the throwaway wallet state from:
@@ -495,12 +511,13 @@ enum LiveDevnetSplSmoke {
 }
 
 private enum SmokeMode {
-    case run(mintFilter: String?)
+    case run(mintFilter: String?, recipientOwner: String?)
     case prepareTokenBalance
     case help
 
     init(arguments: [String]) throws {
         var mintFilter: String?
+        var recipientOwner: String?
         var iterator = arguments.dropFirst().makeIterator()
 
         while let argument = iterator.next() {
@@ -516,12 +533,17 @@ private enum SmokeMode {
                     throw LiveDevnetSplSmokeError.invalidArgument("--mint requires a mint address.")
                 }
                 mintFilter = mint
+            case "--recipient-owner":
+                guard let owner = iterator.next() else {
+                    throw LiveDevnetSplSmokeError.invalidArgument("--recipient-owner requires an owner address.")
+                }
+                recipientOwner = owner
             default:
                 throw LiveDevnetSplSmokeError.invalidArgument("Unknown argument '\(argument)'. Use --help.")
             }
         }
 
-        self = .run(mintFilter: mintFilter)
+        self = .run(mintFilter: mintFilter, recipientOwner: recipientOwner)
     }
 }
 

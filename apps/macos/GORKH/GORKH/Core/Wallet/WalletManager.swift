@@ -418,12 +418,34 @@ final class WalletManager: ObservableObject {
             guard token.state == .initialized else {
                 throw TokenTransferValidationError.invalidTokenAccount("Selected token account is \(token.state.rawValue) and cannot be sent.")
             }
+            let mintDecimals = token.decimals == nil
+                ? try? await rpcClient.getMintDecimals(
+                    mintAddress: token.mintAddress,
+                    programKind: token.programKind,
+                    network: selectedNetwork
+                )
+                : nil
+            let metadata = TokenMetadataResolver.resolve(
+                balance: token,
+                network: selectedNetwork,
+                mintAccountDecimals: mintDecimals
+            )
+            let warnings = TokenMetadataResolver.warnings(for: token, metadata: metadata)
+            guard let decimals = metadata.decimals else {
+                throw TokenTransferValidationError.invalidDecimals("Token decimals could not be resolved from the token account, local registry, or mint account.")
+            }
+            if warnings.contains(.frozenAccount) {
+                throw TokenTransferValidationError.invalidTokenAccount("Selected token account is frozen and cannot be sent.")
+            }
+            if warnings.contains(.token2022Unsupported) {
+                throw TokenTransferValidationError.unsupportedTokenProgram("Token-2022 balances are visible, but Token-2022 sends are deferred until extension account handling is implemented.")
+            }
             let recipientOwner = recipient.trimmingCharacters(in: .whitespacesAndNewlines)
             guard SolanaAddressValidator.isValidAddress(recipientOwner) else {
                 throw SolanaValidationError.invalidAddress("Recipient owner address is invalid.")
             }
 
-            let amountRaw = try TokenAmountFormatter.rawAmount(fromUIAmount: amountText, decimals: token.decimals)
+            let amountRaw = try TokenAmountFormatter.rawAmount(fromUIAmount: amountText, decimals: decimals)
             guard amountRaw <= token.amountRaw else {
                 throw TokenTransferValidationError.insufficientBalance("Token amount exceeds the available balance.")
             }
@@ -465,9 +487,16 @@ final class WalletManager: ObservableObject {
                 recipientTokenAccount: destinationTokenAccount,
                 amountRaw: amountRaw,
                 amountText: amountText.trimmingCharacters(in: .whitespacesAndNewlines),
-                decimals: token.decimals,
+                decimals: decimals,
                 availableAmountRaw: token.amountRaw,
-                ataPlan: ataPlan
+                ataPlan: ataPlan,
+                tokenSymbol: metadata.symbol,
+                tokenName: metadata.name,
+                metadataSource: metadata.source,
+                sourceAccountState: token.state,
+                sourceDelegateAddress: token.delegateAddress,
+                sourceCloseAuthorityAddress: token.closeAuthorityAddress,
+                warnings: warnings
             )
 
             currentTokenDraft = draft
@@ -489,6 +518,7 @@ final class WalletManager: ObservableObject {
                     details: [
                         "network": selectedNetwork.rawValue,
                         "mint": token.mintAddress,
+                        "tokenSymbol": metadata.symbol,
                         "tokenProgram": token.programKind.rawValue,
                         "recipientOwner": recipientOwner,
                         "associatedTokenAccount": destinationTokenAccount ?? ""
@@ -504,12 +534,17 @@ final class WalletManager: ObservableObject {
                 details: [
                     "network": selectedNetwork.rawValue,
                     "mint": token.mintAddress,
+                    "tokenSymbol": metadata.symbol,
+                    "tokenMetadataSource": metadata.source.rawValue,
                     "sourceTokenAccount": token.tokenAccountAddress,
+                    "sourceAccountState": token.state.rawValue,
                     "recipientOwner": recipientOwner,
                     "recipientTokenAccount": destinationTokenAccount ?? "",
                     "createsAssociatedTokenAccount": "\(ataPlan.shouldCreateAssociatedTokenAccount)",
                     "amountRaw": "\(amountRaw)",
-                    "decimals": "\(token.decimals)"
+                    "decimals": "\(decimals)",
+                    "warnings": warnings.map(\.rawValue).joined(separator: ","),
+                    "warningsCount": "\(warnings.count)"
                 ]
             )
             statusMessage = "Token transfer draft prepared."
@@ -551,8 +586,10 @@ final class WalletManager: ObservableObject {
                 details: [
                     "network": draft.network.rawValue,
                     "mint": draft.mintAddress,
+                    "tokenSymbol": draft.tokenSymbol ?? "UNKNOWN",
                     "status": result.status.rawValue,
-                    "createsAssociatedTokenAccount": "\(draft.ataPlan.shouldCreateAssociatedTokenAccount)"
+                    "createsAssociatedTokenAccount": "\(draft.ataPlan.shouldCreateAssociatedTokenAccount)",
+                    "warningsCount": "\(draft.warnings.count)"
                 ]
             )
             if draft.ataPlan.shouldCreateAssociatedTokenAccount, result.status == .success {
@@ -564,6 +601,7 @@ final class WalletManager: ObservableObject {
                     details: [
                         "network": draft.network.rawValue,
                         "mint": draft.mintAddress,
+                        "tokenSymbol": draft.tokenSymbol ?? "UNKNOWN",
                         "associatedTokenAccount": draft.ataPlan.associatedTokenAddress ?? ""
                     ]
                 )
@@ -620,8 +658,11 @@ final class WalletManager: ObservableObject {
                 details: [
                     "network": draft.network.rawValue,
                     "mint": draft.mintAddress,
+                    "tokenSymbol": draft.tokenSymbol ?? "UNKNOWN",
                     "amountRaw": "\(draft.amountRaw)",
-                    "createsAssociatedTokenAccount": "\(draft.ataPlan.shouldCreateAssociatedTokenAccount)"
+                    "createsAssociatedTokenAccount": "\(draft.ataPlan.shouldCreateAssociatedTokenAccount)",
+                    "warnings": draft.warnings.map(\.rawValue).joined(separator: ","),
+                    "warningsCount": "\(draft.warnings.count)"
                 ]
             )
 
@@ -651,12 +692,16 @@ final class WalletManager: ObservableObject {
                 details: [
                     "network": draft.network.rawValue,
                     "mint": draft.mintAddress,
+                    "tokenSymbol": draft.tokenSymbol ?? "UNKNOWN",
                     "sourceTokenAccount": draft.sourceTokenAccount,
+                    "sourceAccountState": draft.sourceAccountState.rawValue,
                     "recipientOwner": draft.recipientOwnerAddress,
                     "recipientTokenAccount": draft.recipientTokenAccount ?? "",
                     "createsAssociatedTokenAccount": "\(draft.ataPlan.shouldCreateAssociatedTokenAccount)",
                     "amountRaw": "\(draft.amountRaw)",
-                    "decimals": "\(draft.decimals)"
+                    "decimals": "\(draft.decimals)",
+                    "warnings": draft.warnings.map(\.rawValue).joined(separator: ","),
+                    "warningsCount": "\(draft.warnings.count)"
                 ]
             )
             statusMessage = "SPL token transfer sent."

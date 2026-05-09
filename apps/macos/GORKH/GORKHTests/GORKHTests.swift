@@ -349,6 +349,145 @@ struct GORKHTests {
         #expect(balance.state == .initialized)
     }
 
+    @Test func tokenMetadataRegistryResolvesKnownAndUnknownTokens() throws {
+        let known = try #require(TokenMetadataRegistry.lookup(
+            mintAddress: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+            network: .mainnetBeta
+        ))
+        #expect(known.symbol == "USDC")
+        #expect(known.decimals == 6)
+
+        let unknown = sampleTokenBalance(
+            mint: Base58.encode(Data(repeating: 9, count: 32)),
+            decimals: 4
+        )
+        let metadata = TokenMetadataResolver.resolve(balance: unknown, network: .mainnetBeta)
+        #expect(metadata.source == .unknown)
+        #expect(metadata.symbol == "UNKNOWN")
+        #expect(metadata.decimals == 4)
+        #expect(TokenMetadataResolver.warnings(for: unknown, metadata: metadata).contains(.unknownToken))
+    }
+
+    @Test func tokenMetadataResolverUsesExpectedDecimalsPriority() {
+        let knownMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+        let parsed = sampleTokenBalance(mint: knownMint, decimals: 4)
+        let parsedMetadata = TokenMetadataResolver.resolve(balance: parsed, network: .mainnetBeta, mintAccountDecimals: 2)
+        #expect(parsedMetadata.decimals == 4)
+        #expect(parsedMetadata.decimalsSource == .parsedAccount)
+
+        let registryFallback = sampleTokenBalance(mint: knownMint, decimals: nil)
+        let registryMetadata = TokenMetadataResolver.resolve(balance: registryFallback, network: .mainnetBeta, mintAccountDecimals: 2)
+        #expect(registryMetadata.decimals == 6)
+        #expect(registryMetadata.decimalsSource == .knownRegistry)
+
+        let mintFallback = sampleTokenBalance(mint: Base58.encode(Data(repeating: 8, count: 32)), decimals: nil)
+        let mintMetadata = TokenMetadataResolver.resolve(balance: mintFallback, network: .devnet, mintAccountDecimals: 3)
+        #expect(mintMetadata.decimals == 3)
+        #expect(mintMetadata.decimalsSource == .mintAccount)
+
+        let unavailable = TokenMetadataResolver.resolve(balance: mintFallback, network: .devnet)
+        #expect(unavailable.decimals == nil)
+        #expect(TokenMetadataResolver.warnings(for: mintFallback, metadata: unavailable).contains(.decimalsUnavailable))
+    }
+
+    @Test func parsedTokenAccountWithoutDecimalsIsKeptButCannotSendUntilResolved() throws {
+        let result: [String: Any] = [
+            "value": [
+                [
+                    "pubkey": "TokenAccount111111111111111111111111111111",
+                    "account": [
+                        "owner": SolanaConstants.splTokenProgramID,
+                        "data": [
+                            "parsed": [
+                                "info": [
+                                    "mint": Base58.encode(Data(repeating: 9, count: 32)),
+                                    "owner": SolanaConstants.systemProgramID,
+                                    "state": "initialized",
+                                    "tokenAmount": [
+                                        "amount": "1234500",
+                                        "uiAmountString": "1.2345"
+                                    ]
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ]
+        ]
+
+        let balance = try #require(try SplTokenParser.parseTokenAccounts(result: result, programKind: .splToken).first)
+        let metadata = TokenMetadataResolver.resolve(balance: balance, network: .mainnetBeta)
+
+        #expect(balance.decimals == nil)
+        #expect(metadata.decimals == nil)
+        #expect(!TokenMetadataResolver.canSend(balance: balance, metadata: metadata))
+    }
+
+    @Test func tokenAccountWarningsBlockFrozenAndExposeDelegateCloseAuthority() {
+        let frozen = sampleTokenBalance(
+            state: .frozen,
+            delegateAddress: SolanaConstants.systemProgramID,
+            delegatedAmountRaw: 10,
+            closeAuthorityAddress: SolanaConstants.systemProgramID
+        )
+        let metadata = TokenMetadataResolver.resolve(balance: frozen, network: .devnet)
+        let warnings = TokenMetadataResolver.warnings(for: frozen, metadata: metadata)
+
+        #expect(warnings.contains(.frozenAccount))
+        #expect(warnings.contains(.delegatedAccount))
+        #expect(warnings.contains(.closeAuthorityPresent))
+        #expect(warnings.contains(.unknownToken))
+        #expect(warnings.contains(.devnetToken))
+        #expect(!TokenMetadataResolver.canSend(balance: frozen, metadata: metadata))
+    }
+
+    @Test func zeroBalanceIsVisibleButNotSendable() {
+        let zero = sampleTokenBalance(amountRaw: 0, decimals: 6)
+        let metadata = TokenMetadataResolver.resolve(balance: zero, network: .devnet)
+        let warnings = TokenMetadataResolver.warnings(for: zero, metadata: metadata)
+
+        #expect(warnings.contains(.zeroBalance))
+        #expect(!TokenMetadataResolver.canSend(balance: zero, metadata: metadata))
+    }
+
+    @Test func tokenTransferDraftCarriesApprovalWarningsAndMetadata() {
+        let owner = Base58.encode(Data(repeating: 2, count: 32))
+        let source = Base58.encode(Data(repeating: 3, count: 32))
+        let destination = Base58.encode(Data(repeating: 4, count: 32))
+        let mint = Base58.encode(Data(repeating: 5, count: 32))
+        let draft = TokenTransferDraft(
+            network: .devnet,
+            ownerAddress: owner,
+            sourceTokenAccount: source,
+            mintAddress: mint,
+            tokenProgramKind: .splToken,
+            recipientOwnerAddress: Base58.encode(Data(repeating: 7, count: 32)),
+            recipientTokenAccount: destination,
+            amountRaw: 42,
+            amountText: "0.000042",
+            decimals: 6,
+            availableAmountRaw: 1_000_000,
+            ataPlan: AssociatedTokenAccount.existingPlan(
+                recipientOwner: Base58.encode(Data(repeating: 7, count: 32)),
+                mint: mint,
+                tokenProgramKind: .splToken,
+                recipientTokenAccount: destination
+            ),
+            tokenSymbol: "UNKNOWN",
+            tokenName: "Unknown Token",
+            metadataSource: .unknown,
+            sourceAccountState: .initialized,
+            sourceDelegateAddress: SolanaConstants.systemProgramID,
+            sourceCloseAuthorityAddress: nil,
+            warnings: [.unknownToken, .delegatedAccount]
+        )
+
+        #expect(draft.tokenDisplayName == "UNKNOWN - Unknown Token")
+        #expect(draft.warnings.contains(.unknownToken))
+        #expect(draft.warnings.contains(.delegatedAccount))
+        #expect(!draft.warnings.contains { $0.blocksSend })
+    }
+
     @Test func transferCheckedInstructionEncodingIsStable() {
         let data = SplTokenInstructionBuilder.transferCheckedInstructionData(amountRaw: 42, decimals: 6)
         #expect(data.hexString == "0c2a0000000000000006")
@@ -921,6 +1060,34 @@ private func parseMessage(_ message: Data) throws -> ParsedSolanaMessage {
 
 private enum TestParsingError: Error {
     case outOfBounds
+}
+
+private func sampleTokenBalance(
+    tokenAccount: String = Base58.encode(Data(repeating: 3, count: 32)),
+    owner: String = SolanaConstants.systemProgramID,
+    mint: String = Base58.encode(Data(repeating: 5, count: 32)),
+    amountRaw: UInt64 = 1_000_000,
+    decimals: UInt8? = 6,
+    programKind: TokenProgramKind = .splToken,
+    state: TokenAccountState = .initialized,
+    delegateAddress: String? = nil,
+    delegatedAmountRaw: UInt64? = nil,
+    closeAuthorityAddress: String? = nil
+) -> TokenBalance {
+    TokenBalance(
+        tokenAccountAddress: tokenAccount,
+        ownerAddress: owner,
+        mintAddress: mint,
+        amountRaw: amountRaw,
+        decimals: decimals,
+        uiAmountString: decimals.map { TokenAmountFormatter.format(rawAmount: amountRaw, decimals: $0) } ?? "\(amountRaw)",
+        programKind: programKind,
+        state: state,
+        delegateAddress: delegateAddress,
+        delegatedAmountRaw: delegatedAmountRaw,
+        closeAuthorityAddress: closeAuthorityAddress,
+        fetchedAt: Date(timeIntervalSince1970: 0)
+    )
 }
 
 @MainActor

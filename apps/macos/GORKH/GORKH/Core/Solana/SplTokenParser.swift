@@ -35,17 +35,28 @@ enum SplTokenParser {
             return nil
         }
 
-        let decimals: UInt8
+        let decimals: UInt8?
         if let decimalsNumber = tokenAmount["decimals"] as? NSNumber {
             decimals = UInt8(clamping: decimalsNumber.intValue)
         } else if let decimalsInt = tokenAmount["decimals"] as? Int {
             decimals = UInt8(clamping: decimalsInt)
         } else {
-            return nil
+            decimals = nil
         }
 
         let uiAmountString = tokenAmount["uiAmountString"] as? String
-            ?? TokenAmountFormatter.format(rawAmount: rawAmount, decimals: decimals)
+            ?? decimals.map { TokenAmountFormatter.format(rawAmount: rawAmount, decimals: $0) }
+            ?? rawAmountString
+
+        let delegatedAmountRaw: UInt64?
+        if let delegatedAmount = info["delegatedAmount"] as? [String: Any],
+           let amountString = delegatedAmount["amount"] as? String {
+            delegatedAmountRaw = UInt64(amountString)
+        } else if let amountString = info["delegatedAmount"] as? String {
+            delegatedAmountRaw = UInt64(amountString)
+        } else {
+            delegatedAmountRaw = nil
+        }
 
         return TokenBalance(
             tokenAccountAddress: tokenAccountAddress,
@@ -57,6 +68,7 @@ enum SplTokenParser {
             programKind: programKind,
             state: TokenAccountState(rawRPCValue: info["state"] as? String),
             delegateAddress: info["delegate"] as? String,
+            delegatedAmountRaw: delegatedAmountRaw,
             closeAuthorityAddress: info["closeAuthority"] as? String,
             fetchedAt: fetchedAt
         )

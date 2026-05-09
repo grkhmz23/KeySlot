@@ -95,6 +95,50 @@ struct SolanaRPCClient {
         return !(dictionary["value"] is NSNull) && dictionary["value"] != nil
     }
 
+    func getMintDecimals(
+        mintAddress: String,
+        programKind: TokenProgramKind,
+        network: WalletNetwork
+    ) async throws -> UInt8? {
+        let result = try await request(
+            method: "getParsedAccountInfo",
+            params: [
+                mintAddress,
+                [
+                    "encoding": "jsonParsed",
+                    "commitment": "confirmed"
+                ]
+            ],
+            network: network
+        )
+
+        guard let dictionary = result as? [String: Any] else {
+            throw SolanaRPCError.invalidResponse
+        }
+        if dictionary["value"] is NSNull || dictionary["value"] == nil {
+            return nil
+        }
+        guard let value = dictionary["value"] as? [String: Any] else {
+            throw SolanaRPCError.invalidResponse
+        }
+        if let owner = value["owner"] as? String, owner != programKind.programID {
+            return nil
+        }
+        guard let data = value["data"] as? [String: Any],
+              let parsed = data["parsed"] as? [String: Any],
+              let info = parsed["info"] as? [String: Any] else {
+            return nil
+        }
+
+        if let decimals = info["decimals"] as? NSNumber {
+            return UInt8(clamping: decimals.intValue)
+        }
+        if let decimals = info["decimals"] as? Int {
+            return UInt8(clamping: decimals)
+        }
+        return nil
+    }
+
     func getMinimumBalanceForRentExemption(byteCount: Int, network: WalletNetwork) async throws -> UInt64 {
         let result = try await request(
             method: "getMinimumBalanceForRentExemption",

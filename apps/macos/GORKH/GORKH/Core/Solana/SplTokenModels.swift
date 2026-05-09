@@ -69,11 +69,12 @@ struct TokenBalance: Codable, Equatable, Identifiable {
     let ownerAddress: String
     let mintAddress: String
     let amountRaw: UInt64
-    let decimals: UInt8
+    let decimals: UInt8?
     let uiAmountString: String
     let programKind: TokenProgramKind
     let state: TokenAccountState
     let delegateAddress: String?
+    let delegatedAmountRaw: UInt64?
     let closeAuthorityAddress: String?
     let fetchedAt: Date
 
@@ -82,7 +83,11 @@ struct TokenBalance: Codable, Equatable, Identifiable {
     }
 
     var canSend: Bool {
-        programKind == .splToken && state == .initialized && amountRaw > 0
+        programKind == .splToken && state == .initialized && amountRaw > 0 && decimals != nil
+    }
+
+    var decimalsText: String {
+        decimals.map(String.init) ?? "Unavailable"
     }
 }
 
@@ -112,6 +117,13 @@ struct TokenTransferDraft: Codable, Equatable, Identifiable {
     let decimals: UInt8
     let availableAmountRaw: UInt64
     let ataPlan: AssociatedTokenAccountPlan
+    let tokenSymbol: String?
+    let tokenName: String?
+    let metadataSource: TokenMetadataSource
+    let sourceAccountState: TokenAccountState
+    let sourceDelegateAddress: String?
+    let sourceCloseAuthorityAddress: String?
+    let warnings: [TokenWarning]
     let createdAt: Date
 
     init(
@@ -128,6 +140,13 @@ struct TokenTransferDraft: Codable, Equatable, Identifiable {
         decimals: UInt8,
         availableAmountRaw: UInt64,
         ataPlan: AssociatedTokenAccountPlan,
+        tokenSymbol: String? = nil,
+        tokenName: String? = nil,
+        metadataSource: TokenMetadataSource = .unknown,
+        sourceAccountState: TokenAccountState = .initialized,
+        sourceDelegateAddress: String? = nil,
+        sourceCloseAuthorityAddress: String? = nil,
+        warnings: [TokenWarning] = [],
         createdAt: Date = Date()
     ) {
         self.id = id
@@ -143,11 +162,28 @@ struct TokenTransferDraft: Codable, Equatable, Identifiable {
         self.decimals = decimals
         self.availableAmountRaw = availableAmountRaw
         self.ataPlan = ataPlan
+        self.tokenSymbol = tokenSymbol
+        self.tokenName = tokenName
+        self.metadataSource = metadataSource
+        self.sourceAccountState = sourceAccountState
+        self.sourceDelegateAddress = sourceDelegateAddress
+        self.sourceCloseAuthorityAddress = sourceCloseAuthorityAddress
+        self.warnings = warnings
         self.createdAt = createdAt
     }
 
     var formattedAmount: String {
         TokenAmountFormatter.format(rawAmount: amountRaw, decimals: decimals)
+    }
+
+    var tokenDisplayName: String {
+        if let tokenSymbol, let tokenName {
+            return "\(tokenSymbol) - \(tokenName)"
+        }
+        if let tokenSymbol {
+            return tokenSymbol
+        }
+        return "Unknown Token"
     }
 }
 
