@@ -172,6 +172,7 @@ struct PortfolioAggregateSummary: Codable, Equatable {
     let lendingSummary: LendingPortfolioSummary
     let lpSummary: LPPortfolioSummary
     let pusdTreasurySummary: PUSDTreasurySummary
+    let yieldSummary: YieldPortfolioSummary
     let totalUSD: Decimal
     let unavailablePriceCount: Int
     let assetCount: Int
@@ -193,6 +194,7 @@ struct PortfolioAggregateSummary: Codable, Equatable {
             lendingSummary: .empty(),
             lpSummary: .empty(),
             pusdTreasurySummary: .empty,
+            yieldSummary: .empty(),
             totalUSD: 0,
             unavailablePriceCount: 0,
             assetCount: 0,
@@ -263,6 +265,11 @@ struct PortfolioSnapshot: Codable, Equatable, Identifiable {
     let pusdHoldingWalletCount: Int
     let pusdWatchOnlyAmountRaw: UInt64
     let pusdWatchOnlyWalletCount: Int
+    let yieldExposureUSD: Decimal?
+    let yieldHeldOpportunityCount: Int
+    let yieldAPYAvailableCount: Int
+    let yieldUnavailableCount: Int
+    let yieldTopSourceLabel: String?
     let assets: [PortfolioSnapshotAsset]
 
     init(id: UUID = UUID(), summary: PortfolioAggregateSummary, createdAt: Date = Date()) {
@@ -311,6 +318,11 @@ struct PortfolioSnapshot: Codable, Equatable, Identifiable {
         self.pusdHoldingWalletCount = summary.pusdTreasurySummary.holdingWalletCount
         self.pusdWatchOnlyAmountRaw = summary.pusdTreasurySummary.watchOnlyAmountRaw
         self.pusdWatchOnlyWalletCount = summary.pusdTreasurySummary.watchOnlyWalletCount
+        self.yieldExposureUSD = summary.yieldSummary.totalYieldExposureUSD
+        self.yieldHeldOpportunityCount = summary.yieldSummary.heldOpportunityCount
+        self.yieldAPYAvailableCount = summary.yieldSummary.apyAvailableCount
+        self.yieldUnavailableCount = summary.yieldSummary.unavailableCount
+        self.yieldTopSourceLabel = summary.yieldSummary.topYieldSourceLabel
         self.assets = summary.wallets.flatMap { wallet in
             wallet.assets.map { value in
                 PortfolioSnapshotAsset(
@@ -373,6 +385,11 @@ struct PortfolioSnapshot: Codable, Equatable, Identifiable {
         case pusdHoldingWalletCount
         case pusdWatchOnlyAmountRaw
         case pusdWatchOnlyWalletCount
+        case yieldExposureUSD
+        case yieldHeldOpportunityCount
+        case yieldAPYAvailableCount
+        case yieldUnavailableCount
+        case yieldTopSourceLabel
         case assets
     }
 
@@ -419,6 +436,11 @@ struct PortfolioSnapshot: Codable, Equatable, Identifiable {
         pusdHoldingWalletCount = try container.decodeIfPresent(Int.self, forKey: .pusdHoldingWalletCount) ?? 0
         pusdWatchOnlyAmountRaw = try container.decodeIfPresent(UInt64.self, forKey: .pusdWatchOnlyAmountRaw) ?? 0
         pusdWatchOnlyWalletCount = try container.decodeIfPresent(Int.self, forKey: .pusdWatchOnlyWalletCount) ?? 0
+        yieldExposureUSD = try container.decodeIfPresent(Decimal.self, forKey: .yieldExposureUSD)
+        yieldHeldOpportunityCount = try container.decodeIfPresent(Int.self, forKey: .yieldHeldOpportunityCount) ?? 0
+        yieldAPYAvailableCount = try container.decodeIfPresent(Int.self, forKey: .yieldAPYAvailableCount) ?? 0
+        yieldUnavailableCount = try container.decodeIfPresent(Int.self, forKey: .yieldUnavailableCount) ?? 0
+        yieldTopSourceLabel = try container.decodeIfPresent(String.self, forKey: .yieldTopSourceLabel)
         assets = try container.decode([PortfolioSnapshotAsset].self, forKey: .assets)
     }
 }
@@ -443,6 +465,10 @@ struct PortfolioHistoryPoint: Codable, Equatable, Identifiable {
     let pusdTotalAmountRaw: UInt64
     let pusdEstimatedUSD: Decimal?
     let pusdHoldingWalletCount: Int
+    let yieldExposureUSD: Decimal?
+    let yieldHeldOpportunityCount: Int
+    let yieldAPYAvailableCount: Int
+    let yieldUnavailableCount: Int
 
     init(snapshot: PortfolioSnapshot) {
         self.snapshotID = snapshot.id
@@ -462,6 +488,10 @@ struct PortfolioHistoryPoint: Codable, Equatable, Identifiable {
         self.pusdTotalAmountRaw = snapshot.pusdTotalAmountRaw
         self.pusdEstimatedUSD = snapshot.pusdEstimatedUSD
         self.pusdHoldingWalletCount = snapshot.pusdHoldingWalletCount
+        self.yieldExposureUSD = snapshot.yieldExposureUSD
+        self.yieldHeldOpportunityCount = snapshot.yieldHeldOpportunityCount
+        self.yieldAPYAvailableCount = snapshot.yieldAPYAvailableCount
+        self.yieldUnavailableCount = snapshot.yieldUnavailableCount
     }
 }
 

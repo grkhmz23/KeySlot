@@ -1828,6 +1828,9 @@ final class WalletManager: ObservableObject {
                 "pusdAmountRaw": "\(result.summary.pusdTreasurySummary.totalAmountRaw)",
                 "pusdWalletCount": "\(result.summary.pusdTreasurySummary.holdingWalletCount)",
                 "pusdPriceSource": result.summary.pusdTreasurySummary.priceSource.rawValue,
+                "yieldHeldOpportunityCount": "\(result.summary.yieldSummary.heldOpportunityCount)",
+                "yieldAPYAvailableCount": "\(result.summary.yieldSummary.apyAvailableCount)",
+                "yieldUnavailableCount": "\(result.summary.yieldSummary.unavailableCount)",
                 "unavailablePriceCount": "\(result.summary.unavailablePriceCount)",
                 "priceSource": result.summary.priceSource
             ]
@@ -1931,6 +1934,26 @@ final class WalletManager: ObservableObject {
             ]
         )
 
+        record(
+            kind: result.summary.yieldSummary.unavailableCount > 0 ? .yieldSourceUnavailable : .yieldComparisonRefreshed,
+            walletID: selectedWalletID,
+            publicAddress: selectedProfile?.publicAddress,
+            message: result.summary.yieldSummary.unavailableCount > 0
+                ? "Yield comparison refreshed with unavailable rate sources."
+                : "Yield comparison refreshed.",
+            details: [
+                "network": selectedNetwork.rawValue,
+                "portfolioScope": selectedPortfolioScope.rawValue,
+                "yieldStatus": result.summary.yieldSummary.status.rawValue,
+                "yieldHoldingCount": "\(result.summary.yieldSummary.holdings.count)",
+                "yieldHeldOpportunityCount": "\(result.summary.yieldSummary.heldOpportunityCount)",
+                "yieldAPYAvailableCount": "\(result.summary.yieldSummary.apyAvailableCount)",
+                "yieldUnavailableCount": "\(result.summary.yieldSummary.unavailableCount)",
+                "yieldTopSource": result.summary.yieldSummary.topYieldSourceLabel ?? "",
+                "source": result.summary.yieldSummary.source
+            ]
+        )
+
         if let priceError = result.priceErrorMessage {
             record(
                 kind: .portfolioPriceRefreshFailed,
@@ -1969,6 +1992,10 @@ final class WalletManager: ObservableObject {
                     "pusdAmountRaw": "\(snapshot.pusdTotalAmountRaw)",
                     "pusdWalletCount": "\(snapshot.pusdHoldingWalletCount)",
                     "pusdPriceSource": snapshot.pusdPriceSource,
+                    "yieldHeldOpportunityCount": "\(snapshot.yieldHeldOpportunityCount)",
+                    "yieldAPYAvailableCount": "\(snapshot.yieldAPYAvailableCount)",
+                    "yieldUnavailableCount": "\(snapshot.yieldUnavailableCount)",
+                    "yieldTopSource": snapshot.yieldTopSourceLabel ?? "",
                     "lendingProtocolStatuses": snapshot.lendingProtocolStatuses
                         .map { "\($0.key):\($0.value)" }
                         .sorted()
@@ -2018,6 +2045,21 @@ final class WalletManager: ObservableObject {
                         .map { "\($0.key):\($0.value)" }
                         .sorted()
                         .joined(separator: ",")
+                ]
+            )
+            record(
+                kind: .yieldSnapshotStored,
+                walletID: selectedWalletID,
+                publicAddress: selectedProfile?.publicAddress,
+                message: "Portfolio yield comparison snapshot summary stored locally.",
+                details: [
+                    "network": selectedNetwork.rawValue,
+                    "portfolioScope": selectedPortfolioScope.rawValue,
+                    "yieldExposureUSD": snapshot.yieldExposureUSD.map(String.init(describing:)) ?? "",
+                    "yieldHeldOpportunityCount": "\(snapshot.yieldHeldOpportunityCount)",
+                    "yieldAPYAvailableCount": "\(snapshot.yieldAPYAvailableCount)",
+                    "yieldUnavailableCount": "\(snapshot.yieldUnavailableCount)",
+                    "yieldTopSource": snapshot.yieldTopSourceLabel ?? ""
                 ]
             )
             if snapshot.stakeAccountCount > 0 || snapshot.lstHoldingCount > 0 {
@@ -2094,6 +2136,24 @@ final class WalletManager: ObservableObject {
                 "network": selectedNetwork.rawValue,
                 "mint": PUSDConstants.mintAddress,
                 "tokenSymbol": PUSDConstants.symbol
+            ]
+        )
+    }
+
+    func recordYieldPanelViewed() {
+        record(
+            kind: .yieldPanelViewed,
+            walletID: selectedWalletID,
+            publicAddress: selectedProfile?.publicAddress,
+            message: "Yield comparison panel viewed.",
+            details: [
+                "network": selectedNetwork.rawValue,
+                "portfolioScope": selectedPortfolioScope.rawValue,
+                "yieldStatus": portfolioSummary.yieldSummary.status.rawValue,
+                "yieldHoldingCount": "\(portfolioSummary.yieldSummary.holdings.count)",
+                "yieldHeldOpportunityCount": "\(portfolioSummary.yieldSummary.heldOpportunityCount)",
+                "yieldAPYAvailableCount": "\(portfolioSummary.yieldSummary.apyAvailableCount)",
+                "yieldUnavailableCount": "\(portfolioSummary.yieldSummary.unavailableCount)"
             ]
         )
     }

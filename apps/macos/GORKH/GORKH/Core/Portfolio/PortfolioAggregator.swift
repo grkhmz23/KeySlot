@@ -57,6 +57,15 @@ enum PortfolioAggregator {
             refreshedAt: fetchedAt
         )
         let pusdTreasurySummary = PUSDTreasuryAggregator.aggregate(wallets: walletSummaries)
+        let yieldSummary = YieldPortfolioAggregator.aggregate(
+            scope: scope,
+            network: network,
+            lstSummary: lstSummary,
+            lendingSummary: lendingSummary,
+            lpSummary: lpSummary,
+            pusdTreasurySummary: pusdTreasurySummary,
+            refreshedAt: fetchedAt
+        )
         let totalUSD = liquidAssetsUSD + (nativeStakeSummary.estimatedUSD ?? 0)
         let unavailablePriceCount = assetUnavailablePriceCount + (nativeStakeSummary.priceUnavailable ? 1 : 0)
         let liquidSolLamports = solBalances.values.reduce(UInt64(0)) { partial, lamports in
@@ -76,6 +85,7 @@ enum PortfolioAggregator {
             lendingSummary: lendingSummary,
             lpSummary: lpSummary,
             pusdTreasurySummary: pusdTreasurySummary,
+            yieldSummary: yieldSummary,
             totalUSD: totalUSD,
             unavailablePriceCount: unavailablePriceCount,
             assetCount: assetCount,

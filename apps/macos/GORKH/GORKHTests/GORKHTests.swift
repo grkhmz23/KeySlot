@@ -3187,6 +3187,152 @@ struct GORKHTests {
         }
     }
 
+    @Test func yieldSummaryRepresentsExistingSourcesWithoutAddingExecution() throws {
+        let profile = WalletProfile(label: "Yield User", publicAddress: SolanaConstants.systemProgramID)
+        let jito = sampleTokenBalance(
+            owner: profile.publicAddress,
+            mint: "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn",
+            amountRaw: 1_000_000_000,
+            decimals: 9
+        )
+        let pusd = sampleTokenBalance(
+            owner: profile.publicAddress,
+            mint: PUSDConstants.mintAddress,
+            amountRaw: 2_000_000,
+            decimals: PUSDConstants.decimals
+        )
+        let prices = [
+            PortfolioConstants.nativeSolMint: PortfolioPriceQuote(
+                mintAddress: PortfolioConstants.nativeSolMint,
+                usdPrice: 100,
+                source: PortfolioConstants.priceSource,
+                blockID: 1,
+                priceChange24h: nil,
+                fetchedAt: Date(timeIntervalSince1970: 0),
+                errorMessage: nil
+            ),
+            "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn": PortfolioPriceQuote(
+                mintAddress: "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn",
+                usdPrice: 120,
+                source: PortfolioConstants.priceSource,
+                blockID: 1,
+                priceChange24h: nil,
+                fetchedAt: Date(timeIntervalSince1970: 0),
+                errorMessage: nil
+            )
+        ]
+        let lendingPosition = sampleLendingPosition(
+            profile: profile,
+            protocolKind: .kamino,
+            suppliedUSD: 100,
+            borrowedUSD: 0,
+            healthFactor: Decimal(string: "2.0", locale: Locale(identifier: "en_US_POSIX"))
+        )
+        let reserve = LendingMarketReserveSummary(
+            protocolKind: .kamino,
+            marketName: "Main Market",
+            marketAddress: "market",
+            reserveAddress: "reserve",
+            symbol: "USDC",
+            mintAddress: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+            supplyAPY: Decimal(string: "0.0371", locale: Locale(identifier: "en_US_POSIX")),
+            borrowAPY: Decimal(string: "0.0502", locale: Locale(identifier: "en_US_POSIX")),
+            maxLTV: Decimal(string: "0.8", locale: Locale(identifier: "en_US_POSIX")),
+            totalSupply: nil,
+            totalBorrow: nil,
+            totalSupplyUSD: 1_000,
+            totalBorrowUSD: nil,
+            utilization: Decimal(string: "0.4", locale: Locale(identifier: "en_US_POSIX")),
+            source: .publicAPI,
+            updatedAt: Date(timeIntervalSince1970: 0)
+        )
+        let lendingResult = LendingAdapterResult(
+            protocolKind: .kamino,
+            status: .loaded,
+            positions: [lendingPosition],
+            source: .publicAPI,
+            updatedAt: Date(timeIntervalSince1970: 0),
+            errorMessage: nil,
+            marketReserves: [reserve]
+        )
+        let lpResult = LPAdapterResult(
+            protocolKind: .raydium,
+            status: .loaded,
+            positions: [sampleLPPosition(profile: profile, protocolKind: .raydium, estimatedValueUSD: 50)],
+            source: .publicAPI,
+            updatedAt: Date(timeIntervalSince1970: 0),
+            errorMessage: nil
+        )
+
+        let summary = PortfolioAggregator.aggregate(
+            scope: .activeWallet,
+            network: .mainnetBeta,
+            profiles: [profile],
+            solBalances: [profile.id: 1_000_000_000],
+            tokenBalances: [profile.id: [jito, pusd]],
+            prices: prices,
+            lendingAdapterResults: [lendingResult],
+            lpAdapterResults: [lpResult],
+            fetchedAt: Date(timeIntervalSince1970: 0)
+        )
+        let yield = summary.yieldSummary
+        let json = try #require(String(data: JSONEncoder().encode(yield), encoding: .utf8)).lowercased()
+
+        #expect(summary.totalUSD == 222)
+        #expect(summary.lendingSummary.netValueUSD == 100)
+        #expect(summary.lpSummary.estimatedValueUSD == 50)
+        #expect(yield.holdings.count == 4)
+        #expect(yield.heldOpportunityCount >= 4)
+        #expect(yield.apyAvailableCount == 1)
+        #expect(yield.totalYieldExposureUSD == 272)
+        #expect(yield.opportunities.contains { $0.protocolKind == .jito && $0.rate.value == nil && $0.status == .partial })
+        #expect(yield.opportunities.contains { $0.protocolKind == .kamino && $0.rate.value == Decimal(string: "0.0371", locale: Locale(identifier: "en_US_POSIX")) })
+        #expect(yield.opportunities.contains { $0.protocolKind == .raydium && $0.rate.value == nil && $0.status == .partial })
+        #expect(yield.opportunities.contains { $0.protocolKind == .palmUSD && $0.status == .unavailable && $0.unavailableReason == YieldConstants.pusdYieldUnavailableReason })
+        #expect(yield.noDoubleCountNotice.lowercased().contains("separately"))
+        for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "serializedtransaction", "transactionpayload", "instructionpayload", "unsignedtransaction"] {
+            #expect(!json.contains(forbidden))
+        }
+    }
+
+    @Test func yieldSnapshotsAndRiskLabelsRemainSafeAndDeterministic() throws {
+        let profile = WalletProfile(label: "Yield Snapshot", publicAddress: SolanaConstants.systemProgramID)
+        let summary = PortfolioAggregator.aggregate(
+            scope: .activeWallet,
+            network: .mainnetBeta,
+            profiles: [profile],
+            solBalances: [profile.id: 0],
+            tokenBalances: [:],
+            prices: [:],
+            lpAdapterResults: [
+                LPAdapterResult(
+                    protocolKind: .orca,
+                    status: .partial,
+                    positions: [sampleLPPosition(profile: profile, protocolKind: .orca, estimatedValueUSD: nil, status: .partial)],
+                    source: .sdkReadOnly,
+                    updatedAt: Date(timeIntervalSince1970: 0),
+                    errorMessage: "Rate unavailable."
+                )
+            ],
+            fetchedAt: Date(timeIntervalSince1970: 0)
+        )
+        let snapshot = PortfolioSnapshot(summary: summary)
+        let snapshotJSON = try #require(String(data: JSONEncoder().encode(snapshot), encoding: .utf8)).lowercased()
+        let comparisonJSON = try #require(String(data: JSONEncoder().encode(summary.yieldSummary.snapshot), encoding: .utf8)).lowercased()
+
+        #expect(summary.yieldSummary.status == .partial)
+        #expect(summary.yieldSummary.apyAvailableCount == 0)
+        #expect(summary.yieldSummary.unavailableCount > 0)
+        #expect(snapshot.yieldHeldOpportunityCount == summary.yieldSummary.heldOpportunityCount)
+        #expect(snapshot.yieldAPYAvailableCount == 0)
+        #expect(YieldRiskClassifier.classifyStablecoinYield(isActive: false) == .unavailable)
+        #expect(summary.yieldSummary.opportunities.contains { $0.sourceKind == .stablecoin && $0.unavailableReason == YieldConstants.pusdYieldUnavailableReason })
+        for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "serializedtransaction", "transactionpayload", "instructionpayload", "unsignedtransaction"] {
+            #expect(!snapshotJSON.contains(forbidden))
+            #expect(!comparisonJSON.contains(forbidden))
+        }
+    }
+
     @Test func meteoraHelperBridgeMapsReadOnlyResponseAndRejectsPayloadFields() async throws {
         let profile = WalletProfile(label: "Meteora User", publicAddress: SolanaConstants.systemProgramID)
         let policy = MeteoraHelperInvocationPolicy.readOnlyEnabledForDevelopment(
