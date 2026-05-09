@@ -17,6 +17,19 @@ struct SwapInstructionProgramSummary: Codable, Equatable, Identifiable {
     let instructionCount: Int
 }
 
+enum SwapRouteRiskSeverity: String, Codable, Equatable {
+    case info
+    case warning
+    case high
+}
+
+struct SwapRouteRiskWarning: Codable, Equatable, Identifiable {
+    var id: String { "\(severity.rawValue):\(message)" }
+
+    let severity: SwapRouteRiskSeverity
+    let message: String
+}
+
 struct SwapTransactionReview: Codable, Equatable {
     let transactionVersion: String
     let feePayer: String?
@@ -27,6 +40,8 @@ struct SwapTransactionReview: Codable, Equatable {
     let requiredSignatureCount: Int
     let messageBase64: String
     let transactionFingerprint: String
+    let addressLookupTableCount: Int
+    let riskWarnings: [SwapRouteRiskWarning]
     let warnings: [String]
     let blockingReasons: [String]
 
@@ -47,6 +62,7 @@ struct DecodedSolanaTransaction: Equatable {
     let readonlyUnsignedAccounts: Int
     let accountKeys: [String]
     let instructionProgramIndexes: [Int]
+    let addressLookupTableCount: Int
 }
 
 enum SwapTransactionReviewError: LocalizedError, Equatable {
@@ -91,10 +107,8 @@ enum SwapTransactionReviewer {
             warnings.append("Transaction requires \(decoded.requiredSignatures) signatures.")
         }
 
-        let unknownPrograms = decoded.programSummaries.filter { $0.label == "Unknown program" }
-        if !unknownPrograms.isEmpty {
-            warnings.append("Transaction references \(unknownPrograms.count) unrecognized program id(s). Review route labels carefully.")
-        }
+        let riskWarnings = SwapRouteRiskReviewer.review(decoded: decoded, expectedWallet: expectedWallet)
+        warnings.append(contentsOf: riskWarnings.map(\.message))
 
         return SwapTransactionReview(
             transactionVersion: decoded.version,
@@ -106,6 +120,8 @@ enum SwapTransactionReviewer {
             requiredSignatureCount: decoded.requiredSignatures,
             messageBase64: decoded.messageData.base64EncodedString(),
             transactionFingerprint: SwapFingerprint.transactionFingerprint(base64: serializedTransactionBase64),
+            addressLookupTableCount: decoded.addressLookupTableCount,
+            riskWarnings: riskWarnings,
             warnings: warnings,
             blockingReasons: blockingReasons
         )
@@ -187,9 +203,10 @@ enum SolanaSerializedTransaction {
             cursor += instructionDataLength
         }
 
+        var addressLookupTableCount = 0
         if version == "v0" {
-            let lookupCount = try readShortVector(data, cursor: &cursor)
-            for _ in 0..<lookupCount {
+            addressLookupTableCount = try readShortVector(data, cursor: &cursor)
+            for _ in 0..<addressLookupTableCount {
                 guard cursor + 32 <= data.count else {
                     throw SwapTransactionReviewError.truncated
                 }
@@ -218,7 +235,8 @@ enum SolanaSerializedTransaction {
             readonlySignedAccounts: readonlySigned,
             readonlyUnsignedAccounts: readonlyUnsigned,
             accountKeys: accountKeys,
-            instructionProgramIndexes: programIndexes
+            instructionProgramIndexes: programIndexes,
+            addressLookupTableCount: addressLookupTableCount
         )
     }
 
@@ -254,6 +272,85 @@ enum SolanaSerializedTransaction {
             }
             shift += 7
         }
+    }
+}
+
+enum SwapRouteRiskReviewer {
+    static let highWritableAccountThreshold = 32
+
+    static func review(decoded: DecodedSolanaTransaction, expectedWallet: String) -> [SwapRouteRiskWarning] {
+        var warnings: [SwapRouteRiskWarning] = []
+        let programSummaries = decoded.programSummaries
+        let unknownPrograms = programSummaries.filter { $0.label == "Unknown program" }
+        if !unknownPrograms.isEmpty {
+            warnings.append(SwapRouteRiskWarning(
+                severity: .high,
+                message: "Transaction references \(unknownPrograms.count) unrecognized program id(s). Review route labels carefully."
+            ))
+        }
+
+        if decoded.version == "legacy" {
+            warnings.append(SwapRouteRiskWarning(
+                severity: .info,
+                message: "Transaction is legacy format. Jupiter Swap V2 migration should prefer versioned transaction review."
+            ))
+        }
+
+        if decoded.addressLookupTableCount > 0 {
+            warnings.append(SwapRouteRiskWarning(
+                severity: .warning,
+                message: "Transaction uses \(decoded.addressLookupTableCount) address lookup table(s); loaded accounts are not fully expanded in this review."
+            ))
+        }
+
+        if decoded.writableAccounts.count > highWritableAccountThreshold {
+            warnings.append(SwapRouteRiskWarning(
+                severity: .warning,
+                message: "Transaction has \(decoded.writableAccounts.count) writable static account(s), which is high for a swap."
+            ))
+        }
+
+        let writableSigners = decoded.accountSummaries.filter { $0.isSigner && $0.isWritable && $0.address != expectedWallet }
+        if !writableSigners.isEmpty {
+            warnings.append(SwapRouteRiskWarning(
+                severity: .high,
+                message: "Transaction includes writable signer account(s) besides the selected wallet."
+            ))
+        }
+
+        let labels = Set(programSummaries.map(\.label))
+        if labels.contains("Compute Budget") {
+            warnings.append(SwapRouteRiskWarning(
+                severity: .info,
+                message: "Compute budget instruction is present."
+            ))
+        }
+        if labels.contains("Associated Token Account") {
+            warnings.append(SwapRouteRiskWarning(
+                severity: .info,
+                message: "Associated token account setup may be included."
+            ))
+        }
+        if labels.contains("SPL Token") || labels.contains("Token-2022") {
+            warnings.append(SwapRouteRiskWarning(
+                severity: .info,
+                message: "Token program interaction is present."
+            ))
+        }
+        if labels.contains("System Program") {
+            warnings.append(SwapRouteRiskWarning(
+                severity: .info,
+                message: "System program interaction is present; review SOL fee/rent effects."
+            ))
+        }
+        if labels.contains("Jupiter Aggregator") {
+            warnings.append(SwapRouteRiskWarning(
+                severity: .info,
+                message: "Jupiter Aggregator program is present."
+            ))
+        }
+
+        return warnings
     }
 }
 

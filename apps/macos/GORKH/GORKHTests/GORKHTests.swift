@@ -1446,11 +1446,15 @@ struct GORKHTests {
         let safeDetails = Redaction.safeDetails([
             "x-api-key": "test-jupiter-key",
             "jupiterApiKey": "test-jupiter-key",
+            "GORKH_JUPITER_API_KEY": "test-jupiter-key",
+            "JUPITER_API_KEY": "test-jupiter-key",
             "inputMint": PortfolioConstants.nativeSolMint
         ])
         #expect(safeDetails["inputMint"] == PortfolioConstants.nativeSolMint)
         #expect(safeDetails["x-api-key"] == nil)
         #expect(safeDetails["jupiterApiKey"] == nil)
+        #expect(safeDetails["GORKH_JUPITER_API_KEY"] == nil)
+        #expect(safeDetails["JUPITER_API_KEY"] == nil)
     }
 
     @Test func jupiterConfigurationFallsBackToLiteEndpointsWithoutAPIKey() {
@@ -1459,6 +1463,57 @@ struct GORKHTests {
         #expect(configuration.apiKey == nil)
         #expect(configuration.swapBaseURL.absoluteString == "https://lite-api.jup.ag/swap/v1")
         #expect(configuration.priceBaseURL.absoluteString == "https://lite-api.jup.ag/price/v3")
+    }
+
+    @Test func jupiterAPIModeAndEndpointCompatibilityBlockV2ExecutionUntilReviewed() throws {
+        let configuration = JupiterAPIConfiguration(environment: [
+            JupiterAPIConfiguration.appSpecificAPIKeyEnvironmentName: "test-jupiter-key"
+        ])
+
+        #expect(configuration.swapMode == .metisV1)
+        #expect(configuration.swapMode.displayName == "Metis v1 compatibility mode")
+        #expect(configuration.endpointCompatibility.allSatisfy { $0.canUse })
+
+        let v1Quote = JupiterCompatibilityValidator.validate(
+            url: try #require(URL(string: "https://api.jup.ag/swap/v1/quote")),
+            kind: .quote,
+            hasAPIKey: true
+        )
+        #expect(v1Quote.canUse)
+        #expect(v1Quote.mode == .metisV1)
+
+        let paidWithoutKey = JupiterCompatibilityValidator.validate(
+            url: try #require(URL(string: "https://api.jup.ag/swap/v1/quote")),
+            kind: .quote,
+            hasAPIKey: false
+        )
+        #expect(!paidWithoutKey.canUse)
+        #expect(paidWithoutKey.blockingReasons.contains("Paid Jupiter endpoint requires an API key."))
+
+        let v2Order = JupiterCompatibilityValidator.validate(
+            url: try #require(URL(string: "https://api.jup.ag/swap/v2/order")),
+            kind: .order,
+            hasAPIKey: true
+        )
+        #expect(!v2Order.canUse)
+        #expect(v2Order.mode == .swapV2OrderExecuteCandidate)
+        #expect(v2Order.blockingReasons.contains("Swap V2 order/execute is review-only and not enabled for execution."))
+
+        let v2Execute = JupiterCompatibilityValidator.validate(
+            url: try #require(URL(string: "https://api.jup.ag/swap/v2/execute")),
+            kind: .execute,
+            hasAPIKey: true
+        )
+        #expect(!v2Execute.canUse)
+        #expect(v2Execute.mode == .swapV2OrderExecuteCandidate)
+
+        let limitOrder = JupiterCompatibilityValidator.validate(
+            url: try #require(URL(string: "https://api.jup.ag/trigger/v1/createOrder")),
+            kind: .limitOrder,
+            hasAPIKey: true
+        )
+        #expect(!limitOrder.canUse)
+        #expect(limitOrder.blockingReasons.contains("Limit order endpoints are forbidden in Wallet Swap."))
     }
 
     @Test func watchOnlyProfileMetadataHasNoSecretsAndCannotSign() throws {
@@ -1941,6 +1996,8 @@ struct GORKHTests {
         #expect(review.feePayer == fixture.keypair.publicAddress)
         #expect(review.signerAccounts == [fixture.keypair.publicAddress])
         #expect(review.programSummaries.contains { $0.label == "System Program" })
+        #expect(review.riskWarnings.contains { $0.message.contains("legacy format") })
+        #expect(review.riskWarnings.contains { $0.message.contains("System program interaction") })
     }
 
     @Test func swapTransactionReviewBlocksWrongFeePayerAndSignsExpectedSignerOnly() throws {
@@ -1976,6 +2033,40 @@ struct GORKHTests {
         #expect(signature != Data(repeating: 0, count: 64))
         #expect(publicKey.isValidSignature(signature, for: decodedSigned.messageData))
         #expect(decodedSigned.messageData == fixture.message)
+    }
+
+    @Test func swapRouteRiskReviewFlagsUnknownProgramsWritableSignersAndLookupTables() throws {
+        let expectedWallet = Base58.encode(Data(repeating: 1, count: 32))
+        var accountKeys = [
+            expectedWallet,
+            Base58.encode(Data(repeating: 2, count: 32)),
+            Base58.encode(Data(repeating: 3, count: 32)),
+            SolanaConstants.systemProgramID
+        ]
+        for value in 4...36 {
+            accountKeys.append(Base58.encode(Data(repeating: UInt8(value), count: 32)))
+        }
+        let decoded = DecodedSolanaTransaction(
+            originalData: Data(),
+            signatureCount: 2,
+            signaturesOffset: 0,
+            messageOffset: 0,
+            messageData: Data(),
+            version: "v0",
+            requiredSignatures: 2,
+            readonlySignedAccounts: 0,
+            readonlyUnsignedAccounts: 0,
+            accountKeys: accountKeys,
+            instructionProgramIndexes: [2, 3],
+            addressLookupTableCount: 1
+        )
+        let warnings = SwapRouteRiskReviewer.review(decoded: decoded, expectedWallet: expectedWallet)
+
+        #expect(warnings.contains { $0.severity == .high && $0.message.contains("unrecognized program") })
+        #expect(warnings.contains { $0.severity == .high && $0.message.contains("writable signer") })
+        #expect(warnings.contains { $0.severity == .warning && $0.message.contains("address lookup table") })
+        #expect(warnings.contains { $0.severity == .warning && $0.message.contains("writable static account") })
+        #expect(warnings.contains { $0.severity == .info && $0.message.contains("System program interaction") })
     }
 
     @Test func swapApprovalGuardRequiresFreshReviewSimulationAndFingerprint() throws {
@@ -2038,6 +2129,45 @@ struct GORKHTests {
         #expect(!json.contains("serializedtransaction"))
         #expect(!json.contains("swaptransaction"))
         #expect(!json.contains("transactionpayload"))
+    }
+
+    @Test func swapBalanceDeltaVerificationReportsVerifiedMismatchAndUnavailable() throws {
+        let quote = try sampleJupiterQuote()
+        let verified = SwapBalanceDeltaVerifier.verify(
+            quote: quote,
+            before: [
+                quote.inputMint: 2_000_000,
+                quote.outputMint: 1_000
+            ],
+            after: [
+                quote.inputMint: 900_000,
+                quote.outputMint: 141_100
+            ],
+            checkedAt: Date(timeIntervalSince1970: 10)
+        )
+        #expect(verified.status == .verified)
+        #expect(verified.inputDeltaRaw == -1_100_000)
+        #expect(verified.outputDeltaRaw == 140_100)
+
+        let mismatch = SwapBalanceDeltaVerifier.verify(
+            quote: quote,
+            before: [
+                quote.inputMint: 2_000_000,
+                quote.outputMint: 1_000
+            ],
+            after: [
+                quote.inputMint: 1_500_000,
+                quote.outputMint: 20_000
+            ]
+        )
+        #expect(mismatch.status == .mismatch)
+
+        let unavailable = SwapBalanceDeltaVerifier.verify(
+            quote: quote,
+            before: [quote.inputMint: 2_000_000],
+            after: [quote.inputMint: 900_000]
+        )
+        #expect(unavailable.status == .unavailable)
     }
 
     @Test func devnetAirdropRejectsMainnet() async {

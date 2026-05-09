@@ -15,6 +15,7 @@ struct SwapReviewView: View {
                             color: review.canApprove ? GorkhColors.success : GorkhColors.danger
                         )
                         GorkhStatusChip(title: "\(review.requiredSignatureCount) signer(s)", systemImage: "signature", color: GorkhColors.accent)
+                        GorkhStatusChip(title: "\(review.addressLookupTableCount) ALT", systemImage: "tablecells", color: review.addressLookupTableCount > 0 ? GorkhColors.warning : GorkhColors.accent)
                     }
 
                     reviewRow("Fee payer", review.feePayer ?? "Unknown")
@@ -39,7 +40,27 @@ struct SwapReviewView: View {
                         }
                     }
 
-                    ForEach(review.warnings, id: \.self) { warning in
+                    if !review.riskWarnings.isEmpty {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("Route risk review")
+                                .font(.caption)
+                                .foregroundStyle(GorkhColors.secondaryText)
+                            ForEach(review.riskWarnings) { warning in
+                                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                    Text(warning.severity.rawValue.uppercased())
+                                        .font(.caption2)
+                                        .fontWeight(.semibold)
+                                        .foregroundStyle(color(for: warning.severity))
+                                        .frame(width: 58, alignment: .leading)
+                                    Text(warning.message)
+                                        .font(.caption)
+                                        .foregroundStyle(color(for: warning.severity))
+                                }
+                            }
+                        }
+                    }
+
+                    ForEach(generalWarnings(review), id: \.self) { warning in
                         Text(warning)
                             .font(.caption)
                             .foregroundStyle(GorkhColors.warning)
@@ -67,6 +88,22 @@ struct SwapReviewView: View {
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(GorkhColors.primaryText)
                 .textSelection(.enabled)
+        }
+    }
+
+    private func generalWarnings(_ review: SwapTransactionReview) -> [String] {
+        let riskMessages = Set(review.riskWarnings.map(\.message))
+        return review.warnings.filter { !riskMessages.contains($0) }
+    }
+
+    private func color(for severity: SwapRouteRiskSeverity) -> Color {
+        switch severity {
+        case .info:
+            return GorkhColors.secondaryText
+        case .warning:
+            return GorkhColors.warning
+        case .high:
+            return GorkhColors.danger
         }
     }
 }

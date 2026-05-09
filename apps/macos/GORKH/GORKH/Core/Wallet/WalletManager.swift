@@ -45,6 +45,7 @@ final class WalletManager: ObservableObject {
     @Published private(set) var swapErrorMessage: String?
     @Published private(set) var lastSwapSignature: String?
     @Published private(set) var lastSwapConfirmationStatus: String?
+    @Published private(set) var swapBalanceDeltaVerification: SwapBalanceDeltaVerification = .notStarted
 
     private let vault: WalletVault
     private let rpcClient: SolanaRPCClient
@@ -69,6 +70,7 @@ final class WalletManager: ObservableObject {
     private var preparedDraftFingerprint: String?
     private var preparedTokenDraftFingerprint: String?
     private var preparedSwapFingerprint: String?
+    private var swapPreflightBalances: [String: UInt64] = [:]
 
     var selectedProfile: WalletProfile? {
         profiles.first { $0.id == selectedWalletID }
@@ -90,6 +92,18 @@ final class WalletManager: ObservableObject {
             return nil
         }
         return URL(string: "https://explorer.solana.com/tx/\(signature)\(selectedNetwork.explorerClusterQuery)")
+    }
+
+    var jupiterAPIConfiguration: JupiterAPIConfiguration {
+        JupiterAPIConfiguration()
+    }
+
+    var jupiterSwapAPIMode: JupiterSwapAPIMode {
+        jupiterAPIConfiguration.swapMode
+    }
+
+    var jupiterEndpointCompatibility: [JupiterEndpointCompatibility] {
+        jupiterAPIConfiguration.endpointCompatibility
     }
 
     var swapInputTokenOptions: [SwapTokenOption] {
@@ -1250,6 +1264,8 @@ final class WalletManager: ObservableObject {
         preparedSwapFingerprint = nil
         lastSwapSignature = nil
         lastSwapConfirmationStatus = nil
+        swapPreflightBalances = [:]
+        swapBalanceDeltaVerification = .notStarted
     }
 
     func requestSwapQuote(
@@ -1306,6 +1322,7 @@ final class WalletManager: ObservableObject {
                 message: "Jupiter swap quote requested.",
                 details: [
                     "network": selectedNetwork.rawValue,
+                    "apiMode": jupiterSwapAPIMode.rawValue,
                     "inputMint": inputMint,
                     "outputMint": outputMint,
                     "amountRaw": "\(amountRaw)",
@@ -1330,6 +1347,7 @@ final class WalletManager: ObservableObject {
                 message: "Jupiter swap quote received.",
                 details: [
                     "network": selectedNetwork.rawValue,
+                    "apiMode": jupiterSwapAPIMode.rawValue,
                     "inputMint": quote.inputMint,
                     "outputMint": quote.outputMint,
                     "amountRaw": "\(quote.inAmount)",
@@ -1377,6 +1395,7 @@ final class WalletManager: ObservableObject {
             currentSwapReview = review
             swapSimulationResult = nil
             preparedSwapFingerprint = nil
+            swapBalanceDeltaVerification = .notStarted
             swapApprovalState = review.canApprove ? .drafted : .failed(review.blockingReasons.joined(separator: " "))
             swapErrorMessage = review.canApprove ? nil : review.blockingReasons.joined(separator: " ")
             record(
@@ -1394,6 +1413,7 @@ final class WalletManager: ObservableObject {
                     "feePayer": review.feePayer ?? "",
                     "programCount": "\(review.programSummaries.count)",
                     "warningsCount": "\(review.warnings.count)",
+                    "riskWarningsCount": "\(review.riskWarnings.count)",
                     "blockingReasonsCount": "\(review.blockingReasons.count)"
                 ]
             )
@@ -1528,7 +1548,8 @@ final class WalletManager: ObservableObject {
                 "minimumOutputRaw": "\(quote.otherAmountThreshold)",
                 "slippageBps": "\(quote.slippageBps)",
                 "route": quote.routeLabel,
-                "warningsCount": "\(review.warnings.count)"
+                "warningsCount": "\(review.warnings.count)",
+                "riskWarningsCount": "\(review.riskWarnings.count)"
             ]
         )
 
@@ -1538,6 +1559,8 @@ final class WalletManager: ObservableObject {
 
         do {
             swapApprovalState = .sending
+            swapPreflightBalances = currentSwapBalanceSnapshot(for: quote)
+            swapBalanceDeltaVerification = .pending(quote: quote)
             let signedBase64 = try SolanaSerializedTransaction.sign(
                 base64: build.swapTransactionBase64,
                 seed: secret.seed,
@@ -1549,6 +1572,7 @@ final class WalletManager: ObservableObject {
             lastConfirmationStatus = status?.confirmationStatus
             lastSwapSignature = signature
             lastSwapConfirmationStatus = status?.confirmationStatus
+            swapBalanceDeltaVerification = await verifySwapBalanceDeltas(profile: profile, quote: quote)
             swapApprovalState = .sent(signature)
             record(
                 kind: .swapSent,
@@ -1565,7 +1589,8 @@ final class WalletManager: ObservableObject {
                     "minimumOutputRaw": "\(quote.otherAmountThreshold)",
                     "slippageBps": "\(quote.slippageBps)",
                     "route": quote.routeLabel,
-                    "confirmationStatus": status?.confirmationStatus ?? ""
+                    "confirmationStatus": status?.confirmationStatus ?? "",
+                    "balanceDeltaVerification": swapBalanceDeltaVerification.status.rawValue
                 ]
             )
             statusMessage = "Swap sent."
@@ -2202,6 +2227,61 @@ final class WalletManager: ObservableObject {
             try await Task.sleep(nanoseconds: 1_000_000_000)
         }
         throw SwapError.transport("Timed out waiting for swap confirmation.")
+    }
+
+    private func currentSwapBalanceSnapshot(for quote: JupiterQuoteSummary) -> [String: UInt64] {
+        var snapshot: [String: UInt64] = [:]
+        if quote.inputMint == SwapConstants.nativeSolMint || quote.outputMint == SwapConstants.nativeSolMint {
+            snapshot[SwapConstants.nativeSolMint] = balance?.lamports ?? 0
+        }
+        for mint in [quote.inputMint, quote.outputMint] where mint != SwapConstants.nativeSolMint {
+            snapshot[mint] = tokenBalances
+                .filter { $0.mintAddress == mint }
+                .reduce(UInt64(0)) { partial, balance in
+                    let result = partial.addingReportingOverflow(balance.amountRaw)
+                    return result.overflow ? UInt64.max : result.partialValue
+                }
+        }
+        return snapshot
+    }
+
+    private func verifySwapBalanceDeltas(
+        profile: WalletProfile,
+        quote: JupiterQuoteSummary
+    ) async -> SwapBalanceDeltaVerification {
+        do {
+            var postBalances: [String: UInt64] = [:]
+            if quote.inputMint == SwapConstants.nativeSolMint || quote.outputMint == SwapConstants.nativeSolMint {
+                let lamports = try await rpcClient.getBalance(address: profile.publicAddress, network: selectedNetwork)
+                balance = WalletBalance(lamports: lamports, network: selectedNetwork, fetchedAt: Date(), errorMessage: nil)
+                postBalances[SwapConstants.nativeSolMint] = lamports
+            }
+
+            if quote.inputMint != SwapConstants.nativeSolMint || quote.outputMint != SwapConstants.nativeSolMint {
+                let refreshedTokenBalances = try await rpcClient.getTokenBalances(ownerAddress: profile.publicAddress, network: selectedNetwork)
+                tokenBalances = refreshedTokenBalances
+                tokenBalancesFetchedAt = Date()
+                for mint in [quote.inputMint, quote.outputMint] where mint != SwapConstants.nativeSolMint {
+                    postBalances[mint] = refreshedTokenBalances
+                        .filter { $0.mintAddress == mint }
+                        .reduce(UInt64(0)) { partial, balance in
+                            let result = partial.addingReportingOverflow(balance.amountRaw)
+                            return result.overflow ? UInt64.max : result.partialValue
+                        }
+                }
+            }
+
+            return SwapBalanceDeltaVerifier.verify(
+                quote: quote,
+                before: swapPreflightBalances,
+                after: postBalances
+            )
+        } catch {
+            return SwapBalanceDeltaVerifier.unavailable(
+                quote: quote,
+                message: "Post-swap balance verification is unavailable: \(error.localizedDescription)"
+            )
+        }
     }
 
     private func record(

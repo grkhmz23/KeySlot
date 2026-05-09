@@ -2,7 +2,7 @@ import Foundation
 
 enum SwapConstants {
     static let nativeSolMint = PortfolioConstants.nativeSolMint
-    static let quoteSource = "jupiter-swap-v1"
+    static let quoteSource = "jupiter-metis-v1-compatibility"
     static let quoteMaxAgeSeconds: TimeInterval = 60
 }
 
@@ -187,6 +187,123 @@ struct SwapApprovalContext: Equatable {
     let hasUnlockedSecret: Bool
     let currentFingerprint: String
     let preparedFingerprint: String?
+}
+
+enum SwapBalanceDeltaVerificationStatus: String, Codable, Equatable {
+    case notStarted
+    case pending
+    case verified
+    case mismatch
+    case unavailable
+}
+
+struct SwapBalanceDeltaVerification: Codable, Equatable {
+    let status: SwapBalanceDeltaVerificationStatus
+    let inputMint: String
+    let outputMint: String
+    let expectedInputRaw: UInt64
+    let minimumOutputRaw: UInt64
+    let inputDeltaRaw: Int64?
+    let outputDeltaRaw: Int64?
+    let checkedAt: Date?
+    let message: String
+
+    static let notStarted = SwapBalanceDeltaVerification(
+        status: .notStarted,
+        inputMint: "",
+        outputMint: "",
+        expectedInputRaw: 0,
+        minimumOutputRaw: 0,
+        inputDeltaRaw: nil,
+        outputDeltaRaw: nil,
+        checkedAt: nil,
+        message: "Balance delta verification has not run."
+    )
+
+    static func pending(quote: JupiterQuoteSummary) -> SwapBalanceDeltaVerification {
+        SwapBalanceDeltaVerification(
+            status: .pending,
+            inputMint: quote.inputMint,
+            outputMint: quote.outputMint,
+            expectedInputRaw: quote.inAmount,
+            minimumOutputRaw: quote.otherAmountThreshold,
+            inputDeltaRaw: nil,
+            outputDeltaRaw: nil,
+            checkedAt: nil,
+            message: "Waiting for post-swap balances."
+        )
+    }
+}
+
+enum SwapBalanceDeltaVerifier {
+    static func verify(
+        quote: JupiterQuoteSummary,
+        before: [String: UInt64],
+        after: [String: UInt64],
+        checkedAt: Date = Date()
+    ) -> SwapBalanceDeltaVerification {
+        guard let beforeInput = before[quote.inputMint],
+              let afterInput = after[quote.inputMint] else {
+            return unavailable(quote: quote, checkedAt: checkedAt, message: "Input token balance was unavailable for verification.")
+        }
+        let beforeOutput = before[quote.outputMint] ?? 0
+        guard let afterOutput = after[quote.outputMint] else {
+            return unavailable(quote: quote, checkedAt: checkedAt, message: "Output token balance was unavailable for verification.")
+        }
+
+        let inputDelta = signedDelta(after: afterInput, before: beforeInput)
+        let outputDelta = signedDelta(after: afterOutput, before: beforeOutput)
+        let expectedInput = clampedInt64(quote.inAmount)
+        let minimumOutput = clampedInt64(quote.otherAmountThreshold)
+        let inputDecreasedEnough = inputDelta <= -expectedInput
+        let outputIncreasedEnough = outputDelta >= minimumOutput
+        let status: SwapBalanceDeltaVerificationStatus = inputDecreasedEnough && outputIncreasedEnough ? .verified : .mismatch
+        let message = status == .verified
+            ? "Post-swap balances match the approved minimum output."
+            : "Post-swap balances did not match the approved quote thresholds."
+
+        return SwapBalanceDeltaVerification(
+            status: status,
+            inputMint: quote.inputMint,
+            outputMint: quote.outputMint,
+            expectedInputRaw: quote.inAmount,
+            minimumOutputRaw: quote.otherAmountThreshold,
+            inputDeltaRaw: inputDelta,
+            outputDeltaRaw: outputDelta,
+            checkedAt: checkedAt,
+            message: message
+        )
+    }
+
+    static func unavailable(
+        quote: JupiterQuoteSummary,
+        checkedAt: Date = Date(),
+        message: String
+    ) -> SwapBalanceDeltaVerification {
+        SwapBalanceDeltaVerification(
+            status: .unavailable,
+            inputMint: quote.inputMint,
+            outputMint: quote.outputMint,
+            expectedInputRaw: quote.inAmount,
+            minimumOutputRaw: quote.otherAmountThreshold,
+            inputDeltaRaw: nil,
+            outputDeltaRaw: nil,
+            checkedAt: checkedAt,
+            message: message
+        )
+    }
+
+    private static func signedDelta(after: UInt64, before: UInt64) -> Int64 {
+        if after >= before {
+            return clampedInt64(after - before)
+        }
+        let difference = before - after
+        return difference > UInt64(Int64.max) ? Int64.min : -Int64(difference)
+    }
+
+    private static func clampedInt64(_ value: UInt64) -> Int64 {
+        value > UInt64(Int64.max) ? Int64.max : Int64(value)
+    }
 }
 
 enum SwapValidation {

@@ -33,7 +33,7 @@ struct JupiterSwapClient {
         guard SolanaAddressValidator.isValidAddress(userPublicKey) else {
             throw SwapError.invalidInput("Swap user public key is invalid.")
         }
-        try Self.validateBaseURL(baseURL)
+        try Self.validateBaseURL(baseURL, hasAPIKey: configuration.hasAPIKey)
         let quoteObject = try Self.quoteObject(from: quote.rawQuoteJSON)
         let body: [String: Any] = [
             "userPublicKey": userPublicKey,
@@ -102,11 +102,15 @@ struct JupiterSwapClient {
         return object
     }
 
-    private static func validateBaseURL(_ url: URL) throws {
-        let lowercased = url.absoluteString.lowercased()
-        guard lowercased == "https://lite-api.jup.ag/swap/v1" ||
-              lowercased == "https://api.jup.ag/swap/v1" else {
-            throw SwapError.invalidInput("Jupiter swap endpoint is not allowlisted.")
+    private static func validateBaseURL(_ url: URL, hasAPIKey: Bool? = nil) throws {
+        let endpoint = url.appendingPathComponent("swap")
+        let compatibility = JupiterCompatibilityValidator.validate(
+            url: endpoint,
+            kind: .swapBuild,
+            hasAPIKey: hasAPIKey ?? (url.host?.lowercased() == "api.jup.ag")
+        )
+        guard compatibility.canUse else {
+            throw SwapError.invalidInput("Jupiter swap endpoint is not allowlisted: \(compatibility.blockingReasons.joined(separator: " "))")
         }
     }
 }

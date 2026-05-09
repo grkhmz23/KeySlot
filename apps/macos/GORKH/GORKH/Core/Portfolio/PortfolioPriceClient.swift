@@ -44,7 +44,7 @@ struct JupiterPriceClient: PortfolioPriceClient {
         guard !ids.isEmpty else {
             return [:]
         }
-        let url = try Self.priceURL(baseURL: baseURL, mintAddresses: ids)
+        let url = try Self.priceURL(baseURL: baseURL, mintAddresses: ids, hasAPIKey: configuration.hasAPIKey)
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.timeoutInterval = timeout
@@ -61,8 +61,8 @@ struct JupiterPriceClient: PortfolioPriceClient {
         return try Self.decodePriceResponse(data: data, fetchedAt: Date())
     }
 
-    static func priceURL(baseURL: URL, mintAddresses: [String]) throws -> URL {
-        try validatePriceEndpoint(baseURL)
+    static func priceURL(baseURL: URL, mintAddresses: [String], hasAPIKey: Bool? = nil) throws -> URL {
+        try validatePriceEndpoint(baseURL, hasAPIKey: hasAPIKey)
         var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
         components?.queryItems = [
             URLQueryItem(name: "ids", value: mintAddresses.joined(separator: ","))
@@ -73,12 +73,14 @@ struct JupiterPriceClient: PortfolioPriceClient {
         return url
     }
 
-    static func validatePriceEndpoint(_ url: URL) throws {
-        let path = url.path.lowercased()
-        let forbidden = ["swap", "quote", "transaction", "limit", "order"]
-        guard path == "/price/v3",
-              forbidden.allSatisfy({ !path.contains($0) }) else {
-            throw PortfolioPriceClientError.invalidEndpoint(url.path)
+    static func validatePriceEndpoint(_ url: URL, hasAPIKey: Bool? = nil) throws {
+        let compatibility = JupiterCompatibilityValidator.validate(
+            url: url,
+            kind: .price,
+            hasAPIKey: hasAPIKey ?? (url.host?.lowercased() == "api.jup.ag")
+        )
+        guard compatibility.canUse else {
+            throw PortfolioPriceClientError.invalidEndpoint(compatibility.blockingReasons.joined(separator: " "))
         }
     }
 

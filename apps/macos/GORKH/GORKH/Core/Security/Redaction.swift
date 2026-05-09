@@ -31,6 +31,7 @@ enum Redaction {
             .lowercased()
             .replacingOccurrences(of: " ", with: "")
             .replacingOccurrences(of: "-", with: "")
+            .replacingOccurrences(of: "_", with: "")
 
         return blockedTokens.contains { normalized.contains($0) }
     }

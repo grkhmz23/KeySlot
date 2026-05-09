@@ -29,6 +29,12 @@ struct WalletSwapView: View {
                             .foregroundStyle(GorkhColors.warning)
                     }
 
+                    JupiterSwapCompatibilityView(
+                        mode: walletManager.jupiterSwapAPIMode,
+                        hasAPIKey: walletManager.jupiterAPIConfiguration.hasAPIKey,
+                        endpointCompatibility: walletManager.jupiterEndpointCompatibility
+                    )
+
                     HStack(alignment: .top, spacing: 12) {
                         SwapTokenSelectorView(
                             title: "Input",
@@ -158,7 +164,8 @@ struct WalletSwapView: View {
             SwapResultView(
                 signature: walletManager.lastSwapSignature,
                 confirmationStatus: walletManager.lastSwapConfirmationStatus,
-                explorerURL: walletManager.explorerURLForLastSwapSignature
+                explorerURL: walletManager.explorerURLForLastSwapSignature,
+                balanceDeltaVerification: walletManager.swapBalanceDeltaVerification
             )
         }
         .onAppear {
@@ -216,6 +223,51 @@ struct WalletSwapView: View {
         if !walletManager.swapInputTokenOptions.contains(where: { $0.mintAddress == inputMint }),
            let first = walletManager.swapInputTokenOptions.first {
             inputMint = first.mintAddress
+        }
+    }
+}
+
+private struct JupiterSwapCompatibilityView: View {
+    let mode: JupiterSwapAPIMode
+    let hasAPIKey: Bool
+    let endpointCompatibility: [JupiterEndpointCompatibility]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                GorkhStatusChip(
+                    title: mode.displayName,
+                    systemImage: mode.allowsCurrentExecution ? "arrow.triangle.swap" : "lock.trianglebadge.exclamationmark",
+                    color: mode.allowsCurrentExecution ? GorkhColors.warning : GorkhColors.danger
+                )
+                GorkhStatusChip(
+                    title: hasAPIKey ? "API key present" : "API key missing",
+                    systemImage: hasAPIKey ? "key.fill" : "key.slash",
+                    color: hasAPIKey ? GorkhColors.success : GorkhColors.warning
+                )
+            }
+
+            Text(mode.warningText)
+                .font(.caption)
+                .foregroundStyle(mode.allowsCurrentExecution ? GorkhColors.warning : GorkhColors.danger)
+
+            ForEach(endpointCompatibility, id: \.url) { endpoint in
+                HStack(alignment: .firstTextBaseline) {
+                    Text(endpoint.kind.rawValue)
+                        .font(.caption)
+                        .foregroundStyle(GorkhColors.secondaryText)
+                        .frame(width: 74, alignment: .leading)
+                    Text(endpoint.url)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(GorkhColors.primaryText)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer()
+                    Text(endpoint.canUse ? "allowed" : "blocked")
+                        .font(.caption)
+                        .foregroundStyle(endpoint.canUse ? GorkhColors.success : GorkhColors.danger)
+                }
+            }
         }
     }
 }

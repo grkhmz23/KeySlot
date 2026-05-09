@@ -15,6 +15,7 @@ struct SwapQuoteView: View {
                             systemImage: quote.isStale() ? "clock.badge.exclamationmark" : "checkmark.seal",
                             color: quote.isStale() ? GorkhColors.warning : GorkhColors.success
                         )
+                        GorkhStatusChip(title: quoteAgeText(quote), systemImage: "clock", color: quote.isStale() ? GorkhColors.warning : GorkhColors.accent)
                         GorkhStatusChip(title: "\(quote.slippageBps) bps slippage", systemImage: "slider.horizontal.3", color: GorkhColors.accent)
                     }
 
@@ -61,5 +62,10 @@ struct SwapQuoteView: View {
             return "\(raw) raw"
         }
         return TokenAmountFormatter.format(rawAmount: raw, decimals: decimals)
+    }
+
+    private func quoteAgeText(_ quote: JupiterQuoteSummary) -> String {
+        let age = max(0, Int(Date().timeIntervalSince(quote.quotedAt)))
+        return "\(age)s old"
     }
 }

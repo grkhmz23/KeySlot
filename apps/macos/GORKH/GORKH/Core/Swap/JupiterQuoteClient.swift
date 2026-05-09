@@ -34,7 +34,8 @@ struct JupiterQuoteClient {
             inputMint: inputMint,
             outputMint: outputMint,
             amountRaw: amountRaw,
-            slippageBps: slippageBps
+            slippageBps: slippageBps,
+            hasAPIKey: configuration.hasAPIKey
         )
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -58,9 +59,10 @@ struct JupiterQuoteClient {
         inputMint: String,
         outputMint: String,
         amountRaw: UInt64,
-        slippageBps: Int
+        slippageBps: Int,
+        hasAPIKey: Bool? = nil
     ) throws -> URL {
-        try validateBaseURL(baseURL)
+        try validateBaseURL(baseURL, hasAPIKey: hasAPIKey)
         var components = URLComponents(url: baseURL.appendingPathComponent("quote"), resolvingAgainstBaseURL: false)
         components?.queryItems = [
             URLQueryItem(name: "inputMint", value: inputMint),
@@ -112,11 +114,15 @@ struct JupiterQuoteClient {
         )
     }
 
-    private static func validateBaseURL(_ url: URL) throws {
-        let lowercased = url.absoluteString.lowercased()
-        guard lowercased == "https://lite-api.jup.ag/swap/v1" ||
-              lowercased == "https://api.jup.ag/swap/v1" else {
-            throw SwapError.invalidInput("Jupiter quote endpoint is not allowlisted.")
+    private static func validateBaseURL(_ url: URL, hasAPIKey: Bool?) throws {
+        let endpoint = url.appendingPathComponent("quote")
+        let compatibility = JupiterCompatibilityValidator.validate(
+            url: endpoint,
+            kind: .quote,
+            hasAPIKey: hasAPIKey ?? (url.host?.lowercased() == "api.jup.ag")
+        )
+        guard compatibility.canUse else {
+            throw SwapError.invalidInput("Jupiter quote endpoint is not allowlisted: \(compatibility.blockingReasons.joined(separator: " "))")
         }
     }
 

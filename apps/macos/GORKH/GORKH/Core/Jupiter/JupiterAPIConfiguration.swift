@@ -18,8 +18,28 @@ struct JupiterAPIConfiguration: Equatable {
         URL(string: hasAPIKey ? "https://api.jup.ag/swap/v1" : "https://lite-api.jup.ag/swap/v1")!
     }
 
+    var swapMode: JupiterSwapAPIMode {
+        .metisV1
+    }
+
+    var swapQuoteEndpoint: URL {
+        swapBaseURL.appendingPathComponent("quote")
+    }
+
+    var swapBuildEndpoint: URL {
+        swapBaseURL.appendingPathComponent("swap")
+    }
+
     var priceBaseURL: URL {
         URL(string: hasAPIKey ? "https://api.jup.ag/price/v3" : "https://lite-api.jup.ag/price/v3")!
+    }
+
+    var endpointCompatibility: [JupiterEndpointCompatibility] {
+        [
+            JupiterCompatibilityValidator.validate(url: swapQuoteEndpoint, kind: .quote, hasAPIKey: hasAPIKey),
+            JupiterCompatibilityValidator.validate(url: swapBuildEndpoint, kind: .swapBuild, hasAPIKey: hasAPIKey),
+            JupiterCompatibilityValidator.validate(url: priceBaseURL, kind: .price, hasAPIKey: hasAPIKey)
+        ]
     }
 
     func applyAuthentication(to request: inout URLRequest) {
