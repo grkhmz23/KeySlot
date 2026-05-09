@@ -24,10 +24,11 @@ final class WalletManager: ObservableObject {
     @Published private(set) var isBusy = false
     @Published private(set) var securityPolicy: WalletSecurityPolicy
     @Published private(set) var authenticationStatusMessage: String
-    @Published private(set) var cloakAdapterStatus: CloakAdapterStatus = .lockedInPhase20
+    @Published private(set) var cloakAdapterStatus: CloakAdapterStatus = .lockedInPhase21
     @Published private(set) var cloakVaultStatus: CloakVaultStatus = .statusOnly(walletID: nil)
     @Published private(set) var currentCloakDepositDraft: CloakDepositDraft?
     @Published private(set) var cloakBridgeResponse: CloakBridgeResponseSummary?
+    @Published private(set) var cloakBridgeContractResponse: CloakBridgeResponse?
 
     private let vault: WalletVault
     private let rpcClient: SolanaRPCClient
@@ -142,6 +143,7 @@ final class WalletManager: ObservableObject {
         preparedTokenDraftFingerprint = nil
         currentCloakDepositDraft = nil
         cloakBridgeResponse = nil
+        cloakBridgeContractResponse = nil
         refreshVaultState()
         refreshCloakVaultStatus(recordAudit: false)
     }
@@ -172,6 +174,7 @@ final class WalletManager: ObservableObject {
         preparedTokenDraftFingerprint = nil
         currentCloakDepositDraft = nil
         cloakBridgeResponse = cloakBridge.validateEnvironment(network: network)
+        cloakBridgeContractResponse = cloakBridge.environmentCheck(network: network)
     }
 
     func recordPrivateTabViewed() {
@@ -194,6 +197,7 @@ final class WalletManager: ObservableObject {
         cloakAdapterStatus = cloakBridge.checkAvailability()
         cloakVaultStatus = cloakPrivateVault.status(for: selectedWalletID)
         cloakBridgeResponse = cloakBridge.validateEnvironment(network: selectedNetwork)
+        cloakBridgeContractResponse = cloakBridge.environmentCheck(network: selectedNetwork)
 
         guard recordAudit else {
             return
@@ -208,6 +212,41 @@ final class WalletManager: ObservableObject {
                 "bridgeStatus": cloakAdapterStatus.rawValue,
                 "vaultStatus": cloakVaultStatus.privateWalletStatus.rawValue,
                 "referenceCount": "\(cloakVaultStatus.availableReferenceKinds.count)"
+            ]
+        )
+    }
+
+    func checkCloakBridgeHealth() {
+        noteUserActivity()
+        let response = cloakBridge.health()
+        cloakBridgeContractResponse = response
+        record(
+            kind: .cloakBridgeHealthChecked,
+            walletID: selectedWalletID,
+            publicAddress: selectedProfile?.publicAddress,
+            message: "Cloak bridge health checked.",
+            details: [
+                "bridgeCommand": response.command.rawValue,
+                "bridgeStatus": response.status.rawValue,
+                "errorCategory": response.errorCategory.rawValue
+            ]
+        )
+    }
+
+    func checkCloakBridgeEnvironment() {
+        noteUserActivity()
+        let response = cloakBridge.environmentCheck(network: selectedNetwork)
+        cloakBridgeContractResponse = response
+        record(
+            kind: .cloakBridgeEnvironmentChecked,
+            walletID: selectedWalletID,
+            publicAddress: selectedProfile?.publicAddress,
+            message: "Cloak bridge environment checked.",
+            details: [
+                "network": selectedNetwork.rawValue,
+                "bridgeCommand": response.command.rawValue,
+                "bridgeStatus": response.status.rawValue,
+                "errorCategory": response.errorCategory.rawValue
             ]
         )
     }
@@ -227,16 +266,18 @@ final class WalletManager: ObservableObject {
                 grossLamports: lamports
             )
             let response = cloakBridge.buildDepositPlanSummary(draft: draft)
+            let contractResponse = cloakBridge.depositPlan(draft: draft)
 
             currentCloakDepositDraft = draft
             cloakBridgeResponse = response
+            cloakBridgeContractResponse = contractResponse
             statusMessage = "Cloak deposit draft prepared. Execution remains locked."
 
             record(
-                kind: .cloakDepositDraftCreated,
+                kind: .cloakDepositPlanGenerated,
                 walletID: profile.id,
                 publicAddress: profile.publicAddress,
-                message: "Cloak SOL deposit draft created.",
+                message: "Cloak SOL deposit plan generated.",
                 details: [
                     "network": selectedNetwork.rawValue,
                     "cloakAction": CloakActionKind.deposit.rawValue,
@@ -244,7 +285,8 @@ final class WalletManager: ObservableObject {
                     "grossLamports": "\(draft.grossLamports)",
                     "feeLamports": "\(draft.feeQuote.totalFeeLamports)",
                     "netLamports": "\(draft.feeQuote.netLamports)",
-                    "bridgeStatus": response.status.rawValue
+                    "bridgeStatus": contractResponse.status.rawValue,
+                    "bridgeCommand": contractResponse.command.rawValue
                 ]
             )
         } catch {
@@ -256,6 +298,14 @@ final class WalletManager: ObservableObject {
                 message: error.localizedDescription,
                 programID: CloakConstants.programID,
                 createdAt: Date()
+            )
+            cloakBridgeContractResponse = CloakBridgeResponse(
+                requestID: nil,
+                command: .depositPlan,
+                actionKind: .deposit,
+                status: .rejected,
+                errorCategory: .invalidRequest,
+                message: error.localizedDescription
             )
             statusMessage = error.localizedDescription
             record(
@@ -282,12 +332,20 @@ final class WalletManager: ObservableObject {
         )
         let response = CloakBridgeResponseSummary.locked(request: request)
         cloakBridgeResponse = response
+        cloakBridgeContractResponse = CloakBridgeResponse(
+            requestID: request.id,
+            command: actionKind == .deposit ? .executeDeposit : .environmentCheck,
+            actionKind: actionKind,
+            status: .locked,
+            errorCategory: .lockedInPhase21,
+            message: response.message
+        )
         statusMessage = response.message
         record(
-            kind: .cloakDepositExecutionBlocked,
+            kind: .cloakBridgeExecutionRejected,
             walletID: selectedWalletID,
             publicAddress: selectedProfile?.publicAddress,
-            message: "Cloak action blocked by Phase 2.0 execution lock.",
+            message: "Cloak action blocked by Phase 2.1 execution lock.",
             details: [
                 "network": selectedNetwork.rawValue,
                 "cloakAction": actionKind.rawValue,

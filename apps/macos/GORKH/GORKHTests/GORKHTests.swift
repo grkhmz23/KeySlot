@@ -761,13 +761,78 @@ struct GORKHTests {
             grossLamports: 50_000_000
         )
 
-        #expect(bridge.checkAvailability() == .lockedInPhase20)
+        #expect(bridge.checkAvailability() == .lockedInPhase21)
         #expect(bridge.validateEnvironment(network: .devnet).status == .locked)
 
         let response = await bridge.executeDeposit(request: request)
         #expect(response.status == .locked)
         #expect(response.requestID == request.id)
         #expect(response.message.contains("No SDK transaction"))
+    }
+
+    @Test func cloakBridgeContractsContainOnlySafeFields() throws {
+        let quote = try CloakFeeModel.quote(grossLamports: 50_000_000)
+        let request = CloakBridgeRequest(
+            command: .depositPlan,
+            actionKind: .deposit,
+            network: .mainnetBeta,
+            walletPublicAddress: SolanaConstants.systemProgramID,
+            amountLamports: 50_000_000,
+            mintAddress: CloakConstants.nativeSolMint,
+            feeQuote: quote
+        )
+        let response = CloakBridgeResponse.locked(request: request)
+
+        try CloakBridgeContractValidator.validate(request)
+        try CloakBridgeContractValidator.validate(response)
+
+        let requestJSON = try #require(String(data: JSONEncoder().encode(request), encoding: .utf8)).lowercased()
+        let responseJSON = try #require(String(data: JSONEncoder().encode(response), encoding: .utf8)).lowercased()
+
+        for forbidden in ["privatekey", "secretkey", "seedphrase", "mnemonic", "walletjson", "utxoprivatekey", "viewingkey", "nullifier", "proofinput", "serializedtransaction", "transactionpayload"] {
+            #expect(!requestJSON.contains(forbidden))
+            #expect(!responseJSON.contains(forbidden))
+        }
+    }
+
+    @Test func cloakBridgeValidatorRejectsForbiddenFields() throws {
+        #expect(CloakBridgeContractValidator.isForbiddenField("privateKey"))
+        #expect(CloakBridgeContractValidator.isForbiddenField("serializedTransaction"))
+        #expect(CloakBridgeContractValidator.isForbiddenField("rawSignerBytes"))
+        #expect(throws: CloakBridgeValidationError.self) {
+            try CloakBridgeContractValidator.validate(jsonString: #"{"nested":{"viewingKey":"do-not-send"}}"#)
+        }
+        #expect(throws: CloakBridgeValidationError.self) {
+            try CloakBridgeContractValidator.validate(jsonString: #"{"transactionPayload":"do-not-send"}"#)
+        }
+    }
+
+    @Test func cloakBridgeExecutionPolicyDisablesHelperByDefault() {
+        let policy = CloakBridgeExecutionPolicy.disabled
+
+        #expect(!policy.helperExecutionEnabled)
+        #expect(policy.canInvokeHelper(command: .health, relativePath: policy.allowlistedHelperRelativePath) == false)
+        #expect(policy.allowedCommands.contains(.health))
+        #expect(policy.allowedCommands.contains(.environmentCheck))
+        #expect(policy.allowedCommands.contains(.depositPlan))
+        #expect(!policy.allowedCommands.contains(.executeDeposit))
+        #expect(!CloakBridgeCommand.executeDeposit.isHelperCommandAllowedInPhase21)
+    }
+
+    @Test func cloakBridgeDepositPlanResponseStaysLocked() throws {
+        let draft = try CloakDepositDraft(
+            network: .mainnetBeta,
+            sourceWalletAddress: SolanaConstants.systemProgramID,
+            grossLamports: 50_000_000
+        )
+        let response = CloakBridgeUnavailable().depositPlan(draft: draft)
+
+        #expect(response.command == .depositPlan)
+        #expect(response.status == .locked)
+        #expect(response.errorCategory == .lockedInPhase21)
+        #expect(response.feeQuote?.totalFeeLamports == 5_150_000)
+        #expect(response.transactionSignature == nil)
+        #expect(response.commitmentPrefix == nil)
     }
 
     @Test func cloakPrivateVaultStatusOnlyStoresNoPrivateReferences() {

@@ -1,0 +1,16 @@
+{
+  "name": "@gorkh/cloak-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Locked Cloak bridge contract scaffold for GORKH macOS.",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "health": "node src/index.ts health",
+    "env-check": "node src/index.ts env-check",
+    "deposit-plan": "node src/index.ts deposit-plan",
+    "test": "node --test test/*.test.mjs"
+  }
+}

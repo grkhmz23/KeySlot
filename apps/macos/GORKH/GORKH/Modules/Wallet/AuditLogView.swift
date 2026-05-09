@@ -137,12 +137,16 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
                 .cloakDepositDraftCreated,
                 .cloakDepositExecutionBlocked,
                 .cloakVaultStatusChecked,
-                .cloakPrivateDataCleared
+                .cloakPrivateDataCleared,
+                .cloakBridgeHealthChecked,
+                .cloakBridgeEnvironmentChecked,
+                .cloakDepositPlanGenerated,
+                .cloakBridgeExecutionRejected
             ].contains(event.kind)
         case .security:
             return [.walletAutoLocked, .securityPolicyUpdated, .localAuthenticationFailed].contains(event.kind)
         case .failed:
-            return [.transactionFailed, .tokenTransferFailed, .localAuthenticationFailed, .cloakDepositExecutionBlocked].contains(event.kind)
+            return [.transactionFailed, .tokenTransferFailed, .localAuthenticationFailed, .cloakDepositExecutionBlocked, .cloakBridgeExecutionRejected].contains(event.kind)
         }
     }
 }
@@ -163,6 +167,8 @@ private extension AuditEvent {
             "feeLamports",
             "netLamports",
             "bridgeStatus",
+            "bridgeCommand",
+            "errorCategory",
             "vaultStatus",
             "requestID",
             "status",

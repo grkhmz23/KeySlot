@@ -9,5 +9,5 @@ enum CloakConstants {
     static let variableFeeNumerator: UInt64 = 3
     static let variableFeeDenominator: UInt64 = 1_000
 
-    static let phaseLockMessage = "Cloak execution is locked in Phase 2.0. No SDK transaction is built, signed, or sent."
+    static let phaseLockMessage = "Cloak execution is locked in Phase 2.1. No SDK transaction is built, signed, or sent."
 }
