@@ -43,6 +43,8 @@ struct WalletView: View {
         case .assets:
             WalletBalanceView()
             TokenBalancesView()
+        case .portfolio:
+            WalletPortfolioView()
         case .send:
             SendSolView()
             TokenBalancesView()
@@ -187,6 +189,7 @@ struct WalletView: View {
 
 private enum WalletSection: String, CaseIterable, Identifiable {
     case assets
+    case portfolio
     case send
     case privateWallet
     case security
@@ -198,6 +201,8 @@ private enum WalletSection: String, CaseIterable, Identifiable {
         switch self {
         case .assets:
             return "Assets"
+        case .portfolio:
+            return "Portfolio"
         case .send:
             return "Send"
         case .privateWallet:

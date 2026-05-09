@@ -32,6 +32,11 @@ final class WalletManager: ObservableObject {
     @Published private(set) var cloakBridgeResponse: CloakBridgeResponseSummary?
     @Published private(set) var cloakBridgeContractResponse: CloakBridgeResponse?
     @Published private(set) var cloakHelperInvocationStatus: CloakHelperInvocationStatus = .disabled
+    @Published var selectedPortfolioScope: PortfolioWalletScope = .activeWallet
+    @Published private(set) var portfolioSummary: PortfolioAggregateSummary = .empty()
+    @Published private(set) var portfolioHistory: [PortfolioSnapshot] = []
+    @Published private(set) var portfolioStatus: PortfolioDataStatus = .idle
+    @Published private(set) var portfolioErrorMessage: String?
 
     private let vault: WalletVault
     private let rpcClient: SolanaRPCClient
@@ -44,6 +49,8 @@ final class WalletManager: ObservableObject {
     private let cloakPrivateVault: any CloakPrivateVault
     private let cloakHelperInvocationAdapter: CloakHelperInvocationAdapter
     private let cloakSignerBridgePolicy: CloakSignerBridgePolicy
+    private let portfolioRefreshService: PortfolioManager
+    private let portfolioSnapshotStore: PortfolioSnapshotStore
     private let derivationService: SolanaDerivationService
     private var lockController: WalletLockController
     private var unlockedSecrets: [UUID: WalletSecret] = [:]
@@ -92,7 +99,9 @@ final class WalletManager: ObservableObject {
             mnemonicService: Bip39MnemonicService.shared,
             cloakBridge: CloakBridgeUnavailable(),
             cloakPrivateVault: CloakPrivateVaultStatusOnly(),
-            cloakHelperInvocationAdapter: .disabled()
+            cloakHelperInvocationAdapter: .disabled(),
+            portfolioPriceClient: JupiterPriceClient(),
+            portfolioSnapshotStore: PortfolioSnapshotStore()
         )
     }
 
@@ -106,7 +115,9 @@ final class WalletManager: ObservableObject {
         mnemonicService: any MnemonicService,
         cloakBridge: any CloakBridgeProtocol,
         cloakPrivateVault: any CloakPrivateVault,
-        cloakHelperInvocationAdapter: CloakHelperInvocationAdapter
+        cloakHelperInvocationAdapter: CloakHelperInvocationAdapter,
+        portfolioPriceClient: any PortfolioPriceClient = JupiterPriceClient(),
+        portfolioSnapshotStore: PortfolioSnapshotStore = PortfolioSnapshotStore()
     ) {
         self.vault = vault
         self.rpcClient = rpcClient
@@ -119,6 +130,8 @@ final class WalletManager: ObservableObject {
         self.cloakPrivateVault = cloakPrivateVault
         self.cloakHelperInvocationAdapter = cloakHelperInvocationAdapter
         self.cloakSignerBridgePolicy = .locked
+        self.portfolioRefreshService = PortfolioManager(rpcClient: rpcClient, priceClient: portfolioPriceClient)
+        self.portfolioSnapshotStore = portfolioSnapshotStore
         self.derivationService = SolanaDerivationService(mnemonicService: mnemonicService)
         let policy = securitySettingsStore.loadPolicy()
         self.securityPolicy = policy
@@ -127,6 +140,7 @@ final class WalletManager: ObservableObject {
         self.lockController = WalletLockController(policy: policy)
         loadMetadata()
         auditEvents = auditLog.loadRecent()
+        portfolioHistory = Array(portfolioSnapshotStore.load().reversed())
         refreshVaultState()
         refreshCloakVaultStatus(recordAudit: false)
     }
@@ -156,6 +170,9 @@ final class WalletManager: ObservableObject {
         cloakSignerPreflightResult = nil
         cloakBridgeResponse = nil
         cloakBridgeContractResponse = nil
+        portfolioSummary = .empty(scope: selectedPortfolioScope, network: selectedNetwork)
+        portfolioStatus = .idle
+        portfolioErrorMessage = nil
         refreshVaultState()
         refreshCloakVaultStatus(recordAudit: false)
     }
@@ -187,8 +204,19 @@ final class WalletManager: ObservableObject {
         currentCloakDepositDraft = nil
         currentCloakSignerRequest = nil
         cloakSignerPreflightResult = nil
+        portfolioSummary = .empty(scope: selectedPortfolioScope, network: selectedNetwork)
+        portfolioStatus = .idle
+        portfolioErrorMessage = nil
         cloakBridgeResponse = cloakBridge.validateEnvironment(network: network)
         cloakBridgeContractResponse = cloakBridge.environmentCheck(network: network)
+    }
+
+    func setPortfolioScope(_ scope: PortfolioWalletScope) {
+        noteUserActivity()
+        selectedPortfolioScope = scope
+        portfolioSummary = .empty(scope: scope, network: selectedNetwork)
+        portfolioStatus = .idle
+        portfolioErrorMessage = nil
     }
 
     func recordPrivateTabViewed() {
@@ -844,6 +872,123 @@ final class WalletManager: ObservableObject {
                 message: "Token balance refresh failed.",
                 details: ["error": error.localizedDescription]
             )
+        }
+    }
+
+    func refreshPortfolio() async {
+        noteUserActivity()
+        guard !profiles.isEmpty else {
+            portfolioSummary = .empty(scope: selectedPortfolioScope, network: selectedNetwork)
+            portfolioStatus = .idle
+            portfolioErrorMessage = "No wallet is configured."
+            return
+        }
+
+        portfolioStatus = .loading
+        portfolioErrorMessage = nil
+        isBusy = true
+        defer { isBusy = false }
+
+        let result = await portfolioRefreshService.refresh(
+            scope: selectedPortfolioScope,
+            selectedWalletID: selectedWalletID,
+            profiles: profiles,
+            network: selectedNetwork
+        )
+
+        portfolioSummary = result.summary
+        portfolioStatus = result.summary.status
+        portfolioErrorMessage = result.summary.errorMessage
+        if selectedPortfolioScope == .activeWallet,
+           let walletSummary = result.summary.wallets.first,
+           walletSummary.id == selectedWalletID {
+            if let solAsset = walletSummary.assets.first(where: { $0.asset.isNativeSOL })?.asset {
+                balance = WalletBalance(
+                    lamports: solAsset.amountRaw,
+                    network: selectedNetwork,
+                    fetchedAt: result.summary.refreshedAt,
+                    errorMessage: nil
+                )
+            }
+        }
+
+        record(
+            kind: .portfolioRefreshed,
+            walletID: selectedWalletID,
+            publicAddress: selectedProfile?.publicAddress,
+            message: "Portfolio refreshed with read-only balances and prices.",
+            details: [
+                "network": selectedNetwork.rawValue,
+                "portfolioScope": selectedPortfolioScope.rawValue,
+                "walletCount": "\(result.summary.wallets.count)",
+                "assetCount": "\(result.summary.assetCount)",
+                "unavailablePriceCount": "\(result.summary.unavailablePriceCount)",
+                "priceSource": result.summary.priceSource
+            ]
+        )
+
+        if let priceError = result.priceErrorMessage {
+            record(
+                kind: .portfolioPriceRefreshFailed,
+                walletID: selectedWalletID,
+                publicAddress: selectedProfile?.publicAddress,
+                message: "Portfolio price refresh failed; balances remain visible.",
+                details: [
+                    "network": selectedNetwork.rawValue,
+                    "portfolioScope": selectedPortfolioScope.rawValue,
+                    "error": priceError
+                ]
+            )
+        }
+
+        let snapshot = PortfolioSnapshot(summary: result.summary)
+        do {
+            portfolioHistory = Array(try portfolioSnapshotStore.append(snapshot).reversed())
+            record(
+                kind: .portfolioSnapshotStored,
+                walletID: selectedWalletID,
+                publicAddress: selectedProfile?.publicAddress,
+                message: "Portfolio snapshot stored locally.",
+                details: [
+                    "network": selectedNetwork.rawValue,
+                    "portfolioScope": selectedPortfolioScope.rawValue,
+                    "assetCount": "\(snapshot.assetCount)",
+                    "unavailablePriceCount": "\(snapshot.unavailablePriceCount)",
+                    "priceSource": snapshot.priceSource
+                ]
+            )
+        } catch {
+            portfolioErrorMessage = error.localizedDescription
+            statusMessage = error.localizedDescription
+        }
+
+        statusMessage = "Portfolio refreshed."
+    }
+
+    func clearPortfolioHistory(confirmation: String) {
+        noteUserActivity()
+        guard confirmation == "CLEAR HISTORY" else {
+            statusMessage = "Type CLEAR HISTORY to remove local portfolio snapshots."
+            return
+        }
+
+        do {
+            try portfolioSnapshotStore.clear()
+            portfolioHistory = []
+            record(
+                kind: .portfolioHistoryCleared,
+                walletID: selectedWalletID,
+                publicAddress: selectedProfile?.publicAddress,
+                message: "Portfolio snapshot history cleared from this Mac.",
+                details: [
+                    "network": selectedNetwork.rawValue,
+                    "portfolioScope": selectedPortfolioScope.rawValue
+                ]
+            )
+            statusMessage = "Portfolio history cleared."
+        } catch {
+            portfolioErrorMessage = error.localizedDescription
+            statusMessage = error.localizedDescription
         }
     }
 

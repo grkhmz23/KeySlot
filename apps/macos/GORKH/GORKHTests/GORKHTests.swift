@@ -1297,6 +1297,137 @@ struct GORKHTests {
         #expect(response.transactionSignature == nil)
     }
 
+    @Test func portfolioModelsAndSnapshotsSerializeWithoutSecrets() throws {
+        let profile = WalletProfile(label: "Portfolio", publicAddress: SolanaConstants.systemProgramID)
+        let token = sampleTokenBalance(owner: profile.publicAddress, amountRaw: 1_000_000, decimals: 6)
+        let prices = [
+            PortfolioConstants.nativeSolMint: PortfolioPriceQuote(
+                mintAddress: PortfolioConstants.nativeSolMint,
+                usdPrice: 100,
+                source: PortfolioConstants.priceSource,
+                blockID: 1,
+                priceChange24h: nil,
+                fetchedAt: Date(),
+                errorMessage: nil
+            )
+        ]
+        let summary = PortfolioAggregator.aggregate(
+            scope: .activeWallet,
+            network: .devnet,
+            profiles: [profile],
+            solBalances: [profile.id: 1_000_000_000],
+            tokenBalances: [profile.id: [token]],
+            prices: prices
+        )
+        let snapshot = PortfolioSnapshot(summary: summary)
+        let json = try #require(String(data: JSONEncoder().encode(snapshot), encoding: .utf8)).lowercased()
+
+        #expect(json.contains("portfolio"))
+        for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "serializedtransaction", "transactionpayload"] {
+            #expect(!json.contains(forbidden))
+        }
+    }
+
+    @Test func portfolioAggregationHandlesSolSplAndMissingPrices() throws {
+        let profile = WalletProfile(label: "Portfolio", publicAddress: SolanaConstants.systemProgramID)
+        let token = sampleTokenBalance(
+            owner: profile.publicAddress,
+            mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+            amountRaw: 2_500_000,
+            decimals: 6
+        )
+        let prices = [
+            PortfolioConstants.nativeSolMint: PortfolioPriceQuote(
+                mintAddress: PortfolioConstants.nativeSolMint,
+                usdPrice: 100,
+                source: PortfolioConstants.priceSource,
+                blockID: 1,
+                priceChange24h: nil,
+                fetchedAt: Date(),
+                errorMessage: nil
+            )
+        ]
+
+        let summary = PortfolioAggregator.aggregate(
+            scope: .activeWallet,
+            network: .mainnetBeta,
+            profiles: [profile],
+            solBalances: [profile.id: 2_000_000_000],
+            tokenBalances: [profile.id: [token]],
+            prices: prices
+        )
+
+        #expect(summary.wallets.count == 1)
+        #expect(summary.assetCount == 2)
+        #expect(summary.totalUSD == 200)
+        #expect(summary.unavailablePriceCount == 1)
+        #expect(summary.wallets[0].assets.contains { $0.asset.symbol == "USDC" && $0.usdValue == nil })
+    }
+
+    @Test func portfolioPriceQuoteCanReportStaleState() {
+        let quote = PortfolioPriceQuote(
+            mintAddress: PortfolioConstants.nativeSolMint,
+            usdPrice: 100,
+            source: PortfolioConstants.priceSource,
+            blockID: 1,
+            priceChange24h: nil,
+            fetchedAt: Date(timeIntervalSince1970: 0),
+            errorMessage: nil
+        )
+
+        #expect(quote.isStale(relativeTo: Date(timeIntervalSince1970: 1_000), maxAgeSeconds: 300))
+        #expect(!quote.isStale(relativeTo: Date(timeIntervalSince1970: 100), maxAgeSeconds: 300))
+    }
+
+    @Test func portfolioSnapshotStoreAppendsAndClearsHistory() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("gorkh-portfolio-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = PortfolioSnapshotStore(fileURL: url)
+        let profile = WalletProfile(label: "Portfolio", publicAddress: SolanaConstants.systemProgramID)
+        let summary = PortfolioAggregator.aggregate(
+            scope: .activeWallet,
+            network: .devnet,
+            profiles: [profile],
+            solBalances: [profile.id: 1],
+            tokenBalances: [:],
+            prices: [:]
+        )
+
+        try store.append(PortfolioSnapshot(summary: summary))
+        #expect(store.load().count == 1)
+        try store.clear()
+        #expect(store.load().isEmpty)
+    }
+
+    @Test func jupiterPriceResponseNormalizationAndEndpointGuard() throws {
+        let data = """
+        {
+          "So11111111111111111111111111111111111111112": {
+            "usdPrice": 123.45,
+            "blockId": 398169359,
+            "decimals": 9,
+            "priceChange24h": -1.25
+          }
+        }
+        """.data(using: .utf8)!
+        let prices = try JupiterPriceClient.decodePriceResponse(data: data, fetchedAt: Date(timeIntervalSince1970: 0))
+        let sol = try #require(prices[PortfolioConstants.nativeSolMint])
+
+        #expect(sol.usdPrice == Decimal(string: "123.45", locale: Locale(identifier: "en_US_POSIX")))
+        #expect(sol.blockID == 398_169_359)
+        #expect(sol.priceChange24h == Decimal(string: "-1.25", locale: Locale(identifier: "en_US_POSIX")))
+        #expect(try JupiterPriceClient.priceURL(
+            baseURL: URL(string: "https://lite-api.jup.ag/price/v3")!,
+            mintAddresses: [PortfolioConstants.nativeSolMint]
+        ).absoluteString.contains("/price/v3?ids="))
+        #expect(throws: PortfolioPriceClientError.self) {
+            try JupiterPriceClient.priceURL(
+                baseURL: URL(string: "https://lite-api.jup.ag/swap/v1/swap")!,
+                mintAddresses: [PortfolioConstants.nativeSolMint]
+            )
+        }
+    }
+
     @Test func devnetAirdropRejectsMainnet() async {
         var rejectedMainnet = false
         do {

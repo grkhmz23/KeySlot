@@ -151,7 +151,11 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
                 .cloakSignerRequestRejected,
                 .cloakSignerRequestLocked,
                 .cloakReviewFlowViewed,
-                .cloakApprovalRequirementGenerated
+                .cloakApprovalRequirementGenerated,
+                .portfolioRefreshed,
+                .portfolioPriceRefreshFailed,
+                .portfolioSnapshotStored,
+                .portfolioHistoryCleared
             ].contains(event.kind)
         case .security:
             return [.walletAutoLocked, .securityPolicyUpdated, .localAuthenticationFailed].contains(event.kind)
@@ -165,7 +169,8 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
                 .cloakHelperInvocationBlocked,
                 .cloakHelperResponseRejected,
                 .cloakSignerRequestRejected,
-                .cloakSignerRequestLocked
+                .cloakSignerRequestLocked,
+                .portfolioPriceRefreshFailed
             ].contains(event.kind)
         }
     }
@@ -195,6 +200,11 @@ private extension AuditEvent {
             "draftFingerprint",
             "requirementsCount",
             "requiresMainnetPhrase",
+            "portfolioScope",
+            "walletCount",
+            "assetCount",
+            "unavailablePriceCount",
+            "priceSource",
             "status",
             "warningsCount"
         ]
