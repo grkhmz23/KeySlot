@@ -31,7 +31,7 @@ test("deposit-plan uses integer fee math and returns no executable payload", () 
   });
 
   assert.equal(response.status, "locked");
-  assert.equal(response.errorCategory, "locked-in-phase-2-1");
+  assert.equal(response.errorCategory, "locked-in-phase-2-2");
   assert.equal(response.feeQuote.totalFeeLamports, "5150000");
   assert.equal(response.feeQuote.netLamports, "44850000");
   assert.equal("serializedTransaction" in response, false);
@@ -50,9 +50,12 @@ test("forbidden fields are rejected", () => {
 
 test("future execution commands are locked", () => {
   const response = handleCommand("execute-deposit", { amountLamports: "50000000" });
+  const complianceResponse = handleCommand("compliance-export", {});
 
   assert.equal(response.status, "locked");
-  assert.equal(response.errorCategory, "locked-in-phase-2-1");
+  assert.equal(response.errorCategory, "locked-in-phase-2-2");
+  assert.equal(complianceResponse.status, "locked");
+  assert.equal(complianceResponse.errorCategory, "locked-in-phase-2-2");
 });
 
 test("fee helper rejects below-minimum deposit", () => {

@@ -1,13 +1,13 @@
 import Foundation
 
 enum CloakAdapterStatus: String, Codable, CaseIterable, Equatable {
-    case lockedInPhase21 = "locked_in_phase_2_1"
+    case lockedInPhase22 = "locked_in_phase_2_2"
     case sdkUnavailable = "sdk_unavailable"
     case environmentUnsupported = "environment_unsupported"
 
     var title: String {
         switch self {
-        case .lockedInPhase21:
+        case .lockedInPhase22:
             return "Execution Locked"
         case .sdkUnavailable:
             return "SDK Bridge Unavailable"
@@ -90,6 +90,51 @@ struct CloakFeeQuote: Codable, Equatable {
     let netLamports: UInt64
     let minimumDepositLamports: UInt64
 
+    enum CodingKeys: String, CodingKey {
+        case grossLamports
+        case fixedFeeLamports
+        case variableFeeLamports
+        case totalFeeLamports
+        case netLamports
+        case minimumDepositLamports
+    }
+
+    init(
+        grossLamports: UInt64,
+        fixedFeeLamports: UInt64,
+        variableFeeLamports: UInt64,
+        totalFeeLamports: UInt64,
+        netLamports: UInt64,
+        minimumDepositLamports: UInt64
+    ) {
+        self.grossLamports = grossLamports
+        self.fixedFeeLamports = fixedFeeLamports
+        self.variableFeeLamports = variableFeeLamports
+        self.totalFeeLamports = totalFeeLamports
+        self.netLamports = netLamports
+        self.minimumDepositLamports = minimumDepositLamports
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        grossLamports = try container.decodeFlexibleUInt64(forKey: .grossLamports)
+        fixedFeeLamports = try container.decodeFlexibleUInt64(forKey: .fixedFeeLamports)
+        variableFeeLamports = try container.decodeFlexibleUInt64(forKey: .variableFeeLamports)
+        totalFeeLamports = try container.decodeFlexibleUInt64(forKey: .totalFeeLamports)
+        netLamports = try container.decodeFlexibleUInt64(forKey: .netLamports)
+        minimumDepositLamports = try container.decodeFlexibleUInt64(forKey: .minimumDepositLamports)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(grossLamports, forKey: .grossLamports)
+        try container.encode(fixedFeeLamports, forKey: .fixedFeeLamports)
+        try container.encode(variableFeeLamports, forKey: .variableFeeLamports)
+        try container.encode(totalFeeLamports, forKey: .totalFeeLamports)
+        try container.encode(netLamports, forKey: .netLamports)
+        try container.encode(minimumDepositLamports, forKey: .minimumDepositLamports)
+    }
+
     var grossSOLText: String { Self.solText(grossLamports) }
     var totalFeeSOLText: String { Self.solText(totalFeeLamports) }
     var netSOLText: String { Self.solText(netLamports) }
@@ -97,6 +142,23 @@ struct CloakFeeQuote: Codable, Equatable {
     private static func solText(_ lamports: UInt64) -> String {
         let sol = Decimal(lamports) / Decimal(SolanaConstants.lamportsPerSol)
         return "\(sol) SOL"
+    }
+}
+
+private extension KeyedDecodingContainer {
+    func decodeFlexibleUInt64(forKey key: Key) throws -> UInt64 {
+        if let value = try? decode(UInt64.self, forKey: key) {
+            return value
+        }
+        let stringValue = try decode(String.self, forKey: key)
+        guard let value = UInt64(stringValue) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: key,
+                in: self,
+                debugDescription: "Expected UInt64 or base-10 UInt64 string."
+            )
+        }
+        return value
     }
 }
 
@@ -129,7 +191,7 @@ struct CloakDepositDraft: Codable, Equatable, Identifiable {
     }
 
     var networkWarning: String? {
-        network.isMainnet ? "Future Cloak deposits would use real mainnet SOL." : "Cloak is mainnet-oriented. Phase 2.1 does not create a fake devnet Cloak mode."
+        network.isMainnet ? "Future Cloak deposits would use real mainnet SOL." : "Cloak is mainnet-oriented. Phase 2.2 does not create a fake devnet Cloak mode."
     }
 }
 
@@ -232,7 +294,7 @@ struct CloakVaultStatus: Codable, Equatable {
             walletID: walletID,
             privateWalletStatus: .statusOnly,
             availableReferenceKinds: [],
-            storageDescription: "Phase 2.1 stores no Cloak notes, UTXOs, viewing keys, nullifiers, proof inputs, or scan cache in UserDefaults.",
+            storageDescription: "Phase 2.2 stores no Cloak notes, UTXOs, viewing keys, nullifiers, proof inputs, or scan cache in UserDefaults.",
             canClearPrivateData: false
         )
     }

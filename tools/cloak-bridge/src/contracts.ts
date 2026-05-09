@@ -12,7 +12,10 @@ export type CloakBridgeCommand =
   | "execute-deposit"
   | "full-withdraw"
   | "partial-withdraw"
-  | "scan";
+  | "private-transfer"
+  | "swap"
+  | "scan"
+  | "compliance-export";
 
 export type CloakActionKind =
   | "deposit"
@@ -30,7 +33,7 @@ export type CloakBridgeStatus =
 
 export type CloakBridgeErrorCategory =
   | "none"
-  | "locked-in-phase-2-1"
+  | "locked-in-phase-2-2"
   | "forbidden-field"
   | "invalid-request"
   | "unsupported-command";
@@ -50,7 +53,7 @@ export type CloakBridgeRequest = {
   actionKind?: CloakActionKind;
   network?: "mainnet-beta" | "devnet";
   walletPublicAddress?: string;
-  amountLamports?: string;
+  amountLamports?: string | number;
   mintAddress?: string;
   programId?: string;
   feeQuote?: CloakFeeQuote;
@@ -58,6 +61,7 @@ export type CloakBridgeRequest = {
 };
 
 export type CloakBridgeResponse = {
+  id: string;
   requestId?: string;
   command: CloakBridgeCommand;
   actionKind?: CloakActionKind;
@@ -77,7 +81,7 @@ export const ALLOWED_COMMANDS: CloakBridgeCommand[] = [
   "deposit-plan",
 ];
 
-export function calculateFeeQuote(amountLamports: string): CloakFeeQuote {
+export function calculateFeeQuote(amountLamports: string | number): CloakFeeQuote {
   const gross = parseLamports(amountLamports);
   if (gross < MINIMUM_DEPOSIT_LAMPORTS) {
     throw new Error(`minimum deposit is ${MINIMUM_DEPOSIT_LAMPORTS.toString()} lamports`);
@@ -99,7 +103,14 @@ export function calculateFeeQuote(amountLamports: string): CloakFeeQuote {
   };
 }
 
-export function parseLamports(value: string): bigint {
+export function parseLamports(value: string | number): bigint {
+  if (typeof value === "number") {
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new Error("amountLamports must be a safe unsigned integer");
+    }
+    return BigInt(value);
+  }
+
   if (!/^[0-9]+$/.test(value)) {
     throw new Error("amountLamports must be a base-10 integer string");
   }

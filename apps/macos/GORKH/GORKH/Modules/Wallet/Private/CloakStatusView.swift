@@ -22,6 +22,11 @@ struct CloakStatusView: View {
                         systemImage: "shield.lefthalf.filled",
                         color: GorkhColors.accent
                     )
+                    GorkhStatusChip(
+                        title: walletManager.cloakHelperInvocationStatus.title,
+                        systemImage: walletManager.cloakHelperInvocationStatus == .dryRunEnabled ? "terminal" : "lock",
+                        color: walletManager.cloakHelperInvocationStatus == .dryRunEnabled ? GorkhColors.success : GorkhColors.warning
+                    )
                 }
 
                 HStack(spacing: 8) {
@@ -41,7 +46,7 @@ struct CloakStatusView: View {
                     Text("Future live deposits must pass wallet unlock, LocalAuthentication, review, explicit approval, and audit.")
                         .font(.caption)
                         .foregroundStyle(GorkhColors.secondaryText)
-                    Text("Next required step: implement the locked helper bridge, then run a tiny mainnet deposit smoke only after review.")
+                    Text("Dry-run helper invocation is disabled by default and allowlisted to health, env-check, and deposit-plan.")
                         .font(.caption)
                         .foregroundStyle(GorkhColors.warning)
                     Text(walletManager.cloakVaultStatus.storageDescription)
@@ -69,14 +74,14 @@ struct CloakStatusView: View {
 
                 HStack {
                     Button {
-                        walletManager.checkCloakBridgeHealth()
+                        Task { await walletManager.checkCloakBridgeHealth() }
                     } label: {
                         Label("Bridge Health", systemImage: "heart.text.square")
                     }
                     .buttonStyle(.gorkhSecondary)
 
                     Button {
-                        walletManager.checkCloakBridgeEnvironment()
+                        Task { await walletManager.checkCloakBridgeEnvironment() }
                     } label: {
                         Label("Env Check", systemImage: "checklist")
                     }

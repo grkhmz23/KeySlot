@@ -1,12 +1,13 @@
 import {
   ALLOWED_COMMANDS,
-  CLOAK_PROGRAM_ID,
   NATIVE_SOL_MINT,
-  calculateFeeQuote,
   type CloakBridgeCommand,
-  type CloakBridgeRequest,
   type CloakBridgeResponse,
 } from "./contracts.ts";
+import { depositPlan } from "./commands/depositPlan.ts";
+import { envCheck } from "./commands/envCheck.ts";
+import { health } from "./commands/health.ts";
+import { response } from "./commands/response.ts";
 import { validateNoForbiddenFields } from "./redaction.ts";
 
 export function handleCommand(command: CloakBridgeCommand, request: unknown = {}): CloakBridgeResponse {
@@ -14,93 +15,28 @@ export function handleCommand(command: CloakBridgeCommand, request: unknown = {}
 
   if (!ALLOWED_COMMANDS.includes(command)) {
     return response(command, {
-      request,
+      request: request as Record<string, never>,
       status: "locked",
-      errorCategory: "locked-in-phase-2-1",
-      message: "Cloak transaction execution commands are locked in Phase 2.1.",
+      errorCategory: "locked-in-phase-2-2",
+      message: "Cloak transaction execution commands are locked in Phase 2.2.",
     });
   }
 
   switch (command) {
     case "health":
-      return response(command, {
-        request,
-        status: "ok",
-        message: "Cloak bridge contract helper is available. Transaction execution is locked.",
-      });
+      return health(request);
     case "env-check":
-      return response(command, {
-        request,
-        status: "ok",
-        message: "Environment contract check passed. SDK transaction calls are not enabled.",
-      });
+      return envCheck(request);
     case "deposit-plan":
       return depositPlan(request);
     default:
       return response(command, {
-        request,
+        request: request as Record<string, never>,
         status: "rejected",
         errorCategory: "unsupported-command",
         message: "Unsupported Cloak bridge command.",
       });
   }
-}
-
-function depositPlan(request: unknown): CloakBridgeResponse {
-  const parsed = request as CloakBridgeRequest;
-  if (!parsed.amountLamports) {
-    return response("deposit-plan", {
-      request,
-      status: "rejected",
-      errorCategory: "invalid-request",
-      message: "deposit-plan requires amountLamports.",
-    });
-  }
-
-  try {
-    const feeQuote = calculateFeeQuote(parsed.amountLamports);
-    return response("deposit-plan", {
-      request,
-      actionKind: "deposit",
-      status: "locked",
-      errorCategory: "locked-in-phase-2-1",
-      message: "Deposit plan created. No transaction payload is returned in Phase 2.1.",
-      feeQuote,
-    });
-  } catch (error) {
-    return response("deposit-plan", {
-      request,
-      actionKind: "deposit",
-      status: "rejected",
-      errorCategory: "invalid-request",
-      message: error instanceof Error ? error.message : "Invalid deposit-plan request.",
-    });
-  }
-}
-
-function response(
-  command: CloakBridgeCommand,
-  options: {
-    request: unknown;
-    actionKind?: CloakBridgeResponse["actionKind"];
-    status: CloakBridgeResponse["status"];
-    errorCategory?: CloakBridgeResponse["errorCategory"];
-    message: string;
-    feeQuote?: CloakBridgeResponse["feeQuote"];
-  },
-): CloakBridgeResponse {
-  const request = options.request as Partial<CloakBridgeRequest>;
-  return {
-    requestId: request.requestId,
-    command,
-    actionKind: options.actionKind ?? request.actionKind,
-    status: options.status,
-    errorCategory: options.errorCategory ?? "none",
-    message: options.message,
-    programId: CLOAK_PROGRAM_ID,
-    feeQuote: options.feeQuote,
-    timestamp: new Date().toISOString(),
-  };
 }
 
 async function readStdin(): Promise<string> {

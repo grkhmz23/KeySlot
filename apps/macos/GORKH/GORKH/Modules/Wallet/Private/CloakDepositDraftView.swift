@@ -20,6 +20,14 @@ struct CloakDepositDraftView: View {
                     .buttonStyle(.gorkhPrimary)
                     .disabled(walletManager.selectedProfile == nil)
 
+                    Button {
+                        Task { await walletManager.runCloakDepositPlanDryRun() }
+                    } label: {
+                        Label("Dry-run Plan", systemImage: "terminal")
+                    }
+                    .buttonStyle(.gorkhSecondary)
+                    .disabled(walletManager.currentCloakDepositDraft == nil)
+
                     Spacer()
 
                     GorkhStatusChip(title: "Execution locked", systemImage: "lock.fill", color: GorkhColors.warning)

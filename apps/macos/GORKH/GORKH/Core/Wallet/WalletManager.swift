@@ -24,11 +24,12 @@ final class WalletManager: ObservableObject {
     @Published private(set) var isBusy = false
     @Published private(set) var securityPolicy: WalletSecurityPolicy
     @Published private(set) var authenticationStatusMessage: String
-    @Published private(set) var cloakAdapterStatus: CloakAdapterStatus = .lockedInPhase21
+    @Published private(set) var cloakAdapterStatus: CloakAdapterStatus = .lockedInPhase22
     @Published private(set) var cloakVaultStatus: CloakVaultStatus = .statusOnly(walletID: nil)
     @Published private(set) var currentCloakDepositDraft: CloakDepositDraft?
     @Published private(set) var cloakBridgeResponse: CloakBridgeResponseSummary?
     @Published private(set) var cloakBridgeContractResponse: CloakBridgeResponse?
+    @Published private(set) var cloakHelperInvocationStatus: CloakHelperInvocationStatus = .disabled
 
     private let vault: WalletVault
     private let rpcClient: SolanaRPCClient
@@ -39,6 +40,7 @@ final class WalletManager: ObservableObject {
     private let mnemonicService: any MnemonicService
     private let cloakBridge: any CloakBridgeProtocol
     private let cloakPrivateVault: any CloakPrivateVault
+    private let cloakHelperInvocationAdapter: CloakHelperInvocationAdapter
     private let derivationService: SolanaDerivationService
     private var lockController: WalletLockController
     private var unlockedSecrets: [UUID: WalletSecret] = [:]
@@ -86,7 +88,8 @@ final class WalletManager: ObservableObject {
             localAuthenticationService: SystemLocalAuthenticationService(),
             mnemonicService: Bip39MnemonicService.shared,
             cloakBridge: CloakBridgeUnavailable(),
-            cloakPrivateVault: CloakPrivateVaultStatusOnly()
+            cloakPrivateVault: CloakPrivateVaultStatusOnly(),
+            cloakHelperInvocationAdapter: .disabled()
         )
     }
 
@@ -99,7 +102,8 @@ final class WalletManager: ObservableObject {
         localAuthenticationService: any LocalAuthenticationService,
         mnemonicService: any MnemonicService,
         cloakBridge: any CloakBridgeProtocol,
-        cloakPrivateVault: any CloakPrivateVault
+        cloakPrivateVault: any CloakPrivateVault,
+        cloakHelperInvocationAdapter: CloakHelperInvocationAdapter
     ) {
         self.vault = vault
         self.rpcClient = rpcClient
@@ -110,10 +114,12 @@ final class WalletManager: ObservableObject {
         self.mnemonicService = mnemonicService
         self.cloakBridge = cloakBridge
         self.cloakPrivateVault = cloakPrivateVault
+        self.cloakHelperInvocationAdapter = cloakHelperInvocationAdapter
         self.derivationService = SolanaDerivationService(mnemonicService: mnemonicService)
         let policy = securitySettingsStore.loadPolicy()
         self.securityPolicy = policy
         self.authenticationStatusMessage = localAuthenticationService.statusDescription
+        self.cloakHelperInvocationStatus = cloakHelperInvocationAdapter.status
         self.lockController = WalletLockController(policy: policy)
         loadMetadata()
         auditEvents = auditLog.loadRecent()
@@ -216,12 +222,14 @@ final class WalletManager: ObservableObject {
         )
     }
 
-    func checkCloakBridgeHealth() {
+    func checkCloakBridgeHealth() async {
         noteUserActivity()
-        let response = cloakBridge.health()
+        let request = CloakBridgeRequest(command: .health, network: selectedNetwork)
+        let response = await cloakHelperInvocationAdapter.invoke(request)
         cloakBridgeContractResponse = response
+        cloakHelperInvocationStatus = statusFromResponse(response)
         record(
-            kind: .cloakBridgeHealthChecked,
+            kind: helperAuditKind(for: response, successKind: .cloakHelperHealthChecked),
             walletID: selectedWalletID,
             publicAddress: selectedProfile?.publicAddress,
             message: "Cloak bridge health checked.",
@@ -233,12 +241,14 @@ final class WalletManager: ObservableObject {
         )
     }
 
-    func checkCloakBridgeEnvironment() {
+    func checkCloakBridgeEnvironment() async {
         noteUserActivity()
-        let response = cloakBridge.environmentCheck(network: selectedNetwork)
+        let request = CloakBridgeRequest(command: .environmentCheck, network: selectedNetwork)
+        let response = await cloakHelperInvocationAdapter.invoke(request)
         cloakBridgeContractResponse = response
+        cloakHelperInvocationStatus = statusFromResponse(response)
         record(
-            kind: .cloakBridgeEnvironmentChecked,
+            kind: helperAuditKind(for: response, successKind: .cloakHelperEnvironmentChecked),
             walletID: selectedWalletID,
             publicAddress: selectedProfile?.publicAddress,
             message: "Cloak bridge environment checked.",
@@ -247,6 +257,41 @@ final class WalletManager: ObservableObject {
                 "bridgeCommand": response.command.rawValue,
                 "bridgeStatus": response.status.rawValue,
                 "errorCategory": response.errorCategory.rawValue
+            ]
+        )
+    }
+
+    func runCloakDepositPlanDryRun() async {
+        noteUserActivity()
+        guard let draft = currentCloakDepositDraft else {
+            return
+        }
+
+        let request = CloakBridgeRequest(
+            command: .depositPlan,
+            actionKind: .deposit,
+            network: draft.network,
+            walletPublicAddress: draft.sourceWalletAddress,
+            amountLamports: draft.grossLamports,
+            mintAddress: draft.mintAddress,
+            feeQuote: draft.feeQuote
+        )
+        let response = await cloakHelperInvocationAdapter.invoke(request)
+        cloakBridgeContractResponse = response
+        cloakHelperInvocationStatus = statusFromResponse(response)
+        record(
+            kind: helperAuditKind(for: response, successKind: .cloakDepositPlanDryRunChecked),
+            walletID: selectedWalletID,
+            publicAddress: selectedProfile?.publicAddress,
+            message: "Cloak deposit plan dry-run checked.",
+            details: [
+                "network": draft.network.rawValue,
+                "bridgeCommand": response.command.rawValue,
+                "bridgeStatus": response.status.rawValue,
+                "errorCategory": response.errorCategory.rawValue,
+                "grossLamports": "\(draft.grossLamports)",
+                "feeLamports": "\(draft.feeQuote.totalFeeLamports)",
+                "netLamports": "\(draft.feeQuote.netLamports)"
             ]
         )
     }
@@ -337,7 +382,7 @@ final class WalletManager: ObservableObject {
             command: actionKind == .deposit ? .executeDeposit : .environmentCheck,
             actionKind: actionKind,
             status: .locked,
-            errorCategory: .lockedInPhase21,
+            errorCategory: .lockedInPhase22,
             message: response.message
         )
         statusMessage = response.message
@@ -345,7 +390,7 @@ final class WalletManager: ObservableObject {
             kind: .cloakBridgeExecutionRejected,
             walletID: selectedWalletID,
             publicAddress: selectedProfile?.publicAddress,
-            message: "Cloak action blocked by Phase 2.1 execution lock.",
+            message: "Cloak action blocked by Phase 2.2 execution lock.",
             details: [
                 "network": selectedNetwork.rawValue,
                 "cloakAction": actionKind.rawValue,
@@ -353,6 +398,29 @@ final class WalletManager: ObservableObject {
                 "bridgeStatus": response.status.rawValue
             ]
         )
+    }
+
+    private func statusFromResponse(_ response: CloakBridgeResponse) -> CloakHelperInvocationStatus {
+        switch response.status {
+        case .ok:
+            return .dryRunEnabled
+        case .unavailable:
+            return .unavailable
+        case .error, .rejected:
+            return .error
+        case .locked:
+            return cloakHelperInvocationAdapter.status
+        }
+    }
+
+    private func helperAuditKind(for response: CloakBridgeResponse, successKind: AuditEvent.Kind) -> AuditEvent.Kind {
+        if response.errorCategory == .forbiddenField || response.message.lowercased().contains("response rejected") {
+            return .cloakHelperResponseRejected
+        }
+        if response.errorCategory == .lockedInPhase22 || response.status == .locked {
+            return .cloakHelperInvocationBlocked
+        }
+        return successKind
     }
 
     func createWallet(label: String) {

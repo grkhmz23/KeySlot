@@ -761,7 +761,7 @@ struct GORKHTests {
             grossLamports: 50_000_000
         )
 
-        #expect(bridge.checkAvailability() == .lockedInPhase21)
+        #expect(bridge.checkAvailability() == .lockedInPhase22)
         #expect(bridge.validateEnvironment(network: .devnet).status == .locked)
 
         let response = await bridge.executeDeposit(request: request)
@@ -816,7 +816,7 @@ struct GORKHTests {
         #expect(policy.allowedCommands.contains(.environmentCheck))
         #expect(policy.allowedCommands.contains(.depositPlan))
         #expect(!policy.allowedCommands.contains(.executeDeposit))
-        #expect(!CloakBridgeCommand.executeDeposit.isHelperCommandAllowedInPhase21)
+        #expect(!CloakBridgeCommand.executeDeposit.isHelperCommandAllowedInPhase22)
     }
 
     @Test func cloakBridgeDepositPlanResponseStaysLocked() throws {
@@ -829,10 +829,165 @@ struct GORKHTests {
 
         #expect(response.command == .depositPlan)
         #expect(response.status == .locked)
-        #expect(response.errorCategory == .lockedInPhase21)
+        #expect(response.errorCategory == .lockedInPhase22)
         #expect(response.feeQuote?.totalFeeLamports == 5_150_000)
         #expect(response.transactionSignature == nil)
         #expect(response.commitmentPrefix == nil)
+    }
+
+    @Test func cloakHelperDisabledByDefaultDoesNotInvokeRunner() async {
+        let runner = MockCloakHelperProcessRunner(response: .success(.okResponse(command: .health)))
+        let adapter = CloakHelperInvocationAdapter(
+            policy: .disabled,
+            projectRoot: URL(fileURLWithPath: "/tmp/gorkh"),
+            pathResolver: MockCloakHelperPathResolver(),
+            processRunner: runner
+        )
+        let response = await adapter.invoke(CloakBridgeRequest(command: .health, network: .mainnetBeta))
+
+        #expect(response.status == .locked)
+        #expect(response.errorCategory == .lockedInPhase22)
+        #expect(runner.invocationCount == 0)
+    }
+
+    @Test func cloakHelperAllowlistedCommandSucceedsWithMockRunner() async {
+        let runner = MockCloakHelperProcessRunner(response: .success(.okResponse(command: .health)))
+        let adapter = CloakHelperInvocationAdapter(
+            policy: .dryRunEnabledForDevelopment(allowedNodeExecutablePaths: ["/usr/bin/node"]),
+            projectRoot: URL(fileURLWithPath: "/tmp/gorkh"),
+            pathResolver: MockCloakHelperPathResolver(),
+            processRunner: runner
+        )
+        let response = await adapter.invoke(CloakBridgeRequest(command: .health, network: .mainnetBeta))
+
+        #expect(response.status == .ok)
+        #expect(response.command == .health)
+        #expect(runner.invocationCount == 1)
+        #expect(runner.lastCommand == .health)
+    }
+
+    @Test func cloakHelperDepositPlanDryRunReturnsNoExecutablePayload() async throws {
+        let quote = try CloakFeeModel.quote(grossLamports: 50_000_000)
+        let runner = MockCloakHelperProcessRunner(response: .success(.okResponse(
+            command: .depositPlan,
+            status: .locked,
+            errorCategory: .lockedInPhase22,
+            feeQuote: quote
+        )))
+        let adapter = CloakHelperInvocationAdapter(
+            policy: .dryRunEnabledForDevelopment(allowedNodeExecutablePaths: ["/usr/bin/node"]),
+            projectRoot: URL(fileURLWithPath: "/tmp/gorkh"),
+            pathResolver: MockCloakHelperPathResolver(),
+            processRunner: runner
+        )
+        let response = await adapter.invoke(CloakBridgeRequest(
+            command: .depositPlan,
+            actionKind: .deposit,
+            network: .mainnetBeta,
+            walletPublicAddress: SolanaConstants.systemProgramID,
+            amountLamports: 50_000_000,
+            mintAddress: CloakConstants.nativeSolMint,
+            feeQuote: quote
+        ))
+
+        #expect(response.status == .locked)
+        #expect(response.feeQuote?.totalFeeLamports == 5_150_000)
+        #expect(response.transactionSignature == nil)
+        #expect(response.commitmentPrefix == nil)
+    }
+
+    @Test func cloakHelperDecodesTypeScriptDepositPlanResponse() async throws {
+        let raw = """
+        {
+          "id":"11111111-1111-4111-8111-111111111111",
+          "requestId":"22222222-2222-4222-8222-222222222222",
+          "command":"deposit-plan",
+          "actionKind":"deposit",
+          "status":"locked",
+          "errorCategory":"locked-in-phase-2-2",
+          "message":"Deposit plan created. No transaction payload is returned in Phase 2.2.",
+          "programId":"zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW",
+          "feeQuote":{
+            "grossLamports":"50000000",
+            "fixedFeeLamports":"5000000",
+            "variableFeeLamports":"150000",
+            "totalFeeLamports":"5150000",
+            "netLamports":"44850000",
+            "minimumDepositLamports":"10000000"
+          },
+          "timestamp":"2026-01-01T00:00:00Z"
+        }
+        """
+        let adapter = CloakHelperInvocationAdapter(
+            policy: .dryRunEnabledForDevelopment(allowedNodeExecutablePaths: ["/usr/bin/node"]),
+            projectRoot: URL(fileURLWithPath: "/tmp/gorkh"),
+            pathResolver: MockCloakHelperPathResolver(),
+            processRunner: MockCloakHelperProcessRunner(rawStdout: raw)
+        )
+        let response = await adapter.invoke(CloakBridgeRequest(
+            command: .depositPlan,
+            actionKind: .deposit,
+            network: .mainnetBeta,
+            walletPublicAddress: SolanaConstants.systemProgramID,
+            amountLamports: 50_000_000,
+            mintAddress: CloakConstants.nativeSolMint,
+            feeQuote: try CloakFeeModel.quote(grossLamports: 50_000_000)
+        ))
+
+        #expect(response.command == .depositPlan)
+        #expect(response.errorCategory == .lockedInPhase22)
+        #expect(response.feeQuote?.totalFeeLamports == 5_150_000)
+        #expect(response.transactionSignature == nil)
+    }
+
+    @Test func cloakHelperForbiddenCommandIsRejectedBeforeRunner() async {
+        let runner = MockCloakHelperProcessRunner(response: .success(.okResponse(command: .executeDeposit)))
+        let adapter = CloakHelperInvocationAdapter(
+            policy: .dryRunEnabledForDevelopment(allowedNodeExecutablePaths: ["/usr/bin/node"]),
+            projectRoot: URL(fileURLWithPath: "/tmp/gorkh"),
+            pathResolver: MockCloakHelperPathResolver(),
+            processRunner: runner
+        )
+        let response = await adapter.invoke(CloakBridgeRequest(command: .executeDeposit, actionKind: .deposit, network: .mainnetBeta))
+
+        #expect(response.status == .locked)
+        #expect(response.errorCategory == .unsupportedCommand)
+        #expect(runner.invocationCount == 0)
+    }
+
+    @Test func cloakHelperRejectsUserControlledExecutableAndShellPaths() {
+        let resolver = CloakHelperPathResolver()
+
+        #expect(throws: CloakHelperPathError.self) {
+            _ = try resolver.resolveNodeExecutable(candidates: ["/bin/sh"])
+        }
+        #expect(throws: CloakHelperPathError.self) {
+            _ = try resolver.resolve(policy: CloakBridgeExecutionPolicy(
+                helperExecutionEnabled: true,
+                allowlistedHelperRelativePath: "../tools/cloak-bridge/src/index.ts",
+                allowedNodeExecutablePaths: ["/usr/bin/node"],
+                allowedCommands: [.health]
+            ), projectRoot: URL(fileURLWithPath: "/tmp/gorkh"))
+        }
+    }
+
+    @Test func cloakHelperForbiddenResponseIsRejectedByValidator() async {
+        let runner = MockCloakHelperProcessRunner(rawStdout: #"{"command":"health","status":"ok","errorCategory":"none","programId":"zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW","message":"bad","timestamp":"2026-01-01T00:00:00Z","viewingKey":"no"}"#)
+        let adapter = CloakHelperInvocationAdapter(
+            policy: .dryRunEnabledForDevelopment(allowedNodeExecutablePaths: ["/usr/bin/node"]),
+            projectRoot: URL(fileURLWithPath: "/tmp/gorkh"),
+            pathResolver: MockCloakHelperPathResolver(),
+            processRunner: runner
+        )
+        let response = await adapter.invoke(CloakBridgeRequest(command: .health, network: .mainnetBeta))
+
+        #expect(response.status == .locked)
+        #expect(response.errorCategory == .forbiddenField)
+    }
+
+    @Test func cloakHelperStderrRedactionRemovesSensitiveMaterial() {
+        #expect(CloakHelperStderrRedactor.redact("privateKey=abc") == "[redacted cloak helper stderr]")
+        #expect(CloakHelperStderrRedactor.redact("safe warning").contains("safe warning"))
     }
 
     @Test func cloakPrivateVaultStatusOnlyStoresNoPrivateReferences() {
@@ -1194,7 +1349,8 @@ struct GORKHTests {
             localAuthenticationService: MockLocalAuthenticationService(result: .success),
             mnemonicService: Bip39MnemonicService.shared,
             cloakBridge: CloakBridgeUnavailable(),
-            cloakPrivateVault: CloakPrivateVaultStatusOnly()
+            cloakPrivateVault: CloakPrivateVaultStatusOnly(),
+            cloakHelperInvocationAdapter: .disabled()
         )
 
         manager.createWallet(label: "Delete Me")
@@ -1227,7 +1383,8 @@ struct GORKHTests {
             localAuthenticationService: MockLocalAuthenticationService(result: .failed("Denied")),
             mnemonicService: Bip39MnemonicService.shared,
             cloakBridge: CloakBridgeUnavailable(),
-            cloakPrivateVault: CloakPrivateVaultStatusOnly()
+            cloakPrivateVault: CloakPrivateVaultStatusOnly(),
+            cloakHelperInvocationAdapter: .disabled()
         )
 
         manager.createWallet(label: "Auth")
@@ -1408,6 +1565,85 @@ private struct MockLocalAuthenticationService: LocalAuthenticationService {
 
     func authenticate(reason: String) async -> LocalAuthenticationResult {
         result
+    }
+}
+
+private struct MockCloakHelperPathResolver: CloakHelperPathResolving {
+    func resolve(policy: CloakBridgeExecutionPolicy, projectRoot: URL?) throws -> CloakHelperResolvedPath {
+        CloakHelperResolvedPath(
+            nodeExecutable: URL(fileURLWithPath: "/usr/bin/node"),
+            helperScript: URL(fileURLWithPath: "/tmp/gorkh/tools/cloak-bridge/src/index.ts"),
+            helperRelativePath: policy.allowlistedHelperRelativePath
+        )
+    }
+}
+
+private final class MockCloakHelperProcessRunner: CloakHelperProcessRunning {
+    enum Response {
+        case success(CloakBridgeResponse)
+        case failure(Int32, String)
+    }
+
+    private let response: Response?
+    private let rawStdout: String?
+    private(set) var invocationCount = 0
+    private(set) var lastCommand: CloakBridgeCommand?
+
+    init(response: Response) {
+        self.response = response
+        self.rawStdout = nil
+    }
+
+    init(rawStdout: String) {
+        self.response = nil
+        self.rawStdout = rawStdout
+    }
+
+    func run(
+        resolvedPath: CloakHelperResolvedPath,
+        command: CloakBridgeCommand,
+        stdin: Data
+    ) async throws -> CloakHelperProcessResult {
+        invocationCount += 1
+        lastCommand = command
+
+        if let rawStdout {
+            return CloakHelperProcessResult(exitCode: 0, stdout: Data(rawStdout.utf8), stderr: "")
+        }
+
+        switch response {
+        case .success(let response):
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            return CloakHelperProcessResult(
+                exitCode: 0,
+                stdout: try encoder.encode(response),
+                stderr: ""
+            )
+        case .failure(let code, let stderr):
+            return CloakHelperProcessResult(exitCode: code, stdout: Data(), stderr: stderr)
+        case .none:
+            return CloakHelperProcessResult(exitCode: 1, stdout: Data(), stderr: "missing mock response")
+        }
+    }
+}
+
+private extension CloakBridgeResponse {
+    static func okResponse(
+        command: CloakBridgeCommand,
+        status: CloakBridgeStatus = .ok,
+        errorCategory: CloakBridgeErrorCategory = .none,
+        feeQuote: CloakFeeQuote? = nil
+    ) -> CloakBridgeResponse {
+        CloakBridgeResponse(
+            requestID: UUID(),
+            command: command,
+            actionKind: command == .depositPlan ? .deposit : nil,
+            status: status,
+            errorCategory: errorCategory,
+            message: "Mock response",
+            feeQuote: feeQuote
+        )
     }
 }
 

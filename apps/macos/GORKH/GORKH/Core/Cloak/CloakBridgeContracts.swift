@@ -2,20 +2,23 @@ import Foundation
 
 enum CloakBridgeCommand: String, Codable, CaseIterable, Identifiable, Equatable {
     case health
-    case environmentCheck = "env_check"
-    case depositPlan = "deposit_plan"
-    case executeDeposit = "execute_deposit"
-    case fullWithdraw = "full_withdraw"
-    case partialWithdraw = "partial_withdraw"
-    case scan = "scan"
+    case environmentCheck = "env-check"
+    case depositPlan = "deposit-plan"
+    case executeDeposit = "execute-deposit"
+    case fullWithdraw = "full-withdraw"
+    case partialWithdraw = "partial-withdraw"
+    case privateTransfer = "private-transfer"
+    case swap
+    case scan
+    case complianceExport = "compliance-export"
 
     var id: String { rawValue }
 
-    var isHelperCommandAllowedInPhase21: Bool {
+    var isHelperCommandAllowedInPhase22: Bool {
         switch self {
         case .health, .environmentCheck, .depositPlan:
             return true
-        case .executeDeposit, .fullWithdraw, .partialWithdraw, .scan:
+        case .executeDeposit, .fullWithdraw, .partialWithdraw, .privateTransfer, .swap, .scan, .complianceExport:
             return false
         }
     }
@@ -31,11 +34,11 @@ enum CloakBridgeStatus: String, Codable, Equatable {
 
 enum CloakBridgeErrorCategory: String, Codable, Equatable {
     case none
-    case lockedInPhase21 = "locked_in_phase_2_1"
-    case forbiddenField = "forbidden_field"
-    case invalidRequest = "invalid_request"
-    case unsupportedCommand = "unsupported_command"
-    case helperUnavailable = "helper_unavailable"
+    case lockedInPhase22 = "locked-in-phase-2-2"
+    case forbiddenField = "forbidden-field"
+    case invalidRequest = "invalid-request"
+    case unsupportedCommand = "unsupported-command"
+    case helperUnavailable = "helper-unavailable"
 }
 
 struct CloakBridgeRequest: Codable, Equatable, Identifiable {
@@ -49,6 +52,19 @@ struct CloakBridgeRequest: Codable, Equatable, Identifiable {
     let programID: String
     let feeQuote: CloakFeeQuote?
     let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id = "requestId"
+        case command
+        case actionKind
+        case network
+        case walletPublicAddress
+        case amountLamports
+        case mintAddress
+        case programID = "programId"
+        case feeQuote
+        case createdAt = "timestamp"
+    }
 
     init(
         id: UUID = UUID(),
@@ -89,6 +105,21 @@ struct CloakBridgeResponse: Codable, Equatable, Identifiable {
     let commitmentPrefix: String?
     let createdAt: Date
 
+    enum CodingKeys: String, CodingKey {
+        case id
+        case requestID = "requestId"
+        case command
+        case actionKind
+        case status
+        case errorCategory
+        case message
+        case programID = "programId"
+        case feeQuote
+        case transactionSignature = "txSignature"
+        case commitmentPrefix
+        case createdAt = "timestamp"
+    }
+
     init(
         id: UUID = UUID(),
         requestID: UUID?,
@@ -123,7 +154,7 @@ struct CloakBridgeResponse: Codable, Equatable, Identifiable {
             command: request.command,
             actionKind: request.actionKind,
             status: .locked,
-            errorCategory: .lockedInPhase21,
+            errorCategory: .lockedInPhase22,
             message: message,
             feeQuote: request.feeQuote
         )
@@ -133,18 +164,55 @@ struct CloakBridgeResponse: Codable, Equatable, Identifiable {
 struct CloakBridgeExecutionPolicy: Equatable {
     let helperExecutionEnabled: Bool
     let allowlistedHelperRelativePath: String
+    let allowedNodeExecutablePaths: [String]
     let allowedCommands: Set<CloakBridgeCommand>
 
     static let disabled = CloakBridgeExecutionPolicy(
         helperExecutionEnabled: false,
         allowlistedHelperRelativePath: "tools/cloak-bridge/src/index.ts",
+        allowedNodeExecutablePaths: [
+            "/opt/homebrew/bin/node",
+            "/usr/local/bin/node",
+            "/usr/bin/node"
+        ],
         allowedCommands: [.health, .environmentCheck, .depositPlan]
     )
+
+    static func dryRunEnabledForDevelopment(
+        allowedNodeExecutablePaths: [String] = CloakBridgeExecutionPolicy.disabled.allowedNodeExecutablePaths
+    ) -> CloakBridgeExecutionPolicy {
+        CloakBridgeExecutionPolicy(
+            helperExecutionEnabled: true,
+            allowlistedHelperRelativePath: CloakBridgeExecutionPolicy.disabled.allowlistedHelperRelativePath,
+            allowedNodeExecutablePaths: allowedNodeExecutablePaths,
+            allowedCommands: CloakBridgeExecutionPolicy.disabled.allowedCommands
+        )
+    }
 
     func canInvokeHelper(command: CloakBridgeCommand, relativePath: String) -> Bool {
         helperExecutionEnabled
             && relativePath == allowlistedHelperRelativePath
             && allowedCommands.contains(command)
-            && command.isHelperCommandAllowedInPhase21
+            && command.isHelperCommandAllowedInPhase22
+    }
+}
+
+enum CloakHelperInvocationStatus: String, Codable, Equatable {
+    case disabled
+    case dryRunEnabled = "dry_run_enabled"
+    case unavailable
+    case error
+
+    var title: String {
+        switch self {
+        case .disabled:
+            return "Helper disabled"
+        case .dryRunEnabled:
+            return "Dry-run helper enabled"
+        case .unavailable:
+            return "Helper unavailable"
+        case .error:
+            return "Helper error"
+        }
     }
 }

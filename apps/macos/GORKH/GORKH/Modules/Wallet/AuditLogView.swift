@@ -141,12 +141,25 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
                 .cloakBridgeHealthChecked,
                 .cloakBridgeEnvironmentChecked,
                 .cloakDepositPlanGenerated,
-                .cloakBridgeExecutionRejected
+                .cloakBridgeExecutionRejected,
+                .cloakHelperHealthChecked,
+                .cloakHelperEnvironmentChecked,
+                .cloakDepositPlanDryRunChecked,
+                .cloakHelperInvocationBlocked,
+                .cloakHelperResponseRejected
             ].contains(event.kind)
         case .security:
             return [.walletAutoLocked, .securityPolicyUpdated, .localAuthenticationFailed].contains(event.kind)
         case .failed:
-            return [.transactionFailed, .tokenTransferFailed, .localAuthenticationFailed, .cloakDepositExecutionBlocked, .cloakBridgeExecutionRejected].contains(event.kind)
+            return [
+                .transactionFailed,
+                .tokenTransferFailed,
+                .localAuthenticationFailed,
+                .cloakDepositExecutionBlocked,
+                .cloakBridgeExecutionRejected,
+                .cloakHelperInvocationBlocked,
+                .cloakHelperResponseRejected
+            ].contains(event.kind)
         }
     }
 }

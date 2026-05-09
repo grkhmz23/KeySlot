@@ -2,7 +2,7 @@
 
 This helper is a locked contract scaffold for future `@cloak.dev/sdk` integration.
 
-Phase 2.1 supports only:
+Phase 2.2 supports only:
 
 - `health`
 - `env-check`
