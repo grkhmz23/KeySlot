@@ -2,9 +2,11 @@ import Foundation
 
 struct SolanaRPCClient {
     private let session: URLSession
+    let configuration: RPCFastConfiguration
 
-    init(session: URLSession = .shared) {
+    init(session: URLSession = .shared, configuration: RPCFastConfiguration = RPCFastConfiguration()) {
         self.session = session
+        self.configuration = configuration
     }
 
     func getBalance(address: String, network: WalletNetwork) async throws -> UInt64 {
@@ -290,6 +292,38 @@ struct SolanaRPCClient {
         return blockhash
     }
 
+    func getHealth(network: WalletNetwork) async throws -> String {
+        let result = try await request(method: "getHealth", params: [], network: network)
+        guard let status = result as? String else {
+            throw SolanaRPCError.invalidResponse
+        }
+        return status
+    }
+
+    func getVersion(network: WalletNetwork) async throws -> String? {
+        let result = try await request(method: "getVersion", params: [], network: network)
+        guard let dictionary = result as? [String: Any] else {
+            throw SolanaRPCError.invalidResponse
+        }
+        return dictionary["solana-core"] as? String
+    }
+
+    func getSlot(network: WalletNetwork) async throws -> UInt64 {
+        let result = try await request(method: "getSlot", params: [["commitment": "confirmed"]], network: network)
+        guard let value = result as? NSNumber else {
+            throw SolanaRPCError.invalidResponse
+        }
+        return value.uint64Value
+    }
+
+    func getBlockHeight(network: WalletNetwork) async throws -> UInt64 {
+        let result = try await request(method: "getBlockHeight", params: [["commitment": "confirmed"]], network: network)
+        guard let value = result as? NSNumber else {
+            throw SolanaRPCError.invalidResponse
+        }
+        return value.uint64Value
+    }
+
     func getFeeForMessage(messageBase64: String, network: WalletNetwork) async throws -> UInt64? {
         let result = try await request(
             method: "getFeeForMessage",
@@ -427,11 +461,14 @@ struct SolanaRPCClient {
         )
     }
 
-    private func request(method: String, params: [Any], network: WalletNetwork) async throws -> Any {
-        var urlRequest = URLRequest(url: network.rpcURL)
+    func makeRequest(method: String, params: [Any], network: WalletNetwork) throws -> URLRequest {
+        guard configuration.tokenStatus(for: network) == .present else {
+            throw SolanaRPCError.tokenMissing(configuration.missingTokenMessage(for: network))
+        }
+        var urlRequest = URLRequest(url: configuration.httpURL(for: network))
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
+        configuration.applyAuthentication(to: &urlRequest, network: network)
         let body: [String: Any] = [
             "jsonrpc": "2.0",
             "id": UUID().uuidString,
@@ -439,14 +476,32 @@ struct SolanaRPCClient {
             "params": params
         ]
         urlRequest.httpBody = try JSONSerialization.data(withJSONObject: body)
+        return urlRequest
+    }
 
-        let (data, response) = try await session.data(for: urlRequest)
+    private func request(method: String, params: [Any], network: WalletNetwork) async throws -> Any {
+        let urlRequest = try makeRequest(method: method, params: params, network: network)
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: urlRequest)
+        } catch let error as URLError where error.code == .timedOut {
+            throw SolanaRPCError.timeout("RPC Fast endpoint timed out.")
+        } catch {
+            throw SolanaRPCError.transport(configuration.redact(error.localizedDescription))
+        }
         guard let httpResponse = response as? HTTPURLResponse else {
             throw SolanaRPCError.transport("Solana RPC did not return an HTTP response.")
         }
         guard (200..<300).contains(httpResponse.statusCode) else {
             let body = String(data: data, encoding: .utf8) ?? "No response body."
-            throw SolanaRPCError.transport("HTTP \(httpResponse.statusCode): \(body.prefix(500))")
+            let normalized = RPCErrorNormalizer.normalize(
+                statusCode: httpResponse.statusCode,
+                message: "HTTP \(httpResponse.statusCode): \(body.prefix(500))",
+                configuration: configuration
+            )
+            throw SolanaRPCError.from(normalized)
         }
 
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -455,7 +510,7 @@ struct SolanaRPCClient {
 
         if let error = json["error"] as? [String: Any] {
             let message = error["message"] as? String ?? "Solana RPC error"
-            throw SolanaRPCError.rpc(message)
+            throw SolanaRPCError.from(RPCErrorNormalizer.normalize(message: message, configuration: configuration))
         }
 
         guard let result = json["result"] else {
@@ -478,6 +533,12 @@ enum SolanaRPCError: LocalizedError, Equatable {
     case transport(String)
     case rpc(String)
     case devnetOnly(String)
+    case tokenMissing(String)
+    case unauthorized(String)
+    case rateLimited(String)
+    case planUpgradeRequired(String)
+    case methodBlocked(String)
+    case timeout(String)
 
     var errorDescription: String? {
         switch self {
@@ -489,6 +550,36 @@ enum SolanaRPCError: LocalizedError, Equatable {
             return message
         case .devnetOnly(let message):
             return message
+        case .tokenMissing(let message),
+             .unauthorized(let message),
+             .rateLimited(let message),
+             .planUpgradeRequired(let message),
+             .methodBlocked(let message),
+             .timeout(let message):
+            return message
+        }
+    }
+
+    static func from(_ normalized: RPCNormalizedError) -> SolanaRPCError {
+        switch normalized.category {
+        case .tokenMissing:
+            return .tokenMissing(normalized.message)
+        case .unauthorized:
+            return .unauthorized(normalized.message)
+        case .rateLimited:
+            return .rateLimited(normalized.message)
+        case .planUpgradeRequired:
+            return .planUpgradeRequired(normalized.message)
+        case .methodBlocked:
+            return .methodBlocked(normalized.message)
+        case .timeout:
+            return .timeout(normalized.message)
+        case .invalidResponse:
+            return .invalidResponse
+        case .endpointUnavailable:
+            return .transport(normalized.message)
+        case .unknown:
+            return .rpc(normalized.message)
         }
     }
 }

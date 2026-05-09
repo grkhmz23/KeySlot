@@ -13,6 +13,10 @@ struct WalletInspectorView: View {
             GorkhPanel {
                 VStack(alignment: .leading, spacing: 10) {
                     inspectorRow("Network", walletManager.selectedNetwork.displayName)
+                    inspectorRow("RPC", walletManager.rpcFastEndpoint.provider.displayName)
+                    inspectorRow("Endpoint", walletManager.rpcFastEndpoint.httpHost)
+                    inspectorRow("RPC token", walletManager.rpcProviderSecurityStatus.tokenStatus.displayName)
+                    inspectorRow("RPC health", walletManager.rpcHealthSnapshot.status.displayName)
                     inspectorRow("Vault", walletManager.vaultState.title)
                     inspectorRow("Signer", walletManager.vaultState == .unlocked ? "Available locally" : "Locked")
                     inspectorRow("Auto-lock", walletManager.securityPolicy.autoLockTimeout.displayName)

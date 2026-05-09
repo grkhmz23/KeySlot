@@ -68,10 +68,135 @@ struct GORKHTests {
     }
 
     @Test func networkSelectorUsesExpectedRPCs() {
-        #expect(WalletNetwork.devnet.rpcURL.absoluteString == "https://api.devnet.solana.com")
-        #expect(WalletNetwork.mainnetBeta.rpcURL.absoluteString == "https://api.mainnet-beta.solana.com")
+        #expect(WalletNetwork.devnet.rpcURL.absoluteString == "https://sol-devnet-rpc.rpcfast.com")
+        #expect(WalletNetwork.mainnetBeta.rpcURL.absoluteString == "https://solana-rpc.rpcfast.com/")
+        #expect(WalletNetwork.devnet.webSocketURL.absoluteString == "wss://sol-devnet-rpc.rpcfast.com")
+        #expect(WalletNetwork.mainnetBeta.webSocketURL.absoluteString == "wss://solana-rpc.rpcfast.com/")
         #expect(WalletNetwork.mainnetBeta.isMainnet)
         #expect(!WalletNetwork.devnet.isMainnet)
+    }
+
+    @Test func rpcFastConfigurationLoadsEnvAndAppliesHeaderWithoutLeakingToken() throws {
+        let configuration = RPCFastConfiguration(environment: [
+            RPCFastConfiguration.devnetTokenEnvironmentName: "devnet-rpcfast-token",
+            RPCFastConfiguration.mainnetTokenEnvironmentName: "mainnet-rpcfast-token",
+            RPCFastConfiguration.fallbackDevnetTokenEnvironmentName: "fallback-devnet-token"
+        ])
+        var request = URLRequest(url: configuration.httpURL(for: .devnet))
+        configuration.applyAuthentication(to: &request, network: .devnet)
+
+        #expect(configuration.endpoint(for: .devnet).provider == .rpcFast)
+        #expect(configuration.endpoint(for: .devnet).httpHost == "sol-devnet-rpc.rpcfast.com")
+        #expect(configuration.endpoint(for: .mainnetBeta).httpHost == "solana-rpc.rpcfast.com")
+        #expect(configuration.tokenStatus(for: .devnet) == .present)
+        #expect(configuration.tokenStatus(for: .mainnetBeta) == .present)
+        #expect(request.value(forHTTPHeaderField: "X-Token") == "devnet-rpcfast-token")
+        #expect(!configuration.endpoint(for: .devnet).safeHTTPDisplay.contains("devnet-rpcfast-token"))
+
+        let safeDetails = Redaction.safeDetails([
+            "GORKH_RPCFAST_DEVNET_TOKEN": "devnet-rpcfast-token",
+            "RPCFAST_MAINNET_TOKEN": "mainnet-rpcfast-token",
+            "X-Token": "devnet-rpcfast-token",
+            "network": WalletNetwork.devnet.rawValue
+        ])
+        #expect(safeDetails["network"] == WalletNetwork.devnet.rawValue)
+        #expect(safeDetails["GORKH_RPCFAST_DEVNET_TOKEN"] == nil)
+        #expect(safeDetails["RPCFAST_MAINNET_TOKEN"] == nil)
+        #expect(safeDetails["X-Token"] == nil)
+
+        let event = AuditEvent(
+            kind: .rpcProviderHealthChecked,
+            walletID: nil,
+            network: .devnet,
+            publicAddress: nil,
+            message: "RPC health checked.",
+            details: [
+                "provider": RPCProviderKind.rpcFast.rawValue,
+                "X-Token": "devnet-rpcfast-token",
+                "GORKH_RPCFAST_DEVNET_TOKEN": "devnet-rpcfast-token"
+            ]
+        )
+        let eventJSON = try #require(String(data: JSONEncoder().encode(event), encoding: .utf8))
+        #expect(eventJSON.contains(RPCProviderKind.rpcFast.rawValue))
+        #expect(!eventJSON.contains("devnet-rpcfast-token"))
+        #expect(!eventJSON.contains("X-Token"))
+    }
+
+    @Test func rpcFastMissingTokenAndSecurityModelsAreSafe() throws {
+        let configuration = RPCFastConfiguration(environment: [:])
+        let securityStatus = configuration.securityStatus(for: .devnet)
+        let snapshot = RPCHealthSnapshot.tokenMissing(network: .devnet, configuration: configuration)
+        let encodedSecurity = try JSONEncoder().encode(securityStatus)
+        let encodedSnapshot = try JSONEncoder().encode(snapshot)
+        let securityJSON = try #require(String(data: encodedSecurity, encoding: .utf8))
+        let snapshotJSON = try #require(String(data: encodedSnapshot, encoding: .utf8))
+
+        #expect(configuration.tokenStatus(for: .devnet) == .missing)
+        #expect(configuration.tokenStatus(for: .mainnetBeta) == .missing)
+        #expect(securityStatus.tokenStatus == .missing)
+        #expect(securityStatus.beamStatus == "locked-future")
+        #expect(snapshot.status == .tokenMissing)
+        #expect(snapshot.httpEndpointHost == "sol-devnet-rpc.rpcfast.com")
+        #expect(snapshot.webSocketEndpointHost == "sol-devnet-rpc.rpcfast.com")
+        #expect(!securityJSON.contains("devnet-rpcfast-token"))
+        #expect(!snapshotJSON.contains("devnet-rpcfast-token"))
+    }
+
+    @Test func solanaRPCClientBuildsRPCFastRequestAndRequiresToken() throws {
+        let configuration = RPCFastConfiguration(environment: [
+            RPCFastConfiguration.devnetTokenEnvironmentName: "devnet-rpcfast-token"
+        ])
+        let client = SolanaRPCClient(configuration: configuration)
+        let request = try client.makeRequest(method: "getBalance", params: [SolanaConstants.systemProgramID], network: .devnet)
+        let body = try #require(request.httpBody)
+        let bodyJSON = try #require(String(data: body, encoding: .utf8))
+
+        #expect(request.url?.absoluteString == "https://sol-devnet-rpc.rpcfast.com")
+        #expect(request.value(forHTTPHeaderField: "X-Token") == "devnet-rpcfast-token")
+        #expect(bodyJSON.contains("\"getBalance\""))
+        #expect(!bodyJSON.contains("devnet-rpcfast-token"))
+
+        let missingClient = SolanaRPCClient(configuration: RPCFastConfiguration(environment: [:]))
+        #expect(throws: SolanaRPCError.self) {
+            try missingClient.makeRequest(method: "getBalance", params: [SolanaConstants.systemProgramID], network: .devnet)
+        }
+    }
+
+    @Test func rpcFastErrorNormalizationAndMethodAvailability() {
+        let configuration = RPCFastConfiguration(environment: [
+            RPCFastConfiguration.devnetTokenEnvironmentName: "devnet-rpcfast-token"
+        ])
+        let unauthorized = RPCErrorNormalizer.normalize(
+            statusCode: 401,
+            message: "HTTP 401 X-Token: devnet-rpcfast-token",
+            configuration: configuration
+        )
+        let rateLimited = RPCErrorNormalizer.normalize(statusCode: 429, message: "too many requests", configuration: configuration)
+        let methodBlocked = RPCErrorNormalizer.normalize(message: "method blocked for this program", configuration: configuration)
+        let planUpgrade = RPCErrorNormalizer.normalize(message: "plan upgrade required for compute unit usage", configuration: configuration)
+
+        #expect(unauthorized.category == .unauthorized)
+        #expect(!unauthorized.message.contains("devnet-rpcfast-token"))
+        #expect(rateLimited.category == .rateLimited)
+        #expect(methodBlocked.category == .methodBlocked)
+        #expect(planUpgrade.category == .planUpgradeRequired)
+        #expect(RPCMethodAvailability.evaluate(method: "getProgramAccounts", programID: SolanaConstants.splTokenProgramID) == .blocked)
+        #expect(RPCMethodAvailability.evaluate(method: "getProgramAccounts", programID: StakeConstants.stakeProgramID) == .expensive)
+        #expect(RPCMethodAvailability.evaluate(method: "getTokenAccountsByOwner") == .planLimited)
+        #expect(RPCMethodAvailability.evaluate(method: "dangerousCustomMethod") == .unsupported)
+    }
+
+    @Test func rpcFastHealthCheckerReportsMissingTokenWithoutNetworkRequest() async {
+        let client = SolanaRPCClient(configuration: RPCFastConfiguration(environment: [:]))
+        let checker = RPCHealthChecker(rpcClient: client)
+        let snapshot = await checker.check(network: .devnet)
+
+        #expect(snapshot.provider == .rpcFast)
+        #expect(snapshot.network == .devnet)
+        #expect(snapshot.status == .tokenMissing)
+        #expect(snapshot.latencyMilliseconds == nil)
+        #expect(snapshot.beamStatus == "locked-future")
+        #expect(snapshot.errorMessage?.contains("GORKH_RPCFAST_DEVNET_TOKEN") == true)
     }
 
     @Test func addressValidationAcceptsBase58PublicKeysOnly() {

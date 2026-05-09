@@ -46,9 +46,11 @@ final class WalletManager: ObservableObject {
     @Published private(set) var lastSwapSignature: String?
     @Published private(set) var lastSwapConfirmationStatus: String?
     @Published private(set) var swapBalanceDeltaVerification: SwapBalanceDeltaVerification = .notStarted
+    @Published private(set) var rpcHealthSnapshot: RPCHealthSnapshot
 
     private let vault: WalletVault
     private let rpcClient: SolanaRPCClient
+    private let rpcHealthChecker: RPCHealthChecker
     private let auditLog: AuditLog
     private let metadataStore: WalletMetadataStore
     private let securitySettingsStore: WalletSecuritySettingsStore
@@ -71,6 +73,18 @@ final class WalletManager: ObservableObject {
     private var preparedTokenDraftFingerprint: String?
     private var preparedSwapFingerprint: String?
     private var swapPreflightBalances: [String: UInt64] = [:]
+
+    var rpcFastConfiguration: RPCFastConfiguration {
+        rpcClient.configuration
+    }
+
+    var rpcFastEndpoint: RPCFastEndpoint {
+        rpcFastConfiguration.endpoint(for: selectedNetwork)
+    }
+
+    var rpcProviderSecurityStatus: RPCProviderSecurityStatus {
+        rpcFastConfiguration.securityStatus(for: selectedNetwork)
+    }
 
     var selectedProfile: WalletProfile? {
         profiles.first { $0.id == selectedWalletID }
@@ -217,6 +231,7 @@ final class WalletManager: ObservableObject {
         let resolvedPortfolioPriceClient = portfolioPriceClient ?? JupiterPriceClient()
         self.vault = vault
         self.rpcClient = rpcClient
+        self.rpcHealthChecker = RPCHealthChecker(rpcClient: rpcClient)
         self.auditLog = auditLog
         self.metadataStore = metadataStore
         self.securitySettingsStore = securitySettingsStore
@@ -231,12 +246,14 @@ final class WalletManager: ObservableObject {
         self.jupiterQuoteClient = jupiterQuoteClient ?? JupiterQuoteClient()
         self.jupiterSwapClient = jupiterSwapClient ?? JupiterSwapClient()
         self.derivationService = SolanaDerivationService(mnemonicService: mnemonicService)
+        self.rpcHealthSnapshot = .unchecked(network: .devnet, configuration: rpcClient.configuration)
         let policy = securitySettingsStore.loadPolicy()
         self.securityPolicy = policy
         self.authenticationStatusMessage = localAuthenticationService.statusDescription
         self.cloakHelperInvocationStatus = cloakHelperInvocationAdapter.status
         self.lockController = WalletLockController(policy: policy)
         loadMetadata()
+        rpcHealthSnapshot = .unchecked(network: selectedNetwork, configuration: rpcClient.configuration)
         auditEvents = auditLog.loadRecent()
         portfolioHistory = Array(self.portfolioSnapshotStore.load().reversed())
         refreshVaultState()
@@ -279,6 +296,7 @@ final class WalletManager: ObservableObject {
     func setNetwork(_ network: WalletNetwork) {
         noteUserActivity()
         selectedNetwork = network
+        rpcHealthSnapshot = .unchecked(network: network, configuration: rpcFastConfiguration)
         guard let selectedWalletID,
               let index = profiles.firstIndex(where: { $0.id == selectedWalletID }) else {
             return
@@ -309,6 +327,44 @@ final class WalletManager: ObservableObject {
         resetSwapState()
         cloakBridgeResponse = cloakBridge.validateEnvironment(network: network)
         cloakBridgeContractResponse = cloakBridge.environmentCheck(network: network)
+    }
+
+    func refreshRPCProviderHealth() async {
+        noteUserActivity()
+        let snapshot = await rpcHealthChecker.check(network: selectedNetwork)
+        rpcHealthSnapshot = snapshot
+
+        let kind: AuditEvent.Kind = {
+            switch snapshot.status {
+            case .healthy:
+                return .rpcProviderHealthChecked
+            case .degraded, .unavailable:
+                return .rpcProviderDegraded
+            case .tokenMissing:
+                return .rpcProviderTokenMissing
+            case .unchecked:
+                return .rpcProviderHealthChecked
+            }
+        }()
+
+        record(
+            kind: kind,
+            walletID: selectedWalletID,
+            publicAddress: selectedProfile?.publicAddress,
+            message: rpcHealthAuditMessage(for: snapshot),
+            details: [
+                "provider": snapshot.provider.rawValue,
+                "network": snapshot.network.rawValue,
+                "status": snapshot.status.rawValue,
+                "httpHost": snapshot.httpEndpointHost,
+                "webSocketHost": snapshot.webSocketEndpointHost,
+                "tokenStatus": snapshot.tokenStatus.rawValue,
+                "latencyMilliseconds": snapshot.latencyMilliseconds.map(String.init) ?? "unavailable",
+                "slot": snapshot.slot.map(String.init) ?? "unavailable",
+                "blockHeight": snapshot.blockHeight.map(String.init) ?? "unavailable",
+                "beamStatus": snapshot.beamStatus
+            ]
+        )
     }
 
     func setPortfolioScope(_ scope: PortfolioWalletScope) {
@@ -1075,6 +1131,7 @@ final class WalletManager: ObservableObject {
         } catch {
             tokenBalanceError = error.localizedDescription
             statusMessage = error.localizedDescription
+            recordRPCInfrastructureErrorIfNeeded(error)
             record(
                 kind: .tokenTransferFailed,
                 walletID: profile.id,
@@ -1362,6 +1419,58 @@ final class WalletManager: ObservableObject {
         case .idle:
             return "Lending dashboard is idle."
         }
+    }
+
+    private func rpcHealthAuditMessage(for snapshot: RPCHealthSnapshot) -> String {
+        switch snapshot.status {
+        case .healthy:
+            return "RPC Fast health check succeeded."
+        case .degraded:
+            return "RPC Fast health check reported degraded service."
+        case .unavailable:
+            return "RPC Fast health check failed."
+        case .tokenMissing:
+            return "RPC Fast token is missing for the selected network."
+        case .unchecked:
+            return "RPC Fast health status is unchecked."
+        }
+    }
+
+    private func recordRPCInfrastructureErrorIfNeeded(_ error: Error) {
+        let normalized = RPCErrorNormalizer.normalize(error, configuration: rpcFastConfiguration)
+        let kind: AuditEvent.Kind?
+        switch normalized.category {
+        case .tokenMissing, .unauthorized:
+            kind = .rpcProviderTokenMissing
+        case .rateLimited:
+            kind = .rpcRateLimited
+        case .planUpgradeRequired, .methodBlocked:
+            kind = .rpcMethodBlocked
+        case .timeout, .endpointUnavailable:
+            kind = .rpcProviderDegraded
+        case .invalidResponse, .unknown:
+            kind = nil
+        }
+
+        guard let kind else {
+            return
+        }
+
+        record(
+            kind: kind,
+            walletID: selectedWalletID,
+            publicAddress: selectedProfile?.publicAddress,
+            message: normalized.message,
+            details: [
+                "provider": RPCProviderKind.rpcFast.rawValue,
+                "network": selectedNetwork.rawValue,
+                "errorCategory": normalized.category.rawValue,
+                "httpHost": rpcFastEndpoint.httpHost,
+                "webSocketHost": rpcFastEndpoint.webSocketHost,
+                "tokenStatus": rpcFastConfiguration.tokenStatus(for: selectedNetwork).rawValue,
+                "beamStatus": RPCFastConfiguration.beamStatus
+            ]
+        )
     }
 
     private func lpAuditKind(for status: LPAdapterStatus, protocols: [LPProtocolSummary]) -> AuditEvent.Kind {
@@ -2374,6 +2483,7 @@ final class WalletManager: ObservableObject {
         } catch {
             statusMessage = error.localizedDescription
             approvalState = .failed(error.localizedDescription)
+            recordRPCInfrastructureErrorIfNeeded(error)
             recordFailure(message: error.localizedDescription)
         }
     }

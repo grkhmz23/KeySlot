@@ -351,6 +351,11 @@ struct AuditEvent: Codable, Equatable, Identifiable {
         case swapSent = "swap_sent"
         case swapFailed = "swap_failed"
         case swapBlockedByGuard = "swap_blocked_by_guard"
+        case rpcProviderHealthChecked = "rpc_provider_health_checked"
+        case rpcProviderDegraded = "rpc_provider_degraded"
+        case rpcProviderTokenMissing = "rpc_provider_token_missing"
+        case rpcMethodBlocked = "rpc_method_blocked"
+        case rpcRateLimited = "rpc_rate_limited"
     }
 
     let id: UUID

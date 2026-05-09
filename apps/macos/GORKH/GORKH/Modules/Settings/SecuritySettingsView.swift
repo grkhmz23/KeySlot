@@ -67,6 +67,10 @@ struct SecuritySettingsView: View {
 
                 Divider().overlay(GorkhColors.border)
 
+                RPCInfrastructureSettingsView()
+
+                Divider().overlay(GorkhColors.border)
+
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Secret Storage")
                         .font(.headline)

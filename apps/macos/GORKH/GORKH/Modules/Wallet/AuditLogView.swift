@@ -205,7 +205,16 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
                 .lpActionBlocked
             ].contains(event.kind)
         case .security:
-            return [.walletAutoLocked, .securityPolicyUpdated, .localAuthenticationFailed].contains(event.kind)
+            return [
+                .walletAutoLocked,
+                .securityPolicyUpdated,
+                .localAuthenticationFailed,
+                .rpcProviderHealthChecked,
+                .rpcProviderDegraded,
+                .rpcProviderTokenMissing,
+                .rpcMethodBlocked,
+                .rpcRateLimited
+            ].contains(event.kind)
         case .failed:
             return [
                 .transactionFailed,
@@ -228,7 +237,11 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
                 .swapQuoteFailed,
                 .swapSimulationFailed,
                 .swapFailed,
-                .swapBlockedByGuard
+                .swapBlockedByGuard,
+                .rpcProviderDegraded,
+                .rpcProviderTokenMissing,
+                .rpcMethodBlocked,
+                .rpcRateLimited
             ].contains(event.kind)
         }
     }
@@ -297,6 +310,14 @@ private extension AuditEvent {
             "lpProtocolStatuses",
             "unavailablePriceCount",
             "priceSource",
+            "provider",
+            "httpHost",
+            "webSocketHost",
+            "tokenStatus",
+            "latencyMilliseconds",
+            "slot",
+            "blockHeight",
+            "beamStatus",
             "status",
             "warningsCount"
         ]

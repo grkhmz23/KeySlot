@@ -100,11 +100,18 @@ struct WalletView: View {
 
                 Spacer()
 
-                GorkhStatusChip(
-                    title: walletManager.selectedNetwork.displayName,
-                    systemImage: walletManager.selectedNetwork.isMainnet ? "exclamationmark.triangle.fill" : "network",
-                    color: walletManager.selectedNetwork.isMainnet ? GorkhColors.warning : GorkhColors.accent
-                )
+                HStack(spacing: 8) {
+                    GorkhStatusChip(
+                        title: "RPC Fast",
+                        systemImage: walletManager.rpcProviderSecurityStatus.tokenStatus == .present ? "bolt.horizontal" : "key.slash",
+                        color: walletManager.rpcProviderSecurityStatus.tokenStatus == .present ? GorkhColors.accent : GorkhColors.warning
+                    )
+                    GorkhStatusChip(
+                        title: walletManager.selectedNetwork.displayName,
+                        systemImage: walletManager.selectedNetwork.isMainnet ? "exclamationmark.triangle.fill" : "network",
+                        color: walletManager.selectedNetwork.isMainnet ? GorkhColors.warning : GorkhColors.accent
+                    )
+                }
             }
 
             GorkhPanel {

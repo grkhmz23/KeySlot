@@ -16,12 +16,11 @@ enum WalletNetwork: String, CaseIterable, Codable, Identifiable {
     }
 
     var rpcURL: URL {
-        switch self {
-        case .devnet:
-            return URL(string: "https://api.devnet.solana.com")!
-        case .mainnetBeta:
-            return URL(string: "https://api.mainnet-beta.solana.com")!
-        }
+        RPCFastConfiguration().httpURL(for: self)
+    }
+
+    var webSocketURL: URL {
+        RPCFastConfiguration().webSocketURL(for: self)
     }
 
     var explorerClusterQuery: String {
