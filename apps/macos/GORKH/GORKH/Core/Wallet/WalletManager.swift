@@ -1175,6 +1175,9 @@ final class WalletManager: ObservableObject {
         )
 
         let lendingStatus = result.summary.lendingSummary.status
+        let lendingProtocolStatuses = result.summary.lendingSummary.protocols
+            .map { "\($0.protocolKind.rawValue):\($0.status.rawValue)" }
+            .joined(separator: ",")
         record(
             kind: lendingAuditKind(for: lendingStatus),
             walletID: selectedWalletID,
@@ -1187,6 +1190,7 @@ final class WalletManager: ObservableObject {
                 "lendingRiskyPositionCount": "\(result.summary.lendingSummary.riskyPositionCount)",
                 "lendingUnavailableAdapterCount": "\(result.summary.lendingSummary.unavailableAdapterCount)",
                 "lendingMarketReserveCount": "\(result.summary.lendingSummary.marketReserveCount)",
+                "lendingProtocolStatuses": lendingProtocolStatuses,
                 "status": result.summary.lendingSummary.status.rawValue,
                 "source": result.summary.lendingSummary.source
             ]
@@ -1223,6 +1227,10 @@ final class WalletManager: ObservableObject {
                     "lendingPositionCount": "\(snapshot.lendingPositionCount)",
                     "lendingUnavailableAdapterCount": "\(snapshot.lendingUnavailableAdapterCount)",
                     "lendingMarketReserveCount": "\(snapshot.lendingMarketReserveCount)",
+                    "lendingProtocolStatuses": snapshot.lendingProtocolStatuses
+                        .map { "\($0.key):\($0.value)" }
+                        .sorted()
+                        .joined(separator: ","),
                     "unavailablePriceCount": "\(snapshot.unavailablePriceCount)",
                     "priceSource": snapshot.priceSource
                 ]
@@ -1238,7 +1246,11 @@ final class WalletManager: ObservableObject {
                     "lendingPositionCount": "\(snapshot.lendingPositionCount)",
                     "lendingRiskyPositionCount": "\(snapshot.lendingRiskyPositionCount)",
                     "lendingUnavailableAdapterCount": "\(snapshot.lendingUnavailableAdapterCount)",
-                    "lendingMarketReserveCount": "\(snapshot.lendingMarketReserveCount)"
+                    "lendingMarketReserveCount": "\(snapshot.lendingMarketReserveCount)",
+                    "lendingProtocolStatuses": snapshot.lendingProtocolStatuses
+                        .map { "\($0.key):\($0.value)" }
+                        .sorted()
+                        .joined(separator: ",")
                 ]
             )
             if snapshot.stakeAccountCount > 0 || snapshot.lstHoldingCount > 0 {

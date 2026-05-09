@@ -124,6 +124,10 @@ private struct LendingProtocolCardView: View {
                 row("Risky", value: "\(summary.riskyPositionCount)")
                 row("Markets", value: "\(summary.marketReserveCount)")
                 row("Source", value: summary.source.rawValue)
+                if summary.protocolKind == .marginFi {
+                    row("Program", value: MarginFiConstants.programID)
+                    row("Group", value: MarginFiConstants.mainGroupID)
+                }
             }
 
             if !summary.positions.isEmpty {
@@ -131,7 +135,7 @@ private struct LendingProtocolCardView: View {
             } else if !summary.marketReserves.isEmpty {
                 LendingMarketReserveListView(reserves: Array(summary.marketReserves.prefix(4)))
             } else {
-                Text(summary.errorMessage ?? "No positions returned.")
+                Text(emptyMessage)
                     .font(.caption)
                     .foregroundStyle(GorkhColors.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -169,6 +173,14 @@ private struct LendingProtocolCardView: View {
 
     private func currency(_ value: Decimal?) -> String {
         value?.portfolioCurrencyText ?? "Unavailable"
+    }
+
+    private var emptyMessage: String {
+        if summary.protocolKind == .marginFi,
+           summary.status == .unavailable {
+            return summary.errorMessage ?? "Read-only MarginFi position parsing is not connected yet. No funds are touched."
+        }
+        return summary.errorMessage ?? "No positions returned."
     }
 }
 

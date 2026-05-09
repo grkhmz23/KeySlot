@@ -241,6 +241,7 @@ struct PortfolioSnapshot: Codable, Equatable, Identifiable {
     let lendingRiskyPositionCount: Int
     let lendingUnavailableAdapterCount: Int
     let lendingMarketReserveCount: Int
+    let lendingProtocolStatuses: [String: String]
     let assets: [PortfolioSnapshotAsset]
 
     init(id: UUID = UUID(), summary: PortfolioAggregateSummary, createdAt: Date = Date()) {
@@ -268,6 +269,9 @@ struct PortfolioSnapshot: Codable, Equatable, Identifiable {
         self.lendingRiskyPositionCount = summary.lendingSummary.riskyPositionCount
         self.lendingUnavailableAdapterCount = summary.lendingSummary.unavailableAdapterCount
         self.lendingMarketReserveCount = summary.lendingSummary.marketReserveCount
+        self.lendingProtocolStatuses = Dictionary(uniqueKeysWithValues: summary.lendingSummary.protocols.map {
+            ($0.protocolKind.rawValue, $0.status.rawValue)
+        })
         self.assets = summary.wallets.flatMap { wallet in
             wallet.assets.map { value in
                 PortfolioSnapshotAsset(
@@ -313,6 +317,7 @@ struct PortfolioSnapshot: Codable, Equatable, Identifiable {
         case lendingRiskyPositionCount
         case lendingUnavailableAdapterCount
         case lendingMarketReserveCount
+        case lendingProtocolStatuses
         case assets
     }
 
@@ -342,6 +347,7 @@ struct PortfolioSnapshot: Codable, Equatable, Identifiable {
         lendingRiskyPositionCount = try container.decodeIfPresent(Int.self, forKey: .lendingRiskyPositionCount) ?? 0
         lendingUnavailableAdapterCount = try container.decodeIfPresent(Int.self, forKey: .lendingUnavailableAdapterCount) ?? 0
         lendingMarketReserveCount = try container.decodeIfPresent(Int.self, forKey: .lendingMarketReserveCount) ?? 0
+        lendingProtocolStatuses = try container.decodeIfPresent([String: String].self, forKey: .lendingProtocolStatuses) ?? [:]
         assets = try container.decode([PortfolioSnapshotAsset].self, forKey: .assets)
     }
 }

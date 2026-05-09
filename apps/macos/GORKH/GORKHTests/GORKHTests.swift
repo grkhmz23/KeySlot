@@ -1913,7 +1913,8 @@ struct GORKHTests {
     @Test func lendingUnavailableAdaptersAreHonestAndRiskMappingIsDeterministic() async {
         let profile = WalletProfile(label: "Read Only", publicAddress: SolanaConstants.systemProgramID)
         let kamino = await KaminoReadOnlyAdapter().fetchPositions(profiles: [profile], network: .devnet, prices: [:])
-        let margin = await MarginFiReadOnlyAdapter().fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
+        let margin = await MarginFiReadOnlyAdapter(programAccountExists: { _ in true })
+            .fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
         let summary = LendingPortfolioAggregator.aggregate(adapterResults: [kamino, margin], refreshedAt: Date(timeIntervalSince1970: 0))
 
         #expect(kamino.status == .unavailable)
@@ -1927,6 +1928,91 @@ struct GORKHTests {
         #expect(LendingHealthSummary.riskLevel(healthFactor: Decimal(string: "1.1"), ltv: nil) == .highRisk)
         #expect(LendingHealthSummary.riskLevel(healthFactor: Decimal(string: "1.0"), ltv: nil) == .liquidationRisk)
         #expect(LendingHealthSummary.riskLevel(healthFactor: nil, ltv: nil) == .unavailable)
+    }
+
+    @Test func marginFiGuardBlocksDangerousPathsAndAllowsOnlyReadOnlyProgramCheck() throws {
+        try MarginFiEndpointGuard.validateProgramID(MarginFiConstants.programID)
+        try MarginFiEndpointGuard.validateRPCMethod("getAccountInfo")
+
+        for method in ["sendTransaction", "simulateTransaction", "getProgramAccounts"] {
+            #expect(throws: MarginFiEndpointGuardError.self) {
+                try MarginFiEndpointGuard.validateRPCMethod(method)
+            }
+        }
+
+        for path in [
+            "/v2/account-create",
+            "/marginfi/deposit",
+            "/marginfi/borrow",
+            "/marginfi/repay",
+            "/marginfi/withdraw",
+            "/marginfi/liquidate",
+            "/marginfi/leverage",
+            "/marginfi/transaction"
+        ] {
+            #expect(throws: MarginFiEndpointGuardError.self) {
+                try MarginFiEndpointGuard.validateHTTPReadOnlyPath(path)
+            }
+        }
+
+        #expect(throws: MarginFiEndpointGuardError.self) {
+            try MarginFiEndpointGuard.validateProgramID(SolanaConstants.systemProgramID)
+        }
+    }
+
+    @Test func marginFiReadOnlyAdapterReportsProgramStatusWithoutPositions() async throws {
+        let profile = WalletProfile(label: "MarginFi User", publicAddress: SolanaConstants.systemProgramID)
+        let adapter = MarginFiReadOnlyAdapter(programAccountExists: { network in
+            #expect(network == .mainnetBeta)
+            return true
+        })
+        let result = await adapter.fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
+        let summary = LendingPortfolioAggregator.aggregate(adapterResults: [result], refreshedAt: Date(timeIntervalSince1970: 0))
+        let json = try #require(String(data: JSONEncoder().encode(result), encoding: .utf8)).lowercased()
+
+        #expect(result.protocolKind == .marginFi)
+        #expect(result.status == .unavailable)
+        #expect(result.source == .solanaRPC)
+        #expect(result.positions.isEmpty)
+        #expect(result.errorMessage?.contains("program is reachable") == true)
+        #expect(summary.unavailableAdapterCount == 1)
+        for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "serializedtransaction", "transactionpayload", "unsignedtransaction"] {
+            #expect(!json.contains(forbidden))
+        }
+    }
+
+    @Test func marginFiSafeModelsSerializeWithoutSecretsOrPayloads() throws {
+        let metadata = MarginFiAdapterMetadata(
+            programID: MarginFiConstants.programID,
+            groupID: MarginFiConstants.mainGroupID,
+            network: .mainnetBeta,
+            programAccountReachable: true,
+            source: .solanaRPC,
+            updatedAt: Date(timeIntervalSince1970: 0),
+            unavailableReason: MarginFiConstants.positionParsingUnavailableReason
+        )
+        let account = MarginFiAccountSummary(
+            accountAddress: "3oS3RJ8UYrYw7TAQEVh6u6ifrHi35o3DnvqyqGti4Gwa",
+            walletPublicAddress: SolanaConstants.systemProgramID,
+            groupAddress: MarginFiConstants.mainGroupID,
+            suppliedAssets: [],
+            borrowedAssets: [],
+            health: MarginFiHealthSummary(
+                ltv: nil,
+                healthFactor: nil,
+                riskLevel: .unavailable,
+                unavailableReason: "Fixture has no parsed balances."
+            ),
+            updatedAt: Date(timeIntervalSince1970: 0),
+            source: .solanaRPC
+        )
+        let json = try #require(String(data: JSONEncoder().encode([metadata]), encoding: .utf8)).lowercased()
+        let accountJSON = try #require(String(data: JSONEncoder().encode(account), encoding: .utf8)).lowercased()
+
+        for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "serializedtransaction", "transactionpayload", "unsignedtransaction"] {
+            #expect(!json.contains(forbidden))
+            #expect(!accountJSON.contains(forbidden))
+        }
     }
 
     @Test func kaminoEndpointGuardAllowsOnlyReviewedReadOnlyPaths() throws {
@@ -2101,6 +2187,7 @@ struct GORKHTests {
         #expect(snapshot.lendingRiskyPositionCount == 1)
         #expect(snapshot.lendingNetValueUSD == 150)
         #expect(snapshot.lendingMarketReserveCount == 0)
+        #expect(snapshot.lendingProtocolStatuses["marginfi"] == "loaded")
         for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "serializedtransaction", "transactionpayload"] {
             #expect(!json.contains(forbidden))
         }
