@@ -132,6 +132,7 @@ private struct LendingProtocolCardView: View {
                 if summary.protocolKind == .marginFi {
                     row("Program", value: MarginFiConstants.programID)
                     row("Group", value: MarginFiConstants.mainGroupID)
+                    row("SDK boundary", value: summary.source == .sdkReadOnly ? "Official read-only helper" : "Parser fallback")
                 }
             }
 

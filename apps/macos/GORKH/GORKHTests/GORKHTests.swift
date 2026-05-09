@@ -2070,6 +2070,147 @@ struct GORKHTests {
         }
     }
 
+    @Test func marginFiAdapterCanUseSDKReadOnlyHelperBoundary() async throws {
+        let profile = WalletProfile(label: "MarginFi SDK User", publicAddress: SolanaConstants.systemProgramID)
+        let helperPosition = sampleLendingPosition(
+            profile: profile,
+            protocolKind: .marginFi,
+            suppliedUSD: 50,
+            borrowedUSD: 10,
+            healthFactor: nil
+        )
+        let helperResult = LendingAdapterResult(
+            protocolKind: .marginFi,
+            status: .loaded,
+            positions: [helperPosition],
+            source: .sdkReadOnly,
+            updatedAt: Date(timeIntervalSince1970: 0),
+            errorMessage: nil
+        )
+        let adapter = MarginFiReadOnlyAdapter(
+            programAccountExists: { _ in
+                Issue.record("Swift fallback should not be called when helper returns loaded data.")
+                return false
+            },
+            accountFetcher: { _, _ in
+                Issue.record("Swift fallback fetcher should not be called when helper returns loaded data.")
+                return []
+            },
+            helperBridge: MockMarginFiHelperBridge(result: helperResult)
+        )
+
+        let result = await adapter.fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
+        let json = try #require(String(data: JSONEncoder().encode(result), encoding: .utf8)).lowercased()
+
+        #expect(result.status == .loaded)
+        #expect(result.source == .sdkReadOnly)
+        #expect(result.positions.count == 1)
+        for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "serializedtransaction", "transactionpayload", "unsignedtransaction", "instructionpayload"] {
+            #expect(!json.contains(forbidden))
+        }
+    }
+
+    @Test func marginFiHelperBridgeMapsSDKResponseAndRejectsPayloadFields() async throws {
+        let profile = WalletProfile(label: "MarginFi SDK User", publicAddress: SolanaConstants.systemProgramID)
+        let policy = MarginFiHelperInvocationPolicy.readOnlyEnabledForDevelopment(
+            allowedNodeExecutablePaths: ["/usr/bin/node"]
+        )
+        let response = MarginFiHelperResponse(
+            id: UUID().uuidString,
+            requestID: nil,
+            command: .positions,
+            status: .partial,
+            errorCategory: "none",
+            message: "SDK read-only partial",
+            programID: MarginFiConstants.programID,
+            groupID: MarginFiConstants.mainGroupID,
+            sdkValidation: MarginFiHelperSDKValidation(
+                sdkInstalled: true,
+                sdkImportOk: true,
+                sdkVersion: "test",
+                programID: MarginFiConstants.programID,
+                expectedProgramID: MarginFiConstants.programID,
+                programIDMatches: true,
+                groupID: MarginFiConstants.mainGroupID,
+                groupIDSource: "sdk-config",
+                readOnlyWallet: true
+            ),
+            positions: [
+                MarginFiHelperPosition(
+                    walletPublicAddress: profile.publicAddress,
+                    accountAddress: "3oS3RJ8UYrYw7TAQEVh6u6ifrHi35o3DnvqyqGti4Gwa",
+                    groupAddress: MarginFiConstants.mainGroupID,
+                    suppliedAssets: [],
+                    borrowedAssets: [],
+                    suppliedPositionCount: 1,
+                    borrowedPositionCount: 1,
+                    suppliedValueUSD: "25",
+                    borrowedValueUSD: nil,
+                    netValueUSD: nil,
+                    healthFactor: nil,
+                    ltv: nil,
+                    riskLevel: .unavailable,
+                    status: .partial,
+                    metadataStatus: "Official SDK read-only helper."
+                )
+            ],
+            accountCount: 1,
+            suppliedPositionCount: 1,
+            borrowedPositionCount: 1,
+            timestamp: Date(timeIntervalSince1970: 0)
+        )
+        let bridge = MarginFiHelperBridge(
+            policy: policy,
+            projectRoot: URL(fileURLWithPath: "/tmp/gorkh"),
+            pathResolver: MockMarginFiHelperPathResolver(),
+            processRunner: MockMarginFiHelperProcessRunner(response: response)
+        )
+
+        let result = try #require(await bridge.fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:]))
+        let position = try #require(result.positions.first)
+
+        #expect(result.status == .partial)
+        #expect(result.source == .sdkReadOnly)
+        #expect(position.suppliedValueUSD == 25)
+        #expect(position.borrowedValueUSD == nil)
+        #expect(position.netValueUSD == nil)
+        #expect(position.unvaluedBorrowedPositionCount == 1)
+
+        let rejectedBridge = MarginFiHelperBridge(
+            policy: policy,
+            projectRoot: URL(fileURLWithPath: "/tmp/gorkh"),
+            pathResolver: MockMarginFiHelperPathResolver(),
+            processRunner: MockMarginFiHelperProcessRunner(rawStdout: #"{"id":"1","command":"positions","status":"loaded","errorCategory":"none","message":"bad","programId":"MFv2hWf31Z9kbCa1snEPYctwafyhdvnV7FZnsebVacA","serializedTransaction":"no","timestamp":"2026-01-01T00:00:00Z"}"#)
+        )
+        let rejected = try #require(await rejectedBridge.fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:]))
+        #expect(rejected.status == .unavailable)
+        #expect(rejected.positions.isEmpty)
+        #expect(rejected.errorMessage?.contains("forbidden field") == true)
+    }
+
+    @Test func marginFiHelperPathResolverRejectsArbitraryPaths() throws {
+        let resolver = MarginFiHelperPathResolver()
+        let badPathPolicy = MarginFiHelperInvocationPolicy(
+            enabled: true,
+            allowlistedHelperRelativePath: "/bin/sh",
+            allowedNodeExecutablePaths: ["/usr/bin/node"],
+            allowedCommands: [.positions]
+        )
+        let badNodePolicy = MarginFiHelperInvocationPolicy(
+            enabled: true,
+            allowlistedHelperRelativePath: MarginFiHelperPathResolver.allowedRelativePath,
+            allowedNodeExecutablePaths: ["/tmp/node"],
+            allowedCommands: [.positions]
+        )
+
+        #expect(throws: MarginFiHelperError.self) {
+            _ = try resolver.resolve(policy: badPathPolicy, projectRoot: URL(fileURLWithPath: "/tmp/gorkh"))
+        }
+        #expect(throws: MarginFiHelperError.self) {
+            _ = try resolver.resolve(policy: badNodePolicy, projectRoot: URL(fileURLWithPath: "/tmp/gorkh"))
+        }
+    }
+
     @Test func marginFiSafeModelsSerializeWithoutSecretsOrPayloads() throws {
         let metadata = MarginFiAdapterMetadata(
             programID: MarginFiConstants.programID,
@@ -3111,6 +3252,61 @@ private struct MockCloakHelperPathResolver: CloakHelperPathResolving {
             nodeExecutable: URL(fileURLWithPath: "/usr/bin/node"),
             helperScript: URL(fileURLWithPath: "/tmp/gorkh/tools/cloak-bridge/src/index.ts"),
             helperRelativePath: policy.allowlistedHelperRelativePath
+        )
+    }
+}
+
+private struct MockMarginFiHelperBridge: MarginFiHelperBridging {
+    let result: LendingAdapterResult?
+
+    func fetchPositions(
+        profiles: [WalletProfile],
+        network: WalletNetwork,
+        prices: [String: PortfolioPriceQuote]
+    ) async -> LendingAdapterResult? {
+        result
+    }
+}
+
+private struct MockMarginFiHelperPathResolver: MarginFiHelperPathResolving {
+    func resolve(policy: MarginFiHelperInvocationPolicy, projectRoot: URL?) throws -> MarginFiHelperResolvedPath {
+        MarginFiHelperResolvedPath(
+            nodeExecutable: URL(fileURLWithPath: "/usr/bin/node"),
+            helperScript: URL(fileURLWithPath: "/tmp/gorkh/tools/marginfi-readonly/src/index.ts"),
+            helperRelativePath: policy.allowlistedHelperRelativePath
+        )
+    }
+}
+
+private final class MockMarginFiHelperProcessRunner: MarginFiHelperProcessRunning {
+    private let response: MarginFiHelperResponse?
+    private let rawStdout: String?
+
+    init(response: MarginFiHelperResponse) {
+        self.response = response
+        self.rawStdout = nil
+    }
+
+    init(rawStdout: String) {
+        self.response = nil
+        self.rawStdout = rawStdout
+    }
+
+    func run(
+        resolvedPath: MarginFiHelperResolvedPath,
+        command: MarginFiHelperCommand,
+        stdin: Data
+    ) async throws -> MarginFiHelperProcessResult {
+        if let rawStdout {
+            return MarginFiHelperProcessResult(exitCode: 0, stdout: Data(rawStdout.utf8), stderr: "")
+        }
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return MarginFiHelperProcessResult(
+            exitCode: 0,
+            stdout: try encoder.encode(response),
+            stderr: ""
         )
     }
 }

@@ -1,0 +1,21 @@
+{
+  "name": "@gorkh/marginfi-readonly",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Strictly read-only MarginFi SDK helper boundary for GORKH macOS.",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "health": "node src/index.ts health",
+    "env-check": "node src/index.ts env-check",
+    "positions": "node src/index.ts positions",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@mrgnlabs/marginfi-client-v2": "^4.0.0",
+    "@mrgnlabs/mrgn-common": "^2.0.0",
+    "@solana/web3.js": "^1.98.0"
+  }
+}

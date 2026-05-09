@@ -5,6 +5,7 @@ struct MarginFiReadOnlyAdapter: LendingPositionAdapter {
 
     private let programAccountExists: (WalletNetwork) async throws -> Bool
     private let accountFetcher: (WalletProfile, WalletNetwork) async throws -> [SolanaProgramAccountData]
+    private let helperBridge: (any MarginFiHelperBridging)?
 
     init(
         programAccountExists: @escaping (WalletNetwork) async throws -> Bool = { network in
@@ -12,10 +13,12 @@ struct MarginFiReadOnlyAdapter: LendingPositionAdapter {
         },
         accountFetcher: @escaping (WalletProfile, WalletNetwork) async throws -> [SolanaProgramAccountData] = { profile, network in
             try await MarginFiAccountDiscovery().fetchAccounts(authority: profile, network: network)
-        }
+        },
+        helperBridge: (any MarginFiHelperBridging)? = nil
     ) {
         self.programAccountExists = programAccountExists
         self.accountFetcher = accountFetcher
+        self.helperBridge = helperBridge
     }
 
     func fetchPositions(
@@ -30,6 +33,14 @@ struct MarginFiReadOnlyAdapter: LendingPositionAdapter {
                 reason: MarginFiConstants.unsupportedNetworkReason,
                 updatedAt: updatedAt
             )
+        }
+
+        if let helperResult = await helperBridge?.fetchPositions(
+            profiles: profiles,
+            network: network,
+            prices: prices
+        ), helperResult.status != .unavailable || !helperResult.positions.isEmpty {
+            return helperResult
         }
 
         do {

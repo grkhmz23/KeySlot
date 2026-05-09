@@ -8,7 +8,7 @@ Phase 3.4D is read-only. Do not run lending transactions.
 2. Refresh Portfolio for active wallet, all wallets, local wallets, and watch-only wallets.
 3. Confirm the Lending panel appears below Stake/LST intelligence.
 4. On mainnet-beta, confirm Kamino shows public API market context or wallet positions/empty state from read-only public endpoints.
-5. Confirm MarginFi shows `Empty`, `Partial`, `Unavailable`, or `Error` honestly. If accounts are found, confirm `Partial` explains that asset metadata/value/health parsing is unavailable.
+5. Confirm MarginFi shows `Loaded`, `Empty`, `Partial`, `Unavailable`, or `Error` honestly. If the SDK helper is enabled and positions load, confirm source is `sdk-read-only`. If the fallback parser finds accounts, confirm `Partial` explains that asset metadata/value/health parsing is unavailable.
 6. Confirm Deposit, Borrow, Repay, and Withdraw actions are disabled/locked.
 7. Confirm the copy says lending values are separate from wallet token balances to avoid double-counting.
 8. Confirm Portfolio total value does not include lending net value.
@@ -27,7 +27,7 @@ Blocked by guard:
 
 - any transaction, unsigned transaction, action, instruction, deposit, borrow, repay, withdraw, liquidate, leverage, multiply, swap, or order endpoint path.
 
-## MarginFi On-Chain Read-Only Parser
+## MarginFi SDK Helper and On-Chain Read-Only Parser
 
 Official docs reviewed:
 
@@ -39,7 +39,24 @@ Official docs reviewed:
 Configured program metadata:
 
 - marginfi v2 mainnet-beta program: `MFv2hWf31Z9kbCa1snEPYctwafyhdvnV7FZnsebVacA`
-- marginfi v2 main group: `4qp6Fx6tnZkY5Wropq9wUYgtFxXKwE6viZxFHg3rdAG8`
+- marginfi v2 main group from SDK production config: `4qp6Fx6tnZkY5Wropq9wUYgtFxXKwE6viZxFHg3rdAG8`
+- reviewed alternate candidate tracked for runtime mismatch review: `4qp6Fx6tnZkY5Wropq9wUYgtFxXKwE6viZxFHg3rdAG4`
+
+Helper boundary:
+
+- path: `tools/marginfi-readonly/src/index.ts`
+- commands: `health`, `env-check`, `positions`
+- dependencies: `@mrgnlabs/marginfi-client-v2`, `@mrgnlabs/mrgn-common`, `@solana/web3.js`
+- input: public wallet address, network, optional RPC URL, request ID
+- forbidden input: private key, seed phrase, mnemonic, signing seed, wallet JSON, serialized transaction, instruction payload
+- read-only wallet stub: `signTransaction`, `signAllTransactions`, and `signMessage` throw
+
+Run helper tests:
+
+```bash
+cd tools/marginfi-readonly
+npm test
+```
 
 Allowed MarginFi read-only RPC:
 
@@ -53,6 +70,7 @@ Blocked by guard:
 Expected state:
 
 - MarginFi program status can be checked on mainnet-beta.
+- Optional SDK helper can return `Loaded`, `Empty`, `Partial`, `Unavailable`, or `Error` without receiving signing material.
 - MarginFi account discovery is bounded by official account size and authority offset.
 - Parsed account fields are discriminator, group, authority, flags, active balance bank references, side, tag, and last update.
 - Bank token metadata, share-to-token amount conversion, USD value, LTV, and health remain unavailable until a bank/oracle parser is audited.
