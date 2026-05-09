@@ -3255,6 +3255,117 @@ struct GORKHTests {
         #expect(rejected.errorMessage?.contains("forbidden field") == true)
     }
 
+    @Test func orcaHelperBridgeMapsReadOnlyResponseAndRejectsPayloadFields() async throws {
+        let profile = WalletProfile(label: "Orca User", publicAddress: SolanaConstants.systemProgramID)
+        let policy = OrcaHelperInvocationPolicy.readOnlyEnabledForDevelopment(
+            allowedNodeExecutablePaths: ["/usr/bin/node"]
+        )
+        let response = OrcaHelperResponse(
+            id: UUID().uuidString,
+            requestID: nil,
+            command: .positions,
+            status: .partial,
+            errorCategory: "none",
+            message: "SDK read-only partial",
+            sdkValidation: OrcaHelperSDKValidation(
+                sdkInstalled: true,
+                sdkImportOk: true,
+                sdkVersion: "7.0.2",
+                kitInstalled: true,
+                kitImportOk: true,
+                kitVersion: "5.5.1",
+                readOnlyMethodAvailable: true
+            ),
+            positions: [
+                OrcaHelperPosition(
+                    walletPublicAddress: profile.publicAddress,
+                    poolAddress: "3oS3RJ8UYrYw7TAQEVh6u6ifrHi35o3DnvqyqGti4Gwa",
+                    positionAddress: "4N9T5NZ7nVgT5WV5mgWbHcCxgVhM7kUWvQmr6YQb7wNo",
+                    tokenAMint: PortfolioConstants.nativeSolMint,
+                    tokenBMint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+                    tokenAAmountUI: "2.0",
+                    tokenBAmountUI: nil,
+                    tokenAFeesUI: nil,
+                    tokenBFeesUI: nil,
+                    tickLowerIndex: -100,
+                    tickUpperIndex: 100,
+                    tickCurrentIndex: 0,
+                    rangeState: .inRange,
+                    estimatedValueUSD: nil,
+                    status: .partial,
+                    metadataStatus: "Official SDK read-only helper."
+                )
+            ],
+            positionCount: 1,
+            timestamp: Date(timeIntervalSince1970: 0)
+        )
+        let bridge = OrcaHelperBridge(
+            policy: policy,
+            projectRoot: URL(fileURLWithPath: "/tmp/gorkh"),
+            pathResolver: MockOrcaHelperPathResolver(),
+            processRunner: MockOrcaHelperProcessRunner(response: response)
+        )
+
+        let result = try #require(await bridge.fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:]))
+        let position = try #require(result.positions.first)
+
+        #expect(result.protocolKind == .orca)
+        #expect(result.status == .partial)
+        #expect(result.source == .sdkReadOnly)
+        #expect(position.tokenA?.symbol == "wSOL")
+        #expect(position.tokenB?.symbol == "USDC")
+        #expect(position.rangeSummary.state == .inRange)
+
+        let rejectedBridge = OrcaHelperBridge(
+            policy: policy,
+            projectRoot: URL(fileURLWithPath: "/tmp/gorkh"),
+            pathResolver: MockOrcaHelperPathResolver(),
+            processRunner: MockOrcaHelperProcessRunner(rawStdout: #"{"id":"1","command":"positions","status":"loaded","errorCategory":"none","message":"bad","transactionPayload":"no","timestamp":"2026-01-01T00:00:00Z"}"#)
+        )
+        let rejected = try #require(await rejectedBridge.fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:]))
+        #expect(rejected.status == .unavailable)
+        #expect(rejected.positions.isEmpty)
+        #expect(rejected.errorMessage?.contains("forbidden field") == true)
+    }
+
+    @Test func orcaAdapterAggregatesInjectedReadOnlyPositionsWithMeteora() async throws {
+        let profile = WalletProfile(label: "LP", publicAddress: SolanaConstants.systemProgramID)
+        let meteoraPosition = sampleLPPosition(profile: profile, protocolKind: .meteora, estimatedValueUSD: 125)
+        let orcaPosition = sampleLPPosition(profile: profile, protocolKind: .orca, estimatedValueUSD: nil, status: .partial)
+        let meteoraResult = LPAdapterResult(
+            protocolKind: .meteora,
+            status: .loaded,
+            positions: [meteoraPosition],
+            source: .sdkReadOnly,
+            updatedAt: Date(timeIntervalSince1970: 0),
+            errorMessage: nil
+        )
+        let orcaResult = LPAdapterResult(
+            protocolKind: .orca,
+            status: .partial,
+            positions: [orcaPosition],
+            source: .sdkReadOnly,
+            updatedAt: Date(timeIntervalSince1970: 0),
+            errorMessage: "Orca value unavailable"
+        )
+
+        let meteora = await MeteoraReadOnlyAdapter(helperBridge: MockMeteoraHelperBridge(result: meteoraResult))
+            .fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
+        let orca = await OrcaReadOnlyAdapter(helperBridge: MockOrcaHelperBridge(result: orcaResult))
+            .fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
+        let raydium = await RaydiumReadOnlyAdapter().fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
+        let summary = LPPortfolioAggregator.aggregate(adapterResults: [meteora, orca, raydium], refreshedAt: Date(timeIntervalSince1970: 0))
+
+        #expect(orca.status == .partial)
+        #expect(orca.positions.count == 1)
+        #expect(summary.status == .partial)
+        #expect(summary.positionCount == 2)
+        #expect(summary.partialAdapterCount == 1)
+        #expect(summary.unavailableAdapterCount == 1)
+        #expect(summary.estimatedValueUSD == nil)
+        #expect(summary.protocols.first { $0.protocolKind == .orca }?.status == .partial)
+    }
+
     @Test func swapQuoteRequestValidationAndEndpointGuard() throws {
         let usdcMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
         let url = try JupiterQuoteClient.quoteURL(
@@ -4112,6 +4223,18 @@ private struct MockMeteoraHelperBridge: MeteoraHelperBridging {
     }
 }
 
+private struct MockOrcaHelperBridge: OrcaHelperBridging {
+    let result: LPAdapterResult?
+
+    func fetchPositions(
+        profiles: [WalletProfile],
+        network: WalletNetwork,
+        prices: [String: PortfolioPriceQuote]
+    ) async -> LPAdapterResult? {
+        result
+    }
+}
+
 private struct MockMarginFiHelperPathResolver: MarginFiHelperPathResolving {
     func resolve(policy: MarginFiHelperInvocationPolicy, projectRoot: URL?) throws -> MarginFiHelperResolvedPath {
         MarginFiHelperResolvedPath(
@@ -4127,6 +4250,16 @@ private struct MockMeteoraHelperPathResolver: MeteoraHelperPathResolving {
         MeteoraHelperResolvedPath(
             nodeExecutable: URL(fileURLWithPath: "/usr/bin/node"),
             helperScript: URL(fileURLWithPath: "/tmp/gorkh/tools/meteora-readonly/src/index.ts"),
+            helperRelativePath: policy.allowlistedHelperRelativePath
+        )
+    }
+}
+
+private struct MockOrcaHelperPathResolver: OrcaHelperPathResolving {
+    func resolve(policy: OrcaHelperInvocationPolicy, projectRoot: URL?) throws -> OrcaHelperResolvedPath {
+        OrcaHelperResolvedPath(
+            nodeExecutable: URL(fileURLWithPath: "/usr/bin/node"),
+            helperScript: URL(fileURLWithPath: "/tmp/gorkh/tools/orca-readonly/src/index.ts"),
             helperRelativePath: policy.allowlistedHelperRelativePath
         )
     }
@@ -4191,6 +4324,39 @@ private final class MockMeteoraHelperProcessRunner: MeteoraHelperProcessRunning 
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         return MeteoraHelperProcessResult(
+            exitCode: 0,
+            stdout: try encoder.encode(response),
+            stderr: ""
+        )
+    }
+}
+
+private final class MockOrcaHelperProcessRunner: OrcaHelperProcessRunning {
+    private let response: OrcaHelperResponse?
+    private let rawStdout: String?
+
+    init(response: OrcaHelperResponse) {
+        self.response = response
+        self.rawStdout = nil
+    }
+
+    init(rawStdout: String) {
+        self.response = nil
+        self.rawStdout = rawStdout
+    }
+
+    func run(
+        resolvedPath: OrcaHelperResolvedPath,
+        command: OrcaHelperCommand,
+        stdin: Data
+    ) async throws -> OrcaHelperProcessResult {
+        if let rawStdout {
+            return OrcaHelperProcessResult(exitCode: 0, stdout: Data(rawStdout.utf8), stderr: "")
+        }
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return OrcaHelperProcessResult(
             exitCode: 0,
             stdout: try encoder.encode(response),
             stderr: ""

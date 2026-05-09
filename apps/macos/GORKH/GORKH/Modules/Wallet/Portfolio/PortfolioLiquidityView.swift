@@ -125,6 +125,8 @@ private struct LPProtocolCardView: View {
                 row("Source", value: summary.source.rawValue)
                 if summary.protocolKind == .meteora {
                     row("SDK method", value: "DLMM.getAllLbPairPositionsByUser")
+                } else if summary.protocolKind == .orca {
+                    row("SDK method", value: "fetchPositionsForOwner")
                 }
             }
 
