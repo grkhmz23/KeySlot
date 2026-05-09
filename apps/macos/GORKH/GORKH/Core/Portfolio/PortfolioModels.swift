@@ -169,6 +169,7 @@ struct PortfolioAggregateSummary: Codable, Equatable {
     let nativeStakeSummary: StakePortfolioSummary
     let lstSummary: LSTPortfolioSummary
     let lendingSummary: LendingPortfolioSummary
+    let lpSummary: LPPortfolioSummary
     let totalUSD: Decimal
     let unavailablePriceCount: Int
     let assetCount: Int
@@ -188,6 +189,7 @@ struct PortfolioAggregateSummary: Codable, Equatable {
             nativeStakeSummary: .empty(),
             lstSummary: .empty(),
             lendingSummary: .empty(),
+            lpSummary: .empty(),
             totalUSD: 0,
             unavailablePriceCount: 0,
             assetCount: 0,
@@ -245,6 +247,12 @@ struct PortfolioSnapshot: Codable, Equatable, Identifiable {
     let lendingUnavailableAdapterCount: Int
     let lendingMarketReserveCount: Int
     let lendingProtocolStatuses: [String: String]
+    let lpPositionCount: Int
+    let lpEstimatedValueUSD: Decimal?
+    let lpPartialAdapterCount: Int
+    let lpPartialPositionCount: Int
+    let lpUnavailableAdapterCount: Int
+    let lpProtocolStatuses: [String: String]
     let assets: [PortfolioSnapshotAsset]
 
     init(id: UUID = UUID(), summary: PortfolioAggregateSummary, createdAt: Date = Date()) {
@@ -276,6 +284,14 @@ struct PortfolioSnapshot: Codable, Equatable, Identifiable {
         self.lendingUnavailableAdapterCount = summary.lendingSummary.unavailableAdapterCount
         self.lendingMarketReserveCount = summary.lendingSummary.marketReserveCount
         self.lendingProtocolStatuses = Dictionary(uniqueKeysWithValues: summary.lendingSummary.protocols.map {
+            ($0.protocolKind.rawValue, $0.status.rawValue)
+        })
+        self.lpPositionCount = summary.lpSummary.positionCount
+        self.lpEstimatedValueUSD = summary.lpSummary.estimatedValueUSD
+        self.lpPartialAdapterCount = summary.lpSummary.partialAdapterCount
+        self.lpPartialPositionCount = summary.lpSummary.partialPositionCount
+        self.lpUnavailableAdapterCount = summary.lpSummary.unavailableAdapterCount
+        self.lpProtocolStatuses = Dictionary(uniqueKeysWithValues: summary.lpSummary.protocols.map {
             ($0.protocolKind.rawValue, $0.status.rawValue)
         })
         self.assets = summary.wallets.flatMap { wallet in
@@ -327,6 +343,12 @@ struct PortfolioSnapshot: Codable, Equatable, Identifiable {
         case lendingUnavailableAdapterCount
         case lendingMarketReserveCount
         case lendingProtocolStatuses
+        case lpPositionCount
+        case lpEstimatedValueUSD
+        case lpPartialAdapterCount
+        case lpPartialPositionCount
+        case lpUnavailableAdapterCount
+        case lpProtocolStatuses
         case assets
     }
 
@@ -360,6 +382,12 @@ struct PortfolioSnapshot: Codable, Equatable, Identifiable {
         lendingUnavailableAdapterCount = try container.decodeIfPresent(Int.self, forKey: .lendingUnavailableAdapterCount) ?? 0
         lendingMarketReserveCount = try container.decodeIfPresent(Int.self, forKey: .lendingMarketReserveCount) ?? 0
         lendingProtocolStatuses = try container.decodeIfPresent([String: String].self, forKey: .lendingProtocolStatuses) ?? [:]
+        lpPositionCount = try container.decodeIfPresent(Int.self, forKey: .lpPositionCount) ?? 0
+        lpEstimatedValueUSD = try container.decodeIfPresent(Decimal.self, forKey: .lpEstimatedValueUSD)
+        lpPartialAdapterCount = try container.decodeIfPresent(Int.self, forKey: .lpPartialAdapterCount) ?? 0
+        lpPartialPositionCount = try container.decodeIfPresent(Int.self, forKey: .lpPartialPositionCount) ?? 0
+        lpUnavailableAdapterCount = try container.decodeIfPresent(Int.self, forKey: .lpUnavailableAdapterCount) ?? 0
+        lpProtocolStatuses = try container.decodeIfPresent([String: String].self, forKey: .lpProtocolStatuses) ?? [:]
         assets = try container.decode([PortfolioSnapshotAsset].self, forKey: .assets)
     }
 }
@@ -379,6 +407,8 @@ struct PortfolioHistoryPoint: Codable, Equatable, Identifiable {
     let lendingPositionCount: Int
     let lendingMarketReserveCount: Int
     let lendingNetValueUSD: Decimal?
+    let lpPositionCount: Int
+    let lpEstimatedValueUSD: Decimal?
 
     init(snapshot: PortfolioSnapshot) {
         self.snapshotID = snapshot.id
@@ -393,6 +423,8 @@ struct PortfolioHistoryPoint: Codable, Equatable, Identifiable {
         self.lendingPositionCount = snapshot.lendingPositionCount
         self.lendingMarketReserveCount = snapshot.lendingMarketReserveCount
         self.lendingNetValueUSD = snapshot.lendingNetValueUSD
+        self.lpPositionCount = snapshot.lpPositionCount
+        self.lpEstimatedValueUSD = snapshot.lpEstimatedValueUSD
     }
 }
 

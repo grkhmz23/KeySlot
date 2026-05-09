@@ -18,7 +18,7 @@ struct PortfolioHistoryView: View {
                                 Text(snapshot.createdAt.formatted(date: .abbreviated, time: .standard))
                                     .font(.callout)
                                     .foregroundStyle(GorkhColors.primaryText)
-                                Text("\(snapshot.walletCount) wallets / \(snapshot.assetCount) assets / \(snapshot.stakeAccountCount) stake / \(snapshot.lstHoldingCount) LST / \(snapshot.lendingPositionCount) lending / \(snapshot.lendingMarketReserveCount) markets / \(snapshot.unavailablePriceCount) missing prices")
+                                Text("\(snapshot.walletCount) wallets / \(snapshot.assetCount) assets / \(snapshot.stakeAccountCount) stake / \(snapshot.lstHoldingCount) LST / \(snapshot.lendingPositionCount) lending / \(snapshot.lpPositionCount) LP / \(snapshot.unavailablePriceCount) missing prices")
                                     .font(.caption)
                                     .foregroundStyle(GorkhColors.secondaryText)
                             }

@@ -2423,6 +2423,182 @@ struct GORKHTests {
         }
     }
 
+    @Test func lpModelsSerializeWithoutSecretsAndActionsStayLocked() throws {
+        let profile = WalletProfile(label: "LP", publicAddress: SolanaConstants.systemProgramID)
+        let position = sampleLPPosition(
+            profile: profile,
+            protocolKind: .meteora,
+            estimatedValueUSD: 125
+        )
+        let result = LPAdapterResult(
+            protocolKind: .meteora,
+            status: .loaded,
+            positions: [position],
+            source: .sdkReadOnly,
+            updatedAt: Date(timeIntervalSince1970: 0),
+            errorMessage: nil
+        )
+        let summary = LPPortfolioAggregator.aggregate(adapterResults: [result], refreshedAt: Date(timeIntervalSince1970: 0))
+        let json = try #require(String(data: JSONEncoder().encode(summary), encoding: .utf8)).lowercased()
+
+        #expect(summary.positionCount == 1)
+        #expect(summary.estimatedValueUSD == 125)
+        #expect(summary.noDoubleCountNotice.lowercased().contains("separately"))
+        #expect(LPLockedAction.allCases.allSatisfy { !$0.isEnabled })
+        for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "serializedtransaction", "transactionpayload", "instructionpayload"] {
+            #expect(!json.contains(forbidden))
+        }
+    }
+
+    @Test func lpAdaptersReportHonestUnavailablePlaceholdersAndMeteoraHelperResults() async throws {
+        let profile = WalletProfile(label: "LP", publicAddress: SolanaConstants.systemProgramID)
+        let helperPosition = sampleLPPosition(
+            profile: profile,
+            protocolKind: .meteora,
+            estimatedValueUSD: nil,
+            status: .partial
+        )
+        let helperResult = LPAdapterResult(
+            protocolKind: .meteora,
+            status: .partial,
+            positions: [helperPosition],
+            source: .sdkReadOnly,
+            updatedAt: Date(timeIntervalSince1970: 0),
+            errorMessage: "partial"
+        )
+        let meteora = await MeteoraReadOnlyAdapter(helperBridge: MockMeteoraHelperBridge(result: helperResult))
+            .fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
+        let orca = await OrcaReadOnlyAdapter().fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
+        let raydium = await RaydiumReadOnlyAdapter().fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
+        let summary = LPPortfolioAggregator.aggregate(adapterResults: [meteora, orca, raydium], refreshedAt: Date(timeIntervalSince1970: 0))
+
+        #expect(meteora.status == .partial)
+        #expect(meteora.positions.count == 1)
+        #expect(orca.status == .unavailable)
+        #expect(raydium.status == .unavailable)
+        #expect(summary.status == .partial)
+        #expect(summary.positionCount == 1)
+        #expect(summary.partialAdapterCount == 1)
+        #expect(summary.unavailableAdapterCount == 2)
+    }
+
+    @Test func lpSummaryStaysSeparateFromPortfolioTotalsAndSnapshotsSafely() throws {
+        let profile = WalletProfile(label: "Portfolio LP", publicAddress: SolanaConstants.systemProgramID)
+        let lpPosition = sampleLPPosition(
+            profile: profile,
+            protocolKind: .meteora,
+            estimatedValueUSD: 1_000
+        )
+        let lpResult = LPAdapterResult(
+            protocolKind: .meteora,
+            status: .loaded,
+            positions: [lpPosition],
+            source: .sdkReadOnly,
+            updatedAt: Date(timeIntervalSince1970: 0),
+            errorMessage: nil
+        )
+        let prices = [
+            PortfolioConstants.nativeSolMint: PortfolioPriceQuote(
+                mintAddress: PortfolioConstants.nativeSolMint,
+                usdPrice: 100,
+                source: PortfolioConstants.priceSource,
+                blockID: 1,
+                priceChange24h: nil,
+                fetchedAt: Date(),
+                errorMessage: nil
+            )
+        ]
+        let summary = PortfolioAggregator.aggregate(
+            scope: .activeWallet,
+            network: .mainnetBeta,
+            profiles: [profile],
+            solBalances: [profile.id: 1_000_000_000],
+            tokenBalances: [:],
+            prices: prices,
+            lpAdapterResults: [lpResult]
+        )
+        let snapshot = PortfolioSnapshot(summary: summary)
+        let json = try #require(String(data: JSONEncoder().encode(snapshot), encoding: .utf8)).lowercased()
+
+        #expect(summary.totalUSD == 100)
+        #expect(summary.lpSummary.estimatedValueUSD == 1_000)
+        #expect(snapshot.lpPositionCount == 1)
+        #expect(snapshot.lpEstimatedValueUSD == 1_000)
+        #expect(snapshot.lpProtocolStatuses["meteora"] == "loaded")
+        for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "serializedtransaction", "transactionpayload", "instructionpayload"] {
+            #expect(!json.contains(forbidden))
+        }
+    }
+
+    @Test func meteoraHelperBridgeMapsReadOnlyResponseAndRejectsPayloadFields() async throws {
+        let profile = WalletProfile(label: "Meteora User", publicAddress: SolanaConstants.systemProgramID)
+        let policy = MeteoraHelperInvocationPolicy.readOnlyEnabledForDevelopment(
+            allowedNodeExecutablePaths: ["/usr/bin/node"]
+        )
+        let response = MeteoraHelperResponse(
+            id: UUID().uuidString,
+            requestID: nil,
+            command: .positions,
+            status: .partial,
+            errorCategory: "none",
+            message: "SDK read-only partial",
+            sdkValidation: MeteoraHelperSDKValidation(
+                sdkInstalled: true,
+                sdkImportOk: true,
+                sdkVersion: "1.7.5",
+                readOnlyMethodAvailable: true
+            ),
+            positions: [
+                MeteoraHelperPosition(
+                    walletPublicAddress: profile.publicAddress,
+                    poolAddress: "3oS3RJ8UYrYw7TAQEVh6u6ifrHi35o3DnvqyqGti4Gwa",
+                    positionAddress: "4N9T5NZ7nVgT5WV5mgWbHcCxgVhM7kUWvQmr6YQb7wNo",
+                    tokenAMint: PortfolioConstants.nativeSolMint,
+                    tokenBMint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+                    tokenAAmountUI: "1.5",
+                    tokenBAmountUI: nil,
+                    tokenAFeesUI: nil,
+                    tokenBFeesUI: nil,
+                    lowerBinID: 10,
+                    upperBinID: 20,
+                    currentBinID: 15,
+                    rangeState: .inRange,
+                    estimatedValueUSD: nil,
+                    status: .partial,
+                    metadataStatus: "Official SDK read-only helper."
+                )
+            ],
+            positionCount: 1,
+            timestamp: Date(timeIntervalSince1970: 0)
+        )
+        let bridge = MeteoraHelperBridge(
+            policy: policy,
+            projectRoot: URL(fileURLWithPath: "/tmp/gorkh"),
+            pathResolver: MockMeteoraHelperPathResolver(),
+            processRunner: MockMeteoraHelperProcessRunner(response: response)
+        )
+
+        let result = try #require(await bridge.fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:]))
+        let position = try #require(result.positions.first)
+
+        #expect(result.status == .partial)
+        #expect(result.source == .sdkReadOnly)
+        #expect(position.tokenA?.symbol == "wSOL")
+        #expect(position.tokenB?.symbol == "USDC")
+        #expect(position.rangeSummary.state == .inRange)
+
+        let rejectedBridge = MeteoraHelperBridge(
+            policy: policy,
+            projectRoot: URL(fileURLWithPath: "/tmp/gorkh"),
+            pathResolver: MockMeteoraHelperPathResolver(),
+            processRunner: MockMeteoraHelperProcessRunner(rawStdout: #"{"id":"1","command":"positions","status":"loaded","errorCategory":"none","message":"bad","serializedTransaction":"no","timestamp":"2026-01-01T00:00:00Z"}"#)
+        )
+        let rejected = try #require(await rejectedBridge.fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:]))
+        #expect(rejected.status == .unavailable)
+        #expect(rejected.positions.isEmpty)
+        #expect(rejected.errorMessage?.contains("forbidden field") == true)
+    }
+
     @Test func swapQuoteRequestValidationAndEndpointGuard() throws {
         let usdcMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
         let url = try JupiterQuoteClient.quoteURL(
@@ -3268,11 +3444,33 @@ private struct MockMarginFiHelperBridge: MarginFiHelperBridging {
     }
 }
 
+private struct MockMeteoraHelperBridge: MeteoraHelperBridging {
+    let result: LPAdapterResult?
+
+    func fetchPositions(
+        profiles: [WalletProfile],
+        network: WalletNetwork,
+        prices: [String: PortfolioPriceQuote]
+    ) async -> LPAdapterResult? {
+        result
+    }
+}
+
 private struct MockMarginFiHelperPathResolver: MarginFiHelperPathResolving {
     func resolve(policy: MarginFiHelperInvocationPolicy, projectRoot: URL?) throws -> MarginFiHelperResolvedPath {
         MarginFiHelperResolvedPath(
             nodeExecutable: URL(fileURLWithPath: "/usr/bin/node"),
             helperScript: URL(fileURLWithPath: "/tmp/gorkh/tools/marginfi-readonly/src/index.ts"),
+            helperRelativePath: policy.allowlistedHelperRelativePath
+        )
+    }
+}
+
+private struct MockMeteoraHelperPathResolver: MeteoraHelperPathResolving {
+    func resolve(policy: MeteoraHelperInvocationPolicy, projectRoot: URL?) throws -> MeteoraHelperResolvedPath {
+        MeteoraHelperResolvedPath(
+            nodeExecutable: URL(fileURLWithPath: "/usr/bin/node"),
+            helperScript: URL(fileURLWithPath: "/tmp/gorkh/tools/meteora-readonly/src/index.ts"),
             helperRelativePath: policy.allowlistedHelperRelativePath
         )
     }
@@ -3304,6 +3502,39 @@ private final class MockMarginFiHelperProcessRunner: MarginFiHelperProcessRunnin
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         return MarginFiHelperProcessResult(
+            exitCode: 0,
+            stdout: try encoder.encode(response),
+            stderr: ""
+        )
+    }
+}
+
+private final class MockMeteoraHelperProcessRunner: MeteoraHelperProcessRunning {
+    private let response: MeteoraHelperResponse?
+    private let rawStdout: String?
+
+    init(response: MeteoraHelperResponse) {
+        self.response = response
+        self.rawStdout = nil
+    }
+
+    init(rawStdout: String) {
+        self.response = nil
+        self.rawStdout = rawStdout
+    }
+
+    func run(
+        resolvedPath: MeteoraHelperResolvedPath,
+        command: MeteoraHelperCommand,
+        stdin: Data
+    ) async throws -> MeteoraHelperProcessResult {
+        if let rawStdout {
+            return MeteoraHelperProcessResult(exitCode: 0, stdout: Data(rawStdout.utf8), stderr: "")
+        }
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return MeteoraHelperProcessResult(
             exitCode: 0,
             stdout: try encoder.encode(response),
             stderr: ""
@@ -3498,6 +3729,62 @@ private func sampleLendingPosition(
         updatedAt: Date(timeIntervalSince1970: 0),
         status: .loaded,
         errorMessage: nil
+    )
+}
+
+private func sampleLPPosition(
+    profile: WalletProfile,
+    protocolKind: LPProtocolKind,
+    estimatedValueUSD: Decimal?,
+    status: LPAdapterStatus = .loaded
+) -> LPPositionSummary {
+    let tokenA = LPPositionAssetAmount(
+        mintAddress: PortfolioConstants.nativeSolMint,
+        symbol: "wSOL",
+        name: "Wrapped SOL",
+        amountRaw: nil,
+        decimals: 9,
+        uiAmountString: "1",
+        usdValue: estimatedValueUSD.map { $0 / 2 },
+        priceQuote: nil,
+        source: .sdkReadOnly
+    )
+    let tokenB = LPPositionAssetAmount(
+        mintAddress: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        symbol: "USDC",
+        name: "USD Coin",
+        amountRaw: nil,
+        decimals: 6,
+        uiAmountString: "50",
+        usdValue: estimatedValueUSD.map { $0 / 2 },
+        priceQuote: nil,
+        source: .sdkReadOnly
+    )
+    return LPPositionSummary(
+        walletID: profile.id,
+        walletLabel: profile.label,
+        walletPublicAddress: profile.publicAddress,
+        network: profile.selectedNetwork,
+        protocolKind: protocolKind,
+        poolAddress: "3oS3RJ8UYrYw7TAQEVh6u6ifrHi35o3DnvqyqGti4Gwa",
+        positionAddress: "4N9T5NZ7nVgT5WV5mgWbHcCxgVhM7kUWvQmr6YQb7wNo",
+        tokenA: tokenA,
+        tokenB: tokenB,
+        estimatedValueUSD: estimatedValueUSD,
+        feeSummary: .unavailable,
+        rangeSummary: LPRangeSummary(
+            lowerBinID: 10,
+            upperBinID: 20,
+            currentBinID: 15,
+            state: .inRange,
+            unavailableReason: nil
+        ),
+        impermanentLoss: .unavailable,
+        source: .sdkReadOnly,
+        updatedAt: Date(timeIntervalSince1970: 0),
+        status: status,
+        metadataStatus: "Sample read-only LP position.",
+        errorMessage: status == .partial ? "Partial sample." : nil
     )
 }
 

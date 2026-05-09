@@ -197,7 +197,12 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
                 .lendingAdapterUnavailable,
                 .lendingAdapterError,
                 .lendingSnapshotStored,
-                .lendingActionBlocked
+                .lendingActionBlocked,
+                .lpPositionsRefreshed,
+                .meteoraAdapterUnavailable,
+                .meteoraPositionsLoaded,
+                .lpSnapshotStored,
+                .lpActionBlocked
             ].contains(event.kind)
         case .security:
             return [.walletAutoLocked, .securityPolicyUpdated, .localAuthenticationFailed].contains(event.kind)
@@ -218,6 +223,8 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
                 .lendingAdapterUnavailable,
                 .lendingAdapterError,
                 .lendingActionBlocked,
+                .meteoraAdapterUnavailable,
+                .lpActionBlocked,
                 .swapQuoteFailed,
                 .swapSimulationFailed,
                 .swapFailed,
@@ -283,6 +290,11 @@ private extension AuditEvent {
             "lendingUnavailableAdapterCount",
             "lendingMarketReserveCount",
             "lendingProtocolStatuses",
+            "lpPositionCount",
+            "lpPartialAdapterCount",
+            "lpPartialPositionCount",
+            "lpUnavailableAdapterCount",
+            "lpProtocolStatuses",
             "unavailablePriceCount",
             "priceSource",
             "status",

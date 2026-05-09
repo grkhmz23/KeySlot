@@ -2,10 +2,9 @@ import SwiftUI
 
 enum PortfolioDeFiPlaceholderContent {
     static let items = [
-        ("DeFi positions", "coming later"),
-        ("LP positions", "coming later"),
-        ("Lending execution", "locked"),
+        ("Risk analytics", "coming later"),
         ("Yield routes", "coming later"),
+        ("Lending execution", "locked"),
         ("PnL", "coming later")
     ]
 }

@@ -1137,6 +1137,9 @@ final class WalletManager: ObservableObject {
                 "lendingPositionCount": "\(result.summary.lendingSummary.positionCount)",
                 "lendingPartialAdapterCount": "\(result.summary.lendingSummary.partialAdapterCount)",
                 "lendingUnavailableAdapterCount": "\(result.summary.lendingSummary.unavailableAdapterCount)",
+                "lpPositionCount": "\(result.summary.lpSummary.positionCount)",
+                "lpPartialAdapterCount": "\(result.summary.lpSummary.partialAdapterCount)",
+                "lpUnavailableAdapterCount": "\(result.summary.lpSummary.unavailableAdapterCount)",
                 "unavailablePriceCount": "\(result.summary.unavailablePriceCount)",
                 "priceSource": result.summary.priceSource
             ]
@@ -1200,6 +1203,28 @@ final class WalletManager: ObservableObject {
             ]
         )
 
+        let lpStatus = result.summary.lpSummary.status
+        let lpProtocolStatuses = result.summary.lpSummary.protocols
+            .map { "\($0.protocolKind.rawValue):\($0.status.rawValue)" }
+            .joined(separator: ",")
+        record(
+            kind: lpAuditKind(for: lpStatus, protocols: result.summary.lpSummary.protocols),
+            walletID: selectedWalletID,
+            publicAddress: selectedProfile?.publicAddress,
+            message: lpAuditMessage(for: lpStatus),
+            details: [
+                "network": selectedNetwork.rawValue,
+                "portfolioScope": selectedPortfolioScope.rawValue,
+                "lpPositionCount": "\(result.summary.lpSummary.positionCount)",
+                "lpPartialAdapterCount": "\(result.summary.lpSummary.partialAdapterCount)",
+                "lpPartialPositionCount": "\(result.summary.lpSummary.partialPositionCount)",
+                "lpUnavailableAdapterCount": "\(result.summary.lpSummary.unavailableAdapterCount)",
+                "lpProtocolStatuses": lpProtocolStatuses,
+                "status": result.summary.lpSummary.status.rawValue,
+                "source": result.summary.lpSummary.source
+            ]
+        )
+
         if let priceError = result.priceErrorMessage {
             record(
                 kind: .portfolioPriceRefreshFailed,
@@ -1232,7 +1257,14 @@ final class WalletManager: ObservableObject {
                         "lendingPartialAdapterCount": "\(snapshot.lendingPartialAdapterCount)",
                         "lendingUnavailableAdapterCount": "\(snapshot.lendingUnavailableAdapterCount)",
                         "lendingMarketReserveCount": "\(snapshot.lendingMarketReserveCount)",
+                    "lpPositionCount": "\(snapshot.lpPositionCount)",
+                    "lpPartialAdapterCount": "\(snapshot.lpPartialAdapterCount)",
+                    "lpUnavailableAdapterCount": "\(snapshot.lpUnavailableAdapterCount)",
                     "lendingProtocolStatuses": snapshot.lendingProtocolStatuses
+                        .map { "\($0.key):\($0.value)" }
+                        .sorted()
+                        .joined(separator: ","),
+                    "lpProtocolStatuses": snapshot.lpProtocolStatuses
                         .map { "\($0.key):\($0.value)" }
                         .sorted()
                         .joined(separator: ","),
@@ -1256,6 +1288,24 @@ final class WalletManager: ObservableObject {
                     "lendingUnavailableAdapterCount": "\(snapshot.lendingUnavailableAdapterCount)",
                     "lendingMarketReserveCount": "\(snapshot.lendingMarketReserveCount)",
                     "lendingProtocolStatuses": snapshot.lendingProtocolStatuses
+                        .map { "\($0.key):\($0.value)" }
+                        .sorted()
+                        .joined(separator: ",")
+                ]
+            )
+            record(
+                kind: .lpSnapshotStored,
+                walletID: selectedWalletID,
+                publicAddress: selectedProfile?.publicAddress,
+                message: "Portfolio LP snapshot summary stored locally.",
+                details: [
+                    "network": selectedNetwork.rawValue,
+                    "portfolioScope": selectedPortfolioScope.rawValue,
+                    "lpPositionCount": "\(snapshot.lpPositionCount)",
+                    "lpPartialAdapterCount": "\(snapshot.lpPartialAdapterCount)",
+                    "lpPartialPositionCount": "\(snapshot.lpPartialPositionCount)",
+                    "lpUnavailableAdapterCount": "\(snapshot.lpUnavailableAdapterCount)",
+                    "lpProtocolStatuses": snapshot.lpProtocolStatuses
                         .map { "\($0.key):\($0.value)" }
                         .sorted()
                         .joined(separator: ",")
@@ -1311,6 +1361,37 @@ final class WalletManager: ObservableObject {
             return "Lending positions refreshed with stale or partial data."
         case .idle:
             return "Lending dashboard is idle."
+        }
+    }
+
+    private func lpAuditKind(for status: LPAdapterStatus, protocols: [LPProtocolSummary]) -> AuditEvent.Kind {
+        if protocols.contains(where: { $0.protocolKind == .meteora && $0.status == .loaded }) {
+            return .meteoraPositionsLoaded
+        }
+        switch status {
+        case .unavailable:
+            return .meteoraAdapterUnavailable
+        case .idle, .loaded, .empty, .partial, .error, .stale:
+            return .lpPositionsRefreshed
+        }
+    }
+
+    private func lpAuditMessage(for status: LPAdapterStatus) -> String {
+        switch status {
+        case .loaded:
+            return "LP positions refreshed read-only."
+        case .empty:
+            return "LP adapters returned no positions."
+        case .partial:
+            return "LP positions refreshed with partial read-only adapter data."
+        case .unavailable:
+            return "LP adapters are unavailable; no positions are shown."
+        case .error:
+            return "LP adapter refresh failed."
+        case .stale:
+            return "LP positions refreshed with stale or partial data."
+        case .idle:
+            return "LP tracker is idle."
         }
     }
 

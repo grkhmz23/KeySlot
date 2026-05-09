@@ -1,0 +1,21 @@
+{
+  "name": "@gorkh/meteora-readonly",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Strictly read-only Meteora DLMM position helper boundary for GORKH macOS.",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "health": "node src/index.ts health",
+    "env-check": "node src/index.ts env-check",
+    "positions": "node src/index.ts positions",
+    "smoke": "node src/smoke.ts",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@meteora-ag/dlmm": "1.7.5",
+    "@solana/web3.js": "1.98.4"
+  }
+}
