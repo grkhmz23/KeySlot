@@ -88,6 +88,7 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
     case wallet
     case sol
     case spl
+    case pusd
     case swap
     case portfolio
     case privateWallet
@@ -106,6 +107,8 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
             return "SOL"
         case .spl:
             return "SPL"
+        case .pusd:
+            return "PUSD"
         case .swap:
             return "Swap"
         case .portfolio:
@@ -146,6 +149,26 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
                 .ataCreationPlanned,
                 .ataCreationIncluded
             ].contains(event.kind)
+        case .pusd:
+            if [
+                .pusdTreasuryViewed,
+                .pusdReceiveViewed,
+                .pusdPortfolioRefreshed,
+                .pusdCirculationRefreshed,
+                .pusdCirculationUnavailable
+            ].contains(event.kind) {
+                return true
+            }
+            return [
+                .tokenTransferDrafted,
+                .tokenTransferSimulated,
+                .tokenTransferApproved,
+                .tokenTransferSent,
+                .tokenTransferFailed,
+                .ataCreationPlanned,
+                .ataCreationIncluded
+            ].contains(event.kind)
+                && (event.details["mint"] == PUSDConstants.mintAddress || event.details["tokenSymbol"] == PUSDConstants.symbol)
         case .swap:
             return [
                 .swapQuoteRequested,
@@ -202,7 +225,12 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
                 .meteoraAdapterUnavailable,
                 .meteoraPositionsLoaded,
                 .lpSnapshotStored,
-                .lpActionBlocked
+                .lpActionBlocked,
+                .pusdTreasuryViewed,
+                .pusdReceiveViewed,
+                .pusdPortfolioRefreshed,
+                .pusdCirculationRefreshed,
+                .pusdCirculationUnavailable
             ].contains(event.kind)
         case .security:
             return [
@@ -234,6 +262,7 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
                 .lendingActionBlocked,
                 .meteoraAdapterUnavailable,
                 .lpActionBlocked,
+                .pusdCirculationUnavailable,
                 .swapQuoteFailed,
                 .swapSimulationFailed,
                 .swapFailed,
@@ -308,6 +337,15 @@ private extension AuditEvent {
             "lpPartialPositionCount",
             "lpUnavailableAdapterCount",
             "lpProtocolStatuses",
+            "pusdAmountRaw",
+            "pusdWalletCount",
+            "pusdWatchOnlyAmountRaw",
+            "pusdWatchOnlyWalletCount",
+            "pusdPriceSource",
+            "pusdCirculationStatus",
+            "pusdTotalCirculating",
+            "pusdSolanaCirculating",
+            "pusdChainCount",
             "unavailablePriceCount",
             "priceSource",
             "provider",

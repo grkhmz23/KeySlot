@@ -8,7 +8,8 @@ enum TokenMetadataRegistry {
             name: "Wrapped SOL",
             decimals: 9,
             network: nil,
-            warning: nil
+            warning: nil,
+            category: .wrappedNative
         ),
         TokenMetadata(
             mintAddress: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
@@ -16,7 +17,18 @@ enum TokenMetadataRegistry {
             name: "USD Coin",
             decimals: 6,
             network: .mainnetBeta,
-            warning: nil
+            warning: nil,
+            category: .stablecoin
+        ),
+        TokenMetadata(
+            mintAddress: PUSDConstants.mintAddress,
+            symbol: PUSDConstants.symbol,
+            name: PUSDConstants.name,
+            decimals: PUSDConstants.decimals,
+            network: .mainnetBeta,
+            warning: "Palm USD is a standard 6-decimal SPL stablecoin on Solana mainnet.",
+            category: .stablecoin,
+            flags: PUSDConstants.metadataFlags
         ),
         TokenMetadata(
             mintAddress: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
@@ -24,7 +36,8 @@ enum TokenMetadataRegistry {
             name: "USD Coin Devnet",
             decimals: 6,
             network: .devnet,
-            warning: "Devnet USDC is for testing only."
+            warning: "Devnet USDC is for testing only.",
+            category: .stablecoin
         ),
         TokenMetadata(
             mintAddress: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
@@ -32,7 +45,8 @@ enum TokenMetadataRegistry {
             name: "Tether USD",
             decimals: 6,
             network: .mainnetBeta,
-            warning: nil
+            warning: nil,
+            category: .stablecoin
         ),
         TokenMetadata(
             mintAddress: "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn",
@@ -40,7 +54,8 @@ enum TokenMetadataRegistry {
             name: "Jito Staked SOL",
             decimals: 9,
             network: .mainnetBeta,
-            warning: "Liquid staking token. Review protocol risk before sending."
+            warning: "Liquid staking token. Review protocol risk before sending.",
+            category: .liquidStakingToken
         ),
         TokenMetadata(
             mintAddress: "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So",
@@ -48,7 +63,8 @@ enum TokenMetadataRegistry {
             name: "Marinade Staked SOL",
             decimals: 9,
             network: .mainnetBeta,
-            warning: "Liquid staking token. Review protocol risk before sending."
+            warning: "Liquid staking token. Review protocol risk before sending.",
+            category: .liquidStakingToken
         ),
         TokenMetadata(
             mintAddress: "bSo13r4TkiE4KumL71LsHTPpL2euBYLFx6h9HP3piy1",
@@ -56,7 +72,8 @@ enum TokenMetadataRegistry {
             name: "BlazeStake Staked SOL",
             decimals: 9,
             network: .mainnetBeta,
-            warning: "Liquid staking token. Review protocol risk before sending."
+            warning: "Liquid staking token. Review protocol risk before sending.",
+            category: .liquidStakingToken
         ),
         TokenMetadata(
             mintAddress: "Bybit4u1pWg2s5YmtfsEfHZjUdsAaGYmHvcJVyzmFqLm",
@@ -64,7 +81,8 @@ enum TokenMetadataRegistry {
             name: "Bybit Staked SOL",
             decimals: nil,
             network: .mainnetBeta,
-            warning: "Liquid staking token. Decimals are resolved from on-chain token account data."
+            warning: "Liquid staking token. Decimals are resolved from on-chain token account data.",
+            category: .liquidStakingToken
         ),
         TokenMetadata(
             mintAddress: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
@@ -72,7 +90,8 @@ enum TokenMetadataRegistry {
             name: "Bonk",
             decimals: 5,
             network: .mainnetBeta,
-            warning: "Meme token. Verify the mint before sending."
+            warning: "Meme token. Verify the mint before sending.",
+            category: .meme
         )
     ]
 

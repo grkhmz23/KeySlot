@@ -57,6 +57,7 @@ struct WalletPortfolioView: View {
             }
 
             PortfolioSummaryView(summary: walletManager.portfolioSummary)
+            PUSDTreasuryView()
             AddWatchOnlyWalletView()
             WatchOnlyWalletView()
             PortfolioAssetListView(summary: walletManager.portfolioSummary)

@@ -546,6 +546,23 @@ struct GORKHTests {
         #expect(TokenMetadataResolver.warnings(for: unknown, metadata: metadata).contains(.unknownToken))
     }
 
+    @Test func pusdRegistryMetadataIsMainnetStablecoin() throws {
+        let pusd = try #require(TokenMetadataRegistry.lookup(
+            mintAddress: PUSDConstants.mintAddress,
+            network: .mainnetBeta
+        ))
+
+        #expect(pusd.symbol == "PUSD")
+        #expect(pusd.name == "Palm USD")
+        #expect(pusd.decimals == 6)
+        #expect(pusd.category == .stablecoin)
+        #expect(pusd.flags.nonFreezable)
+        #expect(pusd.flags.noBlacklist)
+        #expect(pusd.flags.noPause)
+        #expect(pusd.flags.standardSPL)
+        #expect(SolanaAddressValidator.isValidAddress(PUSDConstants.mintAddress))
+    }
+
     @Test func tokenMetadataResolverUsesExpectedDecimalsPriority() {
         let knownMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
         let parsed = sampleTokenBalance(mint: knownMint, decimals: 4)
@@ -1542,6 +1559,125 @@ struct GORKHTests {
         #expect(summary.wallets[0].assets.contains { $0.asset.symbol == "USDC" && $0.usdValue == nil })
     }
 
+    @Test func pusdAggregatesAcrossWalletsWithStablecoinPegFallback() throws {
+        let signer = WalletProfile(label: "Treasury", publicAddress: SolanaConstants.systemProgramID)
+        let watch = WalletProfile(
+            label: "Watch Treasury",
+            publicAddress: Base58.encode(Data(repeating: 6, count: 32)),
+            walletOrigin: .watchOnly,
+            profileKind: .watchOnly
+        )
+        let signerPUSD = sampleTokenBalance(
+            owner: signer.publicAddress,
+            mint: PUSDConstants.mintAddress,
+            amountRaw: 1_500_000,
+            decimals: 6
+        )
+        let watchPUSD = sampleTokenBalance(
+            owner: watch.publicAddress,
+            mint: PUSDConstants.mintAddress,
+            amountRaw: 2_000_000,
+            decimals: 6
+        )
+
+        let summary = PortfolioAggregator.aggregate(
+            scope: .allWallets,
+            network: .mainnetBeta,
+            profiles: [signer, watch],
+            solBalances: [signer.id: 0, watch.id: 0],
+            tokenBalances: [
+                signer.id: [signerPUSD],
+                watch.id: [watchPUSD]
+            ],
+            prices: [:]
+        )
+
+        let pusd = try #require(summary.consolidatedAssets.first { $0.mintAddress == PUSDConstants.mintAddress })
+        #expect(pusd.totalAmountRaw == 3_500_000)
+        #expect(pusd.totalUSD == Decimal(string: "3.5", locale: Locale(identifier: "en_US_POSIX")))
+        #expect(pusd.priceQuote?.source == PUSDConstants.stablecoinPegEstimateSource)
+        #expect(summary.pusdTreasurySummary.totalAmountRaw == 3_500_000)
+        #expect(summary.pusdTreasurySummary.holdingWalletCount == 2)
+        #expect(summary.pusdTreasurySummary.watchOnlyAmountRaw == 2_000_000)
+        #expect(summary.pusdTreasurySummary.watchOnlyWalletCount == 1)
+        #expect(summary.pusdTreasurySummary.priceSource == .stablecoinPegEstimate)
+        #expect(summary.pusdTreasurySummary.priceSourceDescription == PUSDConstants.pegEstimateDescription)
+    }
+
+    @Test func pusdSendPolicyReusesExistingSPLFlowAndKeepsFutureActionsLocked() {
+        let token = sampleTokenBalance(
+            mint: PUSDConstants.mintAddress,
+            amountRaw: 1_000_000,
+            decimals: 6,
+            programKind: .splToken,
+            state: .initialized
+        )
+        let metadata = TokenMetadataResolver.resolve(balance: token, network: .mainnetBeta)
+
+        #expect(PUSDActionPolicy.sendFlow == .existingSPLTransferApprovalFlow)
+        #expect(TokenMetadataResolver.canSend(balance: token, metadata: metadata))
+        #expect(PUSDActionPolicy.lockedFutureActions.contains(.mintRedeem))
+        #expect(PUSDActionPolicy.lockedFutureActions.contains(.bridge))
+        #expect(PUSDActionPolicy.lockedFutureActions.contains(.yield))
+    }
+
+    @Test func pusdCirculationNormalizationHandlesLoadedAndRateLimitedResponses() throws {
+        let data = """
+        {
+          "data": {
+            "totalCirculating": "1234.56",
+            "updatedAt": "2026-05-09T12:00:00Z",
+            "chains": [
+              { "chain": "Solana", "amount": "1000.25" },
+              { "chain": "Ethereum", "amount": "234.31" }
+            ]
+          }
+        }
+        """.data(using: .utf8)!
+
+        let snapshot = try PUSDCirculationClient.normalize(
+            data: data,
+            statusCode: 200,
+            fetchedAt: Date(timeIntervalSince1970: 0)
+        )
+
+        #expect(snapshot.status == .loaded)
+        #expect(snapshot.totalCirculating == Decimal(string: "1234.56", locale: Locale(identifier: "en_US_POSIX")))
+        #expect(snapshot.solanaCirculating == Decimal(string: "1000.25", locale: Locale(identifier: "en_US_POSIX")))
+        #expect(snapshot.chainTotals.count == 2)
+        #expect(snapshot.updatedAt != nil)
+
+        let liveShape = """
+        {
+          "count": 1,
+          "data": [
+            {
+              "as_of": "2026-04-24T14:30:00Z",
+              "chains": [
+                { "chain": "ETHEREUM", "circulating": 2826036007.115771 },
+                { "chain": "SOLANA", "circulating": 2895000 },
+                { "chain": "BSC", "circulating": 20000 },
+                { "chain": "ADI", "circulating": 0 }
+              ],
+              "total_circulating": 2828951007.115771
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+        let liveSnapshot = try PUSDCirculationClient.normalize(data: liveShape, statusCode: 200)
+        #expect(liveSnapshot.totalCirculating != nil)
+        #expect(liveSnapshot.solanaCirculating == Decimal(2_895_000))
+        #expect(liveSnapshot.chainTotals.count == 4)
+        #expect(liveSnapshot.updatedAt != nil)
+
+        do {
+            _ = try PUSDCirculationClient.normalize(data: Data("{}".utf8), statusCode: 429)
+            Issue.record("Expected 429 response to be normalized as rate limited.")
+        } catch let error as PUSDCirculationClientError {
+            #expect(error == .rateLimited)
+        }
+    }
+
     @Test func portfolioPriceQuoteCanReportStaleState() {
         let quote = PortfolioPriceQuote(
             mintAddress: PortfolioConstants.nativeSolMint,
@@ -1575,6 +1711,34 @@ struct GORKHTests {
         #expect(store.load().count == 1)
         try store.clear()
         #expect(store.load().isEmpty)
+    }
+
+    @Test func pusdSnapshotStoresSafeTreasurySummaryOnly() throws {
+        let profile = WalletProfile(label: "Treasury", publicAddress: SolanaConstants.systemProgramID)
+        let pusd = sampleTokenBalance(
+            owner: profile.publicAddress,
+            mint: PUSDConstants.mintAddress,
+            amountRaw: 4_200_000,
+            decimals: 6
+        )
+        let summary = PortfolioAggregator.aggregate(
+            scope: .activeWallet,
+            network: .mainnetBeta,
+            profiles: [profile],
+            solBalances: [profile.id: 0],
+            tokenBalances: [profile.id: [pusd]],
+            prices: [:]
+        )
+        let snapshot = PortfolioSnapshot(summary: summary)
+        let json = try #require(String(data: JSONEncoder().encode(snapshot), encoding: .utf8)).lowercased()
+
+        #expect(snapshot.pusdTotalAmountRaw == 4_200_000)
+        #expect(snapshot.pusdEstimatedUSD == Decimal(string: "4.2", locale: Locale(identifier: "en_US_POSIX")))
+        #expect(snapshot.pusdPriceSource == PUSDConstants.stablecoinPegEstimateSource)
+        #expect(snapshot.pusdHoldingWalletCount == 1)
+        for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "serializedtransaction", "transactionpayload", "mintredeem"] {
+            #expect(!json.contains(forbidden))
+        }
     }
 
     @Test func jupiterPriceResponseNormalizationAndEndpointGuard() throws {

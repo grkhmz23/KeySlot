@@ -37,6 +37,7 @@ final class WalletManager: ObservableObject {
     @Published private(set) var portfolioHistory: [PortfolioSnapshot] = []
     @Published private(set) var portfolioStatus: PortfolioDataStatus = .idle
     @Published private(set) var portfolioErrorMessage: String?
+    @Published private(set) var pusdCirculationSnapshot: PUSDCirculationSnapshot = .idle()
     @Published private(set) var currentSwapQuote: JupiterQuoteSummary?
     @Published private(set) var currentSwapBuild: JupiterSwapTransactionBuild?
     @Published private(set) var currentSwapReview: SwapTransactionReview?
@@ -62,6 +63,7 @@ final class WalletManager: ObservableObject {
     private let cloakSignerBridgePolicy: CloakSignerBridgePolicy
     private let portfolioRefreshService: PortfolioManager
     private let portfolioSnapshotStore: PortfolioSnapshotStore
+    private let pusdCirculationClient: PUSDCirculationClient
     private let jupiterQuoteClient: JupiterQuoteClient
     private let jupiterSwapClient: JupiterSwapClient
     private let derivationService: SolanaDerivationService
@@ -181,6 +183,19 @@ final class WalletManager: ObservableObject {
             .sorted { $0.symbol < $1.symbol }
     }
 
+    var activePUSDTokenBalance: TokenBalance? {
+        guard selectedNetwork == .mainnetBeta, let profile = selectedProfile else {
+            return nil
+        }
+        return tokenBalances.first {
+            $0.ownerAddress == profile.publicAddress
+                && $0.mintAddress == PUSDConstants.mintAddress
+                && $0.programKind == .splToken
+                && $0.state == .initialized
+                && $0.amountRaw > 0
+        }
+    }
+
     convenience init() {
         self.init(
             vault: KeychainWalletVault(),
@@ -225,6 +240,7 @@ final class WalletManager: ObservableObject {
         cloakHelperInvocationAdapter: CloakHelperInvocationAdapter,
         portfolioPriceClient: (any PortfolioPriceClient)? = nil,
         portfolioSnapshotStore: PortfolioSnapshotStore? = nil,
+        pusdCirculationClient: PUSDCirculationClient? = nil,
         jupiterQuoteClient: JupiterQuoteClient? = nil,
         jupiterSwapClient: JupiterSwapClient? = nil
     ) {
@@ -243,6 +259,7 @@ final class WalletManager: ObservableObject {
         self.cloakSignerBridgePolicy = .locked
         self.portfolioRefreshService = PortfolioManager(rpcClient: rpcClient, priceClient: resolvedPortfolioPriceClient)
         self.portfolioSnapshotStore = portfolioSnapshotStore ?? PortfolioSnapshotStore()
+        self.pusdCirculationClient = pusdCirculationClient ?? PUSDCirculationClient()
         self.jupiterQuoteClient = jupiterQuoteClient ?? JupiterQuoteClient()
         self.jupiterSwapClient = jupiterSwapClient ?? JupiterSwapClient()
         self.derivationService = SolanaDerivationService(mnemonicService: mnemonicService)
@@ -1197,10 +1214,31 @@ final class WalletManager: ObservableObject {
                 "lpPositionCount": "\(result.summary.lpSummary.positionCount)",
                 "lpPartialAdapterCount": "\(result.summary.lpSummary.partialAdapterCount)",
                 "lpUnavailableAdapterCount": "\(result.summary.lpSummary.unavailableAdapterCount)",
+                "pusdAmountRaw": "\(result.summary.pusdTreasurySummary.totalAmountRaw)",
+                "pusdWalletCount": "\(result.summary.pusdTreasurySummary.holdingWalletCount)",
+                "pusdPriceSource": result.summary.pusdTreasurySummary.priceSource.rawValue,
                 "unavailablePriceCount": "\(result.summary.unavailablePriceCount)",
                 "priceSource": result.summary.priceSource
             ]
         )
+
+        if result.summary.pusdTreasurySummary.hasBalance {
+            record(
+                kind: .pusdPortfolioRefreshed,
+                walletID: selectedWalletID,
+                publicAddress: selectedProfile?.publicAddress,
+                message: "PUSD treasury balances refreshed from read-only SPL accounts.",
+                details: [
+                    "network": selectedNetwork.rawValue,
+                    "portfolioScope": selectedPortfolioScope.rawValue,
+                    "pusdAmountRaw": "\(result.summary.pusdTreasurySummary.totalAmountRaw)",
+                    "pusdWalletCount": "\(result.summary.pusdTreasurySummary.holdingWalletCount)",
+                    "pusdWatchOnlyAmountRaw": "\(result.summary.pusdTreasurySummary.watchOnlyAmountRaw)",
+                    "pusdWatchOnlyWalletCount": "\(result.summary.pusdTreasurySummary.watchOnlyWalletCount)",
+                    "pusdPriceSource": result.summary.pusdTreasurySummary.priceSource.rawValue
+                ]
+            )
+        }
 
         record(
             kind: result.summary.nativeStakeSummary.errorMessage?.isEmpty == false ? .stakeRefreshFailed : .stakeAccountsRefreshed,
@@ -1317,6 +1355,9 @@ final class WalletManager: ObservableObject {
                     "lpPositionCount": "\(snapshot.lpPositionCount)",
                     "lpPartialAdapterCount": "\(snapshot.lpPartialAdapterCount)",
                     "lpUnavailableAdapterCount": "\(snapshot.lpUnavailableAdapterCount)",
+                    "pusdAmountRaw": "\(snapshot.pusdTotalAmountRaw)",
+                    "pusdWalletCount": "\(snapshot.pusdHoldingWalletCount)",
+                    "pusdPriceSource": snapshot.pusdPriceSource,
                     "lendingProtocolStatuses": snapshot.lendingProtocolStatuses
                         .map { "\($0.key):\($0.value)" }
                         .sorted()
@@ -1389,6 +1430,61 @@ final class WalletManager: ObservableObject {
         }
 
         statusMessage = "Portfolio refreshed."
+    }
+
+    func refreshPUSDCirculation(forceRefresh: Bool = false) async {
+        pusdCirculationSnapshot = .loading()
+        let snapshot = await pusdCirculationClient.fetchCirculation(forceRefresh: forceRefresh)
+        pusdCirculationSnapshot = snapshot
+
+        let success = snapshot.status == .loaded
+        record(
+            kind: success ? .pusdCirculationRefreshed : .pusdCirculationUnavailable,
+            walletID: selectedWalletID,
+            publicAddress: selectedProfile?.publicAddress,
+            message: success
+                ? "PUSD circulation data refreshed from the public Palm USD API."
+                : "PUSD circulation data is unavailable.",
+            details: [
+                "network": selectedNetwork.rawValue,
+                "pusdCirculationStatus": snapshot.status.rawValue,
+                "pusdTotalCirculating": snapshot.totalCirculating.map(String.init(describing:)) ?? "",
+                "pusdSolanaCirculating": snapshot.solanaCirculating.map(String.init(describing:)) ?? "",
+                "pusdChainCount": "\(snapshot.chainTotals.count)",
+                "source": snapshot.source,
+                "error": snapshot.errorMessage ?? ""
+            ]
+        )
+    }
+
+    func recordPUSDTreasuryViewed() {
+        record(
+            kind: .pusdTreasuryViewed,
+            walletID: selectedWalletID,
+            publicAddress: selectedProfile?.publicAddress,
+            message: "PUSD treasury panel viewed.",
+            details: [
+                "network": selectedNetwork.rawValue,
+                "portfolioScope": selectedPortfolioScope.rawValue,
+                "pusdAmountRaw": "\(portfolioSummary.pusdTreasurySummary.totalAmountRaw)",
+                "pusdWalletCount": "\(portfolioSummary.pusdTreasurySummary.holdingWalletCount)",
+                "pusdPriceSource": portfolioSummary.pusdTreasurySummary.priceSource.rawValue
+            ]
+        )
+    }
+
+    func recordPUSDReceiveViewed() {
+        record(
+            kind: .pusdReceiveViewed,
+            walletID: selectedWalletID,
+            publicAddress: selectedProfile?.publicAddress,
+            message: "PUSD receive/payment request details viewed.",
+            details: [
+                "network": selectedNetwork.rawValue,
+                "mint": PUSDConstants.mintAddress,
+                "tokenSymbol": PUSDConstants.symbol
+            ]
+        )
     }
 
     private func lendingAuditKind(for status: LendingAdapterStatus) -> AuditEvent.Kind {

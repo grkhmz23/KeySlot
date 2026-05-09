@@ -33,7 +33,9 @@ enum TokenMetadataResolver {
                 network: network,
                 source: .knownRegistry,
                 decimalsSource: decimalsSource,
-                warning: known.warning
+                warning: known.warning,
+                category: known.category,
+                flags: known.flags
             )
         }
 
@@ -45,7 +47,9 @@ enum TokenMetadataResolver {
             network: network,
             source: .unknown,
             decimalsSource: decimalsSource,
-            warning: network == .devnet ? "Unknown devnet token. Verify the mint before sending." : nil
+            warning: network == .devnet ? "Unknown devnet token. Verify the mint before sending." : nil,
+            category: .unknown,
+            flags: .none
         )
     }
 

@@ -32,6 +32,9 @@ struct PortfolioAssetListView: View {
                     if LSTComparisonProvider.knownToken(mintAddress: asset.mintAddress, network: summary.network) != nil {
                         GorkhStatusChip(title: "LST", systemImage: "leaf", color: GorkhColors.success)
                     }
+                    if PUSDTreasuryAggregator.isPUSD(mintAddress: asset.mintAddress) {
+                        GorkhStatusChip(title: "PUSD", systemImage: "dollarsign.circle", color: GorkhColors.success)
+                    }
                     if asset.walletBreakdown.contains(where: { $0.asset.walletProfileKind == .watchOnly }) {
                         GorkhStatusChip(title: "Includes watch-only", systemImage: "eye", color: GorkhColors.warning)
                     }
@@ -67,7 +70,12 @@ struct PortfolioAssetListView: View {
                 if let price = asset.priceQuote?.usdPrice {
                     Text("@ \(price.portfolioCurrencyText)")
                         .font(.caption)
-                        .foregroundStyle(GorkhColors.secondaryText)
+                        .foregroundStyle(asset.priceQuote?.source == PUSDConstants.stablecoinPegEstimateSource ? GorkhColors.warning : GorkhColors.secondaryText)
+                    if asset.priceQuote?.source == PUSDConstants.stablecoinPegEstimateSource {
+                        Text("Stablecoin peg estimate")
+                            .font(.caption)
+                            .foregroundStyle(GorkhColors.warning)
+                    }
                 } else {
                     Text(asset.name)
                         .font(.caption)

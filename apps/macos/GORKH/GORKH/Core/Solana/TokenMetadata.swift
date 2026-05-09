@@ -7,6 +7,28 @@ enum TokenMetadataSource: String, Codable, Equatable {
     case unknown = "unknown"
 }
 
+enum TokenCategory: String, Codable, Equatable {
+    case stablecoin
+    case liquidStakingToken = "liquid_staking_token"
+    case wrappedNative = "wrapped_native"
+    case meme
+    case unknown
+}
+
+struct TokenMetadataFlags: Codable, Equatable {
+    let nonFreezable: Bool
+    let noBlacklist: Bool
+    let noPause: Bool
+    let standardSPL: Bool
+
+    static let none = TokenMetadataFlags(
+        nonFreezable: false,
+        noBlacklist: false,
+        noPause: false,
+        standardSPL: false
+    )
+}
+
 struct TokenMetadata: Codable, Equatable, Identifiable {
     var id: String { "\(network?.rawValue ?? "all"):\(mintAddress)" }
 
@@ -16,6 +38,28 @@ struct TokenMetadata: Codable, Equatable, Identifiable {
     let decimals: UInt8?
     let network: WalletNetwork?
     let warning: String?
+    let category: TokenCategory
+    let flags: TokenMetadataFlags
+
+    init(
+        mintAddress: String,
+        symbol: String,
+        name: String,
+        decimals: UInt8?,
+        network: WalletNetwork?,
+        warning: String?,
+        category: TokenCategory = .unknown,
+        flags: TokenMetadataFlags = .none
+    ) {
+        self.mintAddress = mintAddress
+        self.symbol = symbol
+        self.name = name
+        self.decimals = decimals
+        self.network = network
+        self.warning = warning
+        self.category = category
+        self.flags = flags
+    }
 }
 
 struct ResolvedTokenMetadata: Codable, Equatable {
@@ -27,6 +71,8 @@ struct ResolvedTokenMetadata: Codable, Equatable {
     let source: TokenMetadataSource
     let decimalsSource: TokenMetadataSource
     let warning: String?
+    let category: TokenCategory
+    let flags: TokenMetadataFlags
 
     var isKnown: Bool {
         source == .knownRegistry

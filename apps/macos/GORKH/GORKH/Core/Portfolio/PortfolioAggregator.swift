@@ -56,6 +56,7 @@ enum PortfolioAggregator {
             adapterResults: lpAdapterResults,
             refreshedAt: fetchedAt
         )
+        let pusdTreasurySummary = PUSDTreasuryAggregator.aggregate(wallets: walletSummaries)
         let totalUSD = liquidAssetsUSD + (nativeStakeSummary.estimatedUSD ?? 0)
         let unavailablePriceCount = assetUnavailablePriceCount + (nativeStakeSummary.priceUnavailable ? 1 : 0)
         let liquidSolLamports = solBalances.values.reduce(UInt64(0)) { partial, lamports in
@@ -74,6 +75,7 @@ enum PortfolioAggregator {
             lstSummary: lstSummary,
             lendingSummary: lendingSummary,
             lpSummary: lpSummary,
+            pusdTreasurySummary: pusdTreasurySummary,
             totalUSD: totalUSD,
             unavailablePriceCount: unavailablePriceCount,
             assetCount: assetCount,
@@ -165,12 +167,13 @@ enum PortfolioAggregator {
                 priceUnavailableReason: "Token decimals unavailable."
             )
         }
-        guard let price, let usdPrice = price.usdPrice else {
+        let effectivePrice = price ?? PUSDTreasuryAggregator.pegFallbackQuote(for: asset, fetchedAt: asset.fetchedAt)
+        guard let price = effectivePrice, let usdPrice = price.usdPrice else {
             return PortfolioTokenValue(
                 asset: asset,
-                priceQuote: price,
+                priceQuote: effectivePrice,
                 usdValue: nil,
-                priceUnavailableReason: price?.errorMessage ?? "USD price unavailable."
+                priceUnavailableReason: effectivePrice?.errorMessage ?? "USD price unavailable."
             )
         }
 

@@ -135,6 +135,7 @@ struct PortfolioManager {
                     lstSummary: summary.lstSummary,
                     lendingSummary: summary.lendingSummary,
                     lpSummary: summary.lpSummary,
+                    pusdTreasurySummary: summary.pusdTreasurySummary,
                     totalUSD: summary.totalUSD,
                     unavailablePriceCount: summary.unavailablePriceCount,
                     assetCount: summary.assetCount,

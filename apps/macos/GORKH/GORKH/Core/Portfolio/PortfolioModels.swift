@@ -3,6 +3,7 @@ import Foundation
 enum PortfolioConstants {
     static let nativeSolMint = "So11111111111111111111111111111111111111112"
     static let priceSource = "jupiter-price-v3"
+    static let pusdPegEstimateSource = PUSDConstants.stablecoinPegEstimateSource
 }
 
 enum PortfolioWalletScope: String, Codable, CaseIterable, Identifiable, Equatable {
@@ -170,6 +171,7 @@ struct PortfolioAggregateSummary: Codable, Equatable {
     let lstSummary: LSTPortfolioSummary
     let lendingSummary: LendingPortfolioSummary
     let lpSummary: LPPortfolioSummary
+    let pusdTreasurySummary: PUSDTreasurySummary
     let totalUSD: Decimal
     let unavailablePriceCount: Int
     let assetCount: Int
@@ -190,6 +192,7 @@ struct PortfolioAggregateSummary: Codable, Equatable {
             lstSummary: .empty(),
             lendingSummary: .empty(),
             lpSummary: .empty(),
+            pusdTreasurySummary: .empty,
             totalUSD: 0,
             unavailablePriceCount: 0,
             assetCount: 0,
@@ -253,6 +256,13 @@ struct PortfolioSnapshot: Codable, Equatable, Identifiable {
     let lpPartialPositionCount: Int
     let lpUnavailableAdapterCount: Int
     let lpProtocolStatuses: [String: String]
+    let pusdTotalAmountRaw: UInt64
+    let pusdUIAmountString: String
+    let pusdEstimatedUSD: Decimal?
+    let pusdPriceSource: String
+    let pusdHoldingWalletCount: Int
+    let pusdWatchOnlyAmountRaw: UInt64
+    let pusdWatchOnlyWalletCount: Int
     let assets: [PortfolioSnapshotAsset]
 
     init(id: UUID = UUID(), summary: PortfolioAggregateSummary, createdAt: Date = Date()) {
@@ -294,6 +304,13 @@ struct PortfolioSnapshot: Codable, Equatable, Identifiable {
         self.lpProtocolStatuses = Dictionary(uniqueKeysWithValues: summary.lpSummary.protocols.map {
             ($0.protocolKind.rawValue, $0.status.rawValue)
         })
+        self.pusdTotalAmountRaw = summary.pusdTreasurySummary.totalAmountRaw
+        self.pusdUIAmountString = summary.pusdTreasurySummary.uiAmountString
+        self.pusdEstimatedUSD = summary.pusdTreasurySummary.estimatedUSD
+        self.pusdPriceSource = summary.pusdTreasurySummary.priceSource.rawValue
+        self.pusdHoldingWalletCount = summary.pusdTreasurySummary.holdingWalletCount
+        self.pusdWatchOnlyAmountRaw = summary.pusdTreasurySummary.watchOnlyAmountRaw
+        self.pusdWatchOnlyWalletCount = summary.pusdTreasurySummary.watchOnlyWalletCount
         self.assets = summary.wallets.flatMap { wallet in
             wallet.assets.map { value in
                 PortfolioSnapshotAsset(
@@ -349,6 +366,13 @@ struct PortfolioSnapshot: Codable, Equatable, Identifiable {
         case lpPartialPositionCount
         case lpUnavailableAdapterCount
         case lpProtocolStatuses
+        case pusdTotalAmountRaw
+        case pusdUIAmountString
+        case pusdEstimatedUSD
+        case pusdPriceSource
+        case pusdHoldingWalletCount
+        case pusdWatchOnlyAmountRaw
+        case pusdWatchOnlyWalletCount
         case assets
     }
 
@@ -388,6 +412,13 @@ struct PortfolioSnapshot: Codable, Equatable, Identifiable {
         lpPartialPositionCount = try container.decodeIfPresent(Int.self, forKey: .lpPartialPositionCount) ?? 0
         lpUnavailableAdapterCount = try container.decodeIfPresent(Int.self, forKey: .lpUnavailableAdapterCount) ?? 0
         lpProtocolStatuses = try container.decodeIfPresent([String: String].self, forKey: .lpProtocolStatuses) ?? [:]
+        pusdTotalAmountRaw = try container.decodeIfPresent(UInt64.self, forKey: .pusdTotalAmountRaw) ?? 0
+        pusdUIAmountString = try container.decodeIfPresent(String.self, forKey: .pusdUIAmountString) ?? TokenAmountFormatter.format(rawAmount: 0, decimals: PUSDConstants.decimals)
+        pusdEstimatedUSD = try container.decodeIfPresent(Decimal.self, forKey: .pusdEstimatedUSD)
+        pusdPriceSource = try container.decodeIfPresent(String.self, forKey: .pusdPriceSource) ?? PUSDPriceSource.unavailable.rawValue
+        pusdHoldingWalletCount = try container.decodeIfPresent(Int.self, forKey: .pusdHoldingWalletCount) ?? 0
+        pusdWatchOnlyAmountRaw = try container.decodeIfPresent(UInt64.self, forKey: .pusdWatchOnlyAmountRaw) ?? 0
+        pusdWatchOnlyWalletCount = try container.decodeIfPresent(Int.self, forKey: .pusdWatchOnlyWalletCount) ?? 0
         assets = try container.decode([PortfolioSnapshotAsset].self, forKey: .assets)
     }
 }
@@ -409,6 +440,9 @@ struct PortfolioHistoryPoint: Codable, Equatable, Identifiable {
     let lendingNetValueUSD: Decimal?
     let lpPositionCount: Int
     let lpEstimatedValueUSD: Decimal?
+    let pusdTotalAmountRaw: UInt64
+    let pusdEstimatedUSD: Decimal?
+    let pusdHoldingWalletCount: Int
 
     init(snapshot: PortfolioSnapshot) {
         self.snapshotID = snapshot.id
@@ -425,6 +459,9 @@ struct PortfolioHistoryPoint: Codable, Equatable, Identifiable {
         self.lendingNetValueUSD = snapshot.lendingNetValueUSD
         self.lpPositionCount = snapshot.lpPositionCount
         self.lpEstimatedValueUSD = snapshot.lpEstimatedValueUSD
+        self.pusdTotalAmountRaw = snapshot.pusdTotalAmountRaw
+        self.pusdEstimatedUSD = snapshot.pusdEstimatedUSD
+        self.pusdHoldingWalletCount = snapshot.pusdHoldingWalletCount
     }
 }
 
