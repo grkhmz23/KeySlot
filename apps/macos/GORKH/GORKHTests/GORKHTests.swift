@@ -1912,7 +1912,7 @@ struct GORKHTests {
 
     @Test func lendingUnavailableAdaptersAreHonestAndRiskMappingIsDeterministic() async {
         let profile = WalletProfile(label: "Read Only", publicAddress: SolanaConstants.systemProgramID)
-        let kamino = await KaminoReadOnlyAdapter().fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
+        let kamino = await KaminoReadOnlyAdapter().fetchPositions(profiles: [profile], network: .devnet, prices: [:])
         let margin = await MarginFiReadOnlyAdapter().fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
         let summary = LendingPortfolioAggregator.aggregate(adapterResults: [kamino, margin], refreshedAt: Date(timeIntervalSince1970: 0))
 
@@ -1927,6 +1927,131 @@ struct GORKHTests {
         #expect(LendingHealthSummary.riskLevel(healthFactor: Decimal(string: "1.1"), ltv: nil) == .highRisk)
         #expect(LendingHealthSummary.riskLevel(healthFactor: Decimal(string: "1.0"), ltv: nil) == .liquidationRisk)
         #expect(LendingHealthSummary.riskLevel(healthFactor: nil, ltv: nil) == .unavailable)
+    }
+
+    @Test func kaminoEndpointGuardAllowsOnlyReviewedReadOnlyPaths() throws {
+        let market = "7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF"
+        let user = "EZC9wzVCvihCsCHEMGADYdsRhcpdRYWzSCZAVegSCfqY"
+
+        try KaminoEndpointGuard.validate(url: URL(string: "https://api.kamino.finance/v2/kamino-market")!, kind: .marketList)
+        try KaminoEndpointGuard.validate(
+            url: URL(string: "https://api.kamino.finance/kamino-market/\(market)/reserves/metrics?env=mainnet-beta")!,
+            kind: .reserveMetrics
+        )
+        try KaminoEndpointGuard.validate(
+            url: URL(string: "https://api.kamino.finance/kamino-market/\(market)/users/\(user)/obligations?env=mainnet-beta")!,
+            kind: .userObligations
+        )
+
+        #expect(throws: KaminoEndpointGuardError.self) {
+            try KaminoEndpointGuard.validate(url: URL(string: "https://api.kamino.finance/kamino-market/\(market)/deposit")!, kind: .reserveMetrics)
+        }
+        #expect(throws: KaminoEndpointGuardError.self) {
+            try KaminoEndpointGuard.validate(url: URL(string: "https://api.kamino.finance/kamino-market/\(market)/users/\(user)/unsignedTransaction")!, kind: .userObligations)
+        }
+        #expect(throws: KaminoEndpointGuardError.self) {
+            try KaminoEndpointGuard.validate(url: URL(string: "https://example.com/v2/kamino-market")!, kind: .marketList)
+        }
+    }
+
+    @Test func kaminoMarketAndPositionFixturesNormalizeToReadOnlyModels() throws {
+        let market = KaminoMarketConfig(
+            name: "Main Market",
+            isPrimary: true,
+            description: "Primary market on mainnet",
+            lendingMarket: "7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF",
+            lookupTable: nil,
+            isCurated: false
+        )
+        let reserveData = """
+        [
+          {
+            "reserve":"EVbyPKrHG6WBfm4dLxLMJpUDY43cCAcHSpV3KYjKsktW",
+            "liquidityToken":"JITOSOL",
+            "liquidityTokenMint":"J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn",
+            "maxLtv":"0.59",
+            "borrowApy":"0.0135",
+            "supplyApy":"0.000005",
+            "totalSupply":"800554.85",
+            "totalBorrow":"7510.64",
+            "totalBorrowUsd":"895962.10",
+            "totalSupplyUsd":"95500052.73"
+          },
+          {
+            "reserve":"D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59",
+            "liquidityToken":"USDC",
+            "liquidityTokenMint":"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+            "maxLtv":"0.8",
+            "borrowApy":"0.0502",
+            "supplyApy":"0.0371",
+            "totalSupply":"161080133.04",
+            "totalBorrow":"153106158.59",
+            "totalBorrowUsd":"153087407.68",
+            "totalSupplyUsd":"161060405.55"
+          }
+        ]
+        """.data(using: .utf8)!
+        let reserves = try JSONDecoder().decode([KaminoReserveMetric].self, from: reserveData)
+        let marketSummary = reserves[0].marketSummary(market: market, updatedAt: Date(timeIntervalSince1970: 0))
+        #expect(marketSummary.symbol == "JITOSOL")
+        #expect(marketSummary.supplyAPY == Decimal(string: "0.000005"))
+        #expect(marketSummary.utilization != nil)
+
+        let obligationData = """
+        [
+          {
+            "obligationAddress":"5Rvm48nSVMsqmNJovS4kVAWUS6HX9jRiG3UsPq5VsyPV",
+            "state":{
+              "lendingMarket":"7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF",
+              "deposits":[{"depositReserve":"EVbyPKrHG6WBfm4dLxLMJpUDY43cCAcHSpV3KYjKsktW","depositedAmount":"99899438","marketValueSf":"0"}],
+              "borrows":[{"borrowReserve":"D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59","borrowedAmountSf":"2500000","marketValue":"2.5"}]
+            },
+            "refreshedStats":{
+              "userTotalDeposit":"7.05",
+              "userTotalBorrow":"3.98",
+              "netAccountValue":"3.07",
+              "loanToValue":"0.56",
+              "borrowUtilization":"0.76"
+            }
+          }
+        ]
+        """.data(using: .utf8)!
+        let obligations = try KaminoAPIClient.decodeUserObligations(data: obligationData)
+        let profile = WalletProfile(label: "Kamino User", publicAddress: "EZC9wzVCvihCsCHEMGADYdsRhcpdRYWzSCZAVegSCfqY")
+        let reserveMap = Dictionary(uniqueKeysWithValues: reserves.map { ($0.reserve, $0) })
+        let obligation = try #require(obligations.first)
+        let position = KaminoReadOnlyAdapter.position(
+            obligation: obligation,
+            market: market,
+            profile: profile,
+            network: .mainnetBeta,
+            reserveMetrics: reserveMap,
+            prices: [:],
+            updatedAt: Date(timeIntervalSince1970: 0)
+        )
+
+        #expect(position.suppliedAssets.first?.symbol == "JITOSOL")
+        #expect(position.borrowedAssets.first?.symbol == "USDC")
+        #expect(position.suppliedValueUSD == Decimal(string: "7.05"))
+        #expect(position.borrowedValueUSD == Decimal(string: "3.98"))
+        #expect(position.netValueUSD == Decimal(string: "3.07"))
+        #expect(position.health.riskLevel == .caution)
+
+        let result = LendingAdapterResult(
+            protocolKind: .kamino,
+            status: .loaded,
+            positions: [position],
+            source: .publicAPI,
+            updatedAt: Date(timeIntervalSince1970: 0),
+            errorMessage: nil,
+            marketReserves: reserves.map { $0.marketSummary(market: market, updatedAt: Date(timeIntervalSince1970: 0)) }
+        )
+        let summary = LendingPortfolioAggregator.aggregate(adapterResults: [result], refreshedAt: Date(timeIntervalSince1970: 0))
+        let json = try #require(String(data: JSONEncoder().encode(summary), encoding: .utf8)).lowercased()
+        #expect(summary.marketReserveCount == 2)
+        #expect(!json.contains("unsignedtransaction"))
+        #expect(!json.contains("transactionpayload"))
+        #expect(!json.contains("serializedtransaction"))
     }
 
     @Test func lendingSummaryStaysSeparateFromPortfolioTotalsAndSnapshotsSafely() throws {
@@ -1975,6 +2100,7 @@ struct GORKHTests {
         #expect(snapshot.lendingPositionCount == 1)
         #expect(snapshot.lendingRiskyPositionCount == 1)
         #expect(snapshot.lendingNetValueUSD == 150)
+        #expect(snapshot.lendingMarketReserveCount == 0)
         for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "serializedtransaction", "transactionpayload"] {
             #expect(!json.contains(forbidden))
         }

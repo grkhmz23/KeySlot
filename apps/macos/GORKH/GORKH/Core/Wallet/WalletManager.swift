@@ -1186,6 +1186,7 @@ final class WalletManager: ObservableObject {
                 "lendingPositionCount": "\(result.summary.lendingSummary.positionCount)",
                 "lendingRiskyPositionCount": "\(result.summary.lendingSummary.riskyPositionCount)",
                 "lendingUnavailableAdapterCount": "\(result.summary.lendingSummary.unavailableAdapterCount)",
+                "lendingMarketReserveCount": "\(result.summary.lendingSummary.marketReserveCount)",
                 "status": result.summary.lendingSummary.status.rawValue,
                 "source": result.summary.lendingSummary.source
             ]
@@ -1221,6 +1222,7 @@ final class WalletManager: ObservableObject {
                     "lstHoldingCount": "\(snapshot.lstHoldingCount)",
                     "lendingPositionCount": "\(snapshot.lendingPositionCount)",
                     "lendingUnavailableAdapterCount": "\(snapshot.lendingUnavailableAdapterCount)",
+                    "lendingMarketReserveCount": "\(snapshot.lendingMarketReserveCount)",
                     "unavailablePriceCount": "\(snapshot.unavailablePriceCount)",
                     "priceSource": snapshot.priceSource
                 ]
@@ -1235,7 +1237,8 @@ final class WalletManager: ObservableObject {
                     "portfolioScope": selectedPortfolioScope.rawValue,
                     "lendingPositionCount": "\(snapshot.lendingPositionCount)",
                     "lendingRiskyPositionCount": "\(snapshot.lendingRiskyPositionCount)",
-                    "lendingUnavailableAdapterCount": "\(snapshot.lendingUnavailableAdapterCount)"
+                    "lendingUnavailableAdapterCount": "\(snapshot.lendingUnavailableAdapterCount)",
+                    "lendingMarketReserveCount": "\(snapshot.lendingMarketReserveCount)"
                 ]
             )
             if snapshot.stakeAccountCount > 0 || snapshot.lstHoldingCount > 0 {

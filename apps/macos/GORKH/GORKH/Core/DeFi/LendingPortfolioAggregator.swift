@@ -16,6 +16,7 @@ enum LendingPortfolioAggregator {
         let positionCount = protocols.reduce(0) { $0 + $1.positions.count }
         let riskyCount = protocols.reduce(0) { $0 + $1.riskyPositionCount }
         let unavailableCount = protocols.filter { $0.status == .unavailable }.count
+        let marketReserveCount = protocols.reduce(0) { $0 + $1.marketReserveCount }
         let errors = protocols.compactMap(\.errorMessage).filter { !$0.isEmpty }
         let suppliedValues = protocols.compactMap(\.suppliedValueUSD)
         let borrowedValues = protocols.compactMap(\.borrowedValueUSD)
@@ -30,10 +31,10 @@ enum LendingPortfolioAggregator {
             status = positionCount > 0 ? .stale : .error
         } else if unavailableCount == protocols.count {
             status = .unavailable
-        } else if positionCount == 0 {
-            status = .empty
         } else if protocols.contains(where: { $0.status == .stale || $0.status == .unavailable }) {
             status = .stale
+        } else if positionCount == 0 {
+            status = .empty
         } else {
             status = .loaded
         }
@@ -47,6 +48,7 @@ enum LendingPortfolioAggregator {
             positionCount: positionCount,
             riskyPositionCount: riskyCount,
             unavailableAdapterCount: unavailableCount,
+            marketReserveCount: marketReserveCount,
             source: LendingConstants.source,
             noDoubleCountNotice: LendingConstants.noDoubleCountNotice,
             refreshedAt: refreshedAt,
@@ -77,7 +79,9 @@ enum LendingPortfolioAggregator {
             walletCount: walletCount,
             source: result.source,
             updatedAt: result.updatedAt,
-            errorMessage: result.errorMessage
+            errorMessage: result.errorMessage,
+            marketReserveCount: result.marketReserves.count,
+            marketReserves: result.marketReserves
         )
     }
 }

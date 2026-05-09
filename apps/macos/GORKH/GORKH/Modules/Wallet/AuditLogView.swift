@@ -278,6 +278,7 @@ private extension AuditEvent {
             "lendingPositionCount",
             "lendingRiskyPositionCount",
             "lendingUnavailableAdapterCount",
+            "lendingMarketReserveCount",
             "unavailablePriceCount",
             "priceSource",
             "status",

@@ -27,6 +27,7 @@ struct PortfolioLendingView: View {
                     metric("Positions", value: "\(summary.positionCount)")
                     metric("Risky", value: "\(summary.riskyPositionCount)")
                     metric("Unavailable", value: "\(summary.unavailableAdapterCount)")
+                    metric("Markets", value: "\(summary.marketReserveCount)")
                 }
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 10)], alignment: .leading, spacing: 10) {
@@ -121,11 +122,14 @@ private struct LendingProtocolCardView: View {
                 row("Net", value: currency(summary.netValueUSD))
                 row("Wallets", value: "\(summary.walletCount)")
                 row("Risky", value: "\(summary.riskyPositionCount)")
+                row("Markets", value: "\(summary.marketReserveCount)")
                 row("Source", value: summary.source.rawValue)
             }
 
             if !summary.positions.isEmpty {
                 LendingPositionTableView(positions: summary.positions)
+            } else if !summary.marketReserves.isEmpty {
+                LendingMarketReserveListView(reserves: Array(summary.marketReserves.prefix(4)))
             } else {
                 Text(summary.errorMessage ?? "No positions returned.")
                     .font(.caption)
@@ -165,6 +169,46 @@ private struct LendingProtocolCardView: View {
 
     private func currency(_ value: Decimal?) -> String {
         value?.portfolioCurrencyText ?? "Unavailable"
+    }
+}
+
+private struct LendingMarketReserveListView: View {
+    let reserves: [LendingMarketReserveSummary]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Market context")
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(GorkhColors.primaryText)
+            ForEach(reserves) { reserve in
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack {
+                        Text(reserve.symbol)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(GorkhColors.primaryText)
+                        Spacer()
+                        Text("Supply \(percent(reserve.supplyAPY))")
+                            .font(.caption2)
+                            .foregroundStyle(GorkhColors.secondaryText)
+                    }
+                    Text("Borrow \(percent(reserve.borrowAPY)) / Utilization \(percent(reserve.utilization))")
+                        .font(.caption2)
+                        .foregroundStyle(GorkhColors.secondaryText)
+                }
+            }
+        }
+    }
+
+    private func percent(_ value: Decimal?) -> String {
+        guard let value else {
+            return "Unavailable"
+        }
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .percent
+        formatter.maximumFractionDigits = 2
+        return formatter.string(from: value as NSDecimalNumber) ?? "Unavailable"
     }
 }
 

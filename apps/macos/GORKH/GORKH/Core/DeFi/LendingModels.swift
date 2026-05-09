@@ -5,6 +5,27 @@ enum LendingConstants {
     static let noDoubleCountNotice = "Lending values are shown separately from wallet token balances to avoid double-counting."
 }
 
+struct LendingMarketReserveSummary: Codable, Equatable, Identifiable {
+    var id: String { "\(protocolKind.rawValue):\(marketAddress):\(reserveAddress)" }
+
+    let protocolKind: LendingProtocolKind
+    let marketName: String
+    let marketAddress: String
+    let reserveAddress: String
+    let symbol: String
+    let mintAddress: String
+    let supplyAPY: Decimal?
+    let borrowAPY: Decimal?
+    let maxLTV: Decimal?
+    let totalSupply: Decimal?
+    let totalBorrow: Decimal?
+    let totalSupplyUSD: Decimal?
+    let totalBorrowUSD: Decimal?
+    let utilization: Decimal?
+    let source: LendingDataSource
+    let updatedAt: Date
+}
+
 enum LendingProtocolKind: String, Codable, CaseIterable, Identifiable, Equatable {
     case kamino
     case marginFi = "marginfi"
@@ -179,13 +200,55 @@ struct LendingPositionSummary: Codable, Equatable, Identifiable {
     let updatedAt: Date
     let status: LendingAdapterStatus
     let errorMessage: String?
+    let suppliedValueUSDOverride: Decimal?
+    let borrowedValueUSDOverride: Decimal?
+
+    init(
+        walletID: UUID,
+        walletLabel: String,
+        walletPublicAddress: String,
+        network: WalletNetwork,
+        protocolKind: LendingProtocolKind,
+        suppliedAssets: [LendingAssetAmount],
+        borrowedAssets: [LendingAssetAmount],
+        netValueUSD: Decimal?,
+        health: LendingHealthSummary,
+        source: LendingDataSource,
+        updatedAt: Date,
+        status: LendingAdapterStatus,
+        errorMessage: String?,
+        suppliedValueUSDOverride: Decimal? = nil,
+        borrowedValueUSDOverride: Decimal? = nil
+    ) {
+        self.walletID = walletID
+        self.walletLabel = walletLabel
+        self.walletPublicAddress = walletPublicAddress
+        self.network = network
+        self.protocolKind = protocolKind
+        self.suppliedAssets = suppliedAssets
+        self.borrowedAssets = borrowedAssets
+        self.netValueUSD = netValueUSD
+        self.health = health
+        self.source = source
+        self.updatedAt = updatedAt
+        self.status = status
+        self.errorMessage = errorMessage
+        self.suppliedValueUSDOverride = suppliedValueUSDOverride
+        self.borrowedValueUSDOverride = borrowedValueUSDOverride
+    }
 
     var suppliedValueUSD: Decimal? {
-        aggregate(values: suppliedAssets.compactMap(\.usdValue), expectedCount: suppliedAssets.count)
+        if let suppliedValueUSDOverride {
+            return suppliedValueUSDOverride
+        }
+        return aggregate(values: suppliedAssets.compactMap(\.usdValue), expectedCount: suppliedAssets.count)
     }
 
     var borrowedValueUSD: Decimal? {
-        aggregate(values: borrowedAssets.compactMap(\.usdValue), expectedCount: borrowedAssets.count)
+        if let borrowedValueUSDOverride {
+            return borrowedValueUSDOverride
+        }
+        return aggregate(values: borrowedAssets.compactMap(\.usdValue), expectedCount: borrowedAssets.count)
     }
 
     private func aggregate(values: [Decimal], expectedCount: Int) -> Decimal? {
@@ -206,6 +269,25 @@ struct LendingAdapterResult: Codable, Equatable {
     let source: LendingDataSource
     let updatedAt: Date
     let errorMessage: String?
+    let marketReserves: [LendingMarketReserveSummary]
+
+    init(
+        protocolKind: LendingProtocolKind,
+        status: LendingAdapterStatus,
+        positions: [LendingPositionSummary],
+        source: LendingDataSource,
+        updatedAt: Date,
+        errorMessage: String?,
+        marketReserves: [LendingMarketReserveSummary] = []
+    ) {
+        self.protocolKind = protocolKind
+        self.status = status
+        self.positions = positions
+        self.source = source
+        self.updatedAt = updatedAt
+        self.errorMessage = errorMessage
+        self.marketReserves = marketReserves
+    }
 
     static func unavailable(
         protocolKind: LendingProtocolKind,
@@ -218,7 +300,8 @@ struct LendingAdapterResult: Codable, Equatable {
             positions: [],
             source: .unavailable,
             updatedAt: updatedAt,
-            errorMessage: reason
+            errorMessage: reason,
+            marketReserves: []
         )
     }
 }
@@ -237,6 +320,8 @@ struct LendingProtocolSummary: Codable, Equatable, Identifiable {
     let source: LendingDataSource
     let updatedAt: Date
     let errorMessage: String?
+    let marketReserveCount: Int
+    let marketReserves: [LendingMarketReserveSummary]
 }
 
 struct LendingPortfolioSummary: Codable, Equatable {
@@ -248,6 +333,7 @@ struct LendingPortfolioSummary: Codable, Equatable {
     let positionCount: Int
     let riskyPositionCount: Int
     let unavailableAdapterCount: Int
+    let marketReserveCount: Int
     let source: String
     let noDoubleCountNotice: String
     let refreshedAt: Date
@@ -263,6 +349,7 @@ struct LendingPortfolioSummary: Codable, Equatable {
             positionCount: 0,
             riskyPositionCount: 0,
             unavailableAdapterCount: 0,
+            marketReserveCount: 0,
             source: LendingConstants.source,
             noDoubleCountNotice: LendingConstants.noDoubleCountNotice,
             refreshedAt: Date(),
