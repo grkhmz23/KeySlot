@@ -22,19 +22,30 @@ final class WalletManager: ObservableObject {
     @Published private(set) var lastConfirmationStatus: String?
     @Published private(set) var statusMessage: String?
     @Published private(set) var isBusy = false
+    @Published private(set) var securityPolicy: WalletSecurityPolicy
+    @Published private(set) var authenticationStatusMessage: String
 
     private let vault: WalletVault
     private let rpcClient: SolanaRPCClient
     private let auditLog: AuditLog
     private let metadataStore: WalletMetadataStore
+    private let securitySettingsStore: WalletSecuritySettingsStore
+    private let localAuthenticationService: any LocalAuthenticationService
     private let mnemonicService: any MnemonicService
     private let derivationService: SolanaDerivationService
+    private var lockController: WalletLockController
     private var unlockedSecrets: [UUID: WalletSecret] = [:]
     private var preparedMessage: Data?
     private var preparedTokenMessage: Data?
+    private var preparedDraftFingerprint: String?
+    private var preparedTokenDraftFingerprint: String?
 
     var selectedProfile: WalletProfile? {
         profiles.first { $0.id == selectedWalletID }
+    }
+
+    var selectedBackupStatus: WalletBackupStatus? {
+        selectedProfile.map(WalletBackupStatus.evaluate(profile:))
     }
 
     var explorerURLForLastSignature: URL? {
@@ -64,6 +75,8 @@ final class WalletManager: ObservableObject {
             rpcClient: rpcClient,
             auditLog: auditLog,
             metadataStore: metadataStore,
+            securitySettingsStore: WalletSecuritySettingsStore(),
+            localAuthenticationService: SystemLocalAuthenticationService(),
             mnemonicService: Bip39MnemonicService.shared
         )
     }
@@ -73,20 +86,29 @@ final class WalletManager: ObservableObject {
         rpcClient: SolanaRPCClient,
         auditLog: AuditLog,
         metadataStore: WalletMetadataStore,
+        securitySettingsStore: WalletSecuritySettingsStore,
+        localAuthenticationService: any LocalAuthenticationService,
         mnemonicService: any MnemonicService
     ) {
         self.vault = vault
         self.rpcClient = rpcClient
         self.auditLog = auditLog
         self.metadataStore = metadataStore
+        self.securitySettingsStore = securitySettingsStore
+        self.localAuthenticationService = localAuthenticationService
         self.mnemonicService = mnemonicService
         self.derivationService = SolanaDerivationService(mnemonicService: mnemonicService)
+        let policy = securitySettingsStore.loadPolicy()
+        self.securityPolicy = policy
+        self.authenticationStatusMessage = localAuthenticationService.statusDescription
+        self.lockController = WalletLockController(policy: policy)
         loadMetadata()
         auditEvents = auditLog.loadRecent()
         refreshVaultState()
     }
 
     func selectProfile(_ profileID: UUID?) {
+        noteUserActivity()
         selectedWalletID = profileID
         if let selectedProfile {
             selectedNetwork = selectedProfile.selectedNetwork
@@ -96,6 +118,7 @@ final class WalletManager: ObservableObject {
         simulationResult = nil
         approvalState = .idle
         preparedMessage = nil
+        preparedDraftFingerprint = nil
         tokenBalances = []
         tokenBalancesFetchedAt = nil
         tokenBalanceError = nil
@@ -103,10 +126,12 @@ final class WalletManager: ObservableObject {
         tokenSimulationResult = nil
         tokenApprovalState = .idle
         preparedTokenMessage = nil
+        preparedTokenDraftFingerprint = nil
         refreshVaultState()
     }
 
     func setNetwork(_ network: WalletNetwork) {
+        noteUserActivity()
         selectedNetwork = network
         guard let selectedWalletID,
               let index = profiles.firstIndex(where: { $0.id == selectedWalletID }) else {
@@ -120,6 +145,7 @@ final class WalletManager: ObservableObject {
         simulationResult = nil
         approvalState = .idle
         preparedMessage = nil
+        preparedDraftFingerprint = nil
         tokenBalances = []
         tokenBalancesFetchedAt = nil
         tokenBalanceError = nil
@@ -127,6 +153,7 @@ final class WalletManager: ObservableObject {
         tokenSimulationResult = nil
         tokenApprovalState = .idle
         preparedTokenMessage = nil
+        preparedTokenDraftFingerprint = nil
     }
 
     func createWallet(label: String) {
@@ -144,6 +171,7 @@ final class WalletManager: ObservableObject {
             profiles.append(profile)
             selectedWalletID = profile.id
             unlockedSecrets[profile.id] = secret
+            noteUserActivity()
             saveMetadata()
             refreshVaultState()
             record(
@@ -184,6 +212,7 @@ final class WalletManager: ObservableObject {
             profiles.append(profile)
             selectedWalletID = profile.id
             unlockedSecrets[profile.id] = secret
+            noteUserActivity()
             saveMetadata()
             refreshVaultState()
             record(
@@ -215,6 +244,7 @@ final class WalletManager: ObservableObject {
             profiles.append(profile)
             selectedWalletID = profile.id
             unlockedSecrets[profile.id] = secret
+            noteUserActivity()
             saveMetadata()
             refreshVaultState()
             record(
@@ -247,6 +277,7 @@ final class WalletManager: ObservableObject {
             profiles.append(profile)
             selectedWalletID = profile.id
             unlockedSecrets[profile.id] = secret
+            noteUserActivity()
             saveMetadata()
             refreshVaultState()
             record(
@@ -271,15 +302,70 @@ final class WalletManager: ObservableObject {
         mnemonicService.validate(mnemonic)
     }
 
-    func unlockWallet() {
+    func noteUserActivity(now: Date = Date()) {
+        lockController.markActivity(now: now)
+    }
+
+    func enforceAutoLockIfNeeded(now: Date = Date()) {
+        guard vaultState == .unlocked, lockController.shouldAutoLock(now: now) else {
+            return
+        }
+        lockWallet(message: "Wallet auto-locked after inactivity.", details: [
+            "reason": "inactivity",
+            "timeout": securityPolicy.autoLockTimeout.rawValue
+        ], kind: .walletAutoLocked)
+    }
+
+    func lockForAppInactivity() {
+        guard securityPolicy.lockWhenAppInactive, vaultState == .unlocked else {
+            return
+        }
+        lockWallet(message: "Wallet locked because the app became inactive.", details: [
+            "reason": "app_inactive"
+        ], kind: .walletAutoLocked)
+    }
+
+    func updateAutoLockTimeout(_ timeout: WalletAutoLockTimeout) {
+        var policy = securityPolicy
+        policy.autoLockTimeout = timeout
+        updateSecurityPolicy(policy)
+    }
+
+    func updateLockWhenAppInactive(_ enabled: Bool) {
+        var policy = securityPolicy
+        policy.lockWhenAppInactive = enabled
+        updateSecurityPolicy(policy)
+    }
+
+    func updateRequireLocalAuthenticationForUnlock(_ enabled: Bool) {
+        var policy = securityPolicy
+        policy.requireLocalAuthenticationForUnlock = enabled
+        updateSecurityPolicy(policy)
+    }
+
+    func updateRequireLocalAuthenticationForSigning(_ enabled: Bool) {
+        var policy = securityPolicy
+        policy.requireLocalAuthenticationForSigning = enabled
+        updateSecurityPolicy(policy)
+    }
+
+    func unlockWallet() async {
         guard let profile = selectedProfile else {
             vaultState = .missing
+            return
+        }
+
+        guard await authenticateIfNeeded(
+            required: securityPolicy.requireLocalAuthenticationForUnlock,
+            reason: "Unlock the local GORKH wallet signer."
+        ) else {
             return
         }
 
         runSensitiveOperation {
             let secret = try vault.loadSecret(for: profile.id)
             unlockedSecrets[profile.id] = secret
+            noteUserActivity()
             refreshVaultState()
             record(
                 kind: .walletUnlocked,
@@ -292,6 +378,14 @@ final class WalletManager: ObservableObject {
     }
 
     func lockWallet() {
+        lockWallet(message: "Wallet locked.")
+    }
+
+    private func lockWallet(
+        message: String,
+        details: [String: String] = [:],
+        kind: AuditEvent.Kind = .walletLocked
+    ) {
         guard let profile = selectedProfile else {
             vaultState = .missing
             return
@@ -303,42 +397,53 @@ final class WalletManager: ObservableObject {
         unlockedSecrets.removeValue(forKey: profile.id)
         preparedMessage = nil
         preparedTokenMessage = nil
+        preparedDraftFingerprint = nil
+        preparedTokenDraftFingerprint = nil
         approvalState = currentDraft == nil ? .idle : .drafted
         tokenApprovalState = currentTokenDraft == nil ? .idle : .drafted
         refreshVaultState()
         record(
-            kind: .walletLocked,
+            kind: kind,
             walletID: profile.id,
             publicAddress: profile.publicAddress,
-            message: "Wallet locked."
+            message: message,
+            details: details
         )
-        statusMessage = "Wallet locked."
+        statusMessage = message
     }
 
-    func deleteSelectedWallet() {
+    func deleteSelectedWallet(confirmation: String) {
         guard let profile = selectedProfile else {
+            return
+        }
+        guard confirmation == "DELETE WALLET" else {
+            statusMessage = "Type DELETE WALLET to remove this wallet from this Mac."
             return
         }
 
         runSensitiveOperation {
             try vault.deleteSecret(for: profile.id)
             unlockedSecrets.removeValue(forKey: profile.id)
+            preparedMessage = nil
             preparedTokenMessage = nil
+            preparedDraftFingerprint = nil
+            preparedTokenDraftFingerprint = nil
             profiles.removeAll { $0.id == profile.id }
             selectedWalletID = profiles.first?.id
             saveMetadata()
             refreshVaultState()
             record(
-                kind: .walletLocked,
+                kind: .walletDeleted,
                 walletID: profile.id,
                 publicAddress: profile.publicAddress,
-                message: "Wallet removed from local vault."
+                message: "Wallet metadata and Keychain secret were deleted from this Mac."
             )
             statusMessage = "Wallet removed."
         }
     }
 
     func refreshBalance() async {
+        noteUserActivity()
         guard let profile = selectedProfile else {
             vaultState = .missing
             return
@@ -359,6 +464,7 @@ final class WalletManager: ObservableObject {
     }
 
     func refreshTokenBalances() async {
+        noteUserActivity()
         guard let profile = selectedProfile else {
             vaultState = .missing
             return
@@ -397,6 +503,7 @@ final class WalletManager: ObservableObject {
     }
 
     func draftTokenTransfer(token: TokenBalance, recipient: String, amountText: String) async {
+        noteUserActivity()
         guard let profile = selectedProfile else {
             vaultState = .missing
             return
@@ -502,6 +609,7 @@ final class WalletManager: ObservableObject {
             currentTokenDraft = draft
             tokenSimulationResult = nil
             preparedTokenMessage = nil
+            preparedTokenDraftFingerprint = nil
             lastTransactionSignature = nil
             lastConfirmationStatus = nil
             tokenApprovalState = .drafted
@@ -556,6 +664,7 @@ final class WalletManager: ObservableObject {
     }
 
     func simulateCurrentTokenDraft() async {
+        noteUserActivity()
         guard let draft = currentTokenDraft, let profile = selectedProfile else {
             return
         }
@@ -576,6 +685,7 @@ final class WalletManager: ObservableObject {
             result.estimatedFeeLamports = fee ?? result.estimatedFeeLamports
 
             preparedTokenMessage = message
+            preparedTokenDraftFingerprint = WalletApprovalGuard.fingerprint(draft: draft)
             tokenSimulationResult = result
             tokenApprovalState = result.status == .success ? .simulated : .failed(result.errorMessage ?? "Token simulation failed.")
             record(
@@ -625,46 +735,63 @@ final class WalletManager: ObservableObject {
             return
         }
 
-        guard TransactionApprovalPolicy.canApprove(
-            network: draft.network,
-            simulation: tokenSimulationResult,
-            mainnetConfirmation: mainnetConfirmation,
-            hasCompletedDevnetSmoke: hasCompletedDevnetSmoke,
-            allowsUnavailableSimulation: allowsUnavailableSimulation
-        ) else {
+        enforceAutoLockIfNeeded()
+
+        let currentFingerprint = WalletApprovalGuard.fingerprint(draft: draft)
+        do {
+            try WalletApprovalGuard.validate(WalletSigningPreflightContext(
+                network: draft.network,
+                simulation: tokenSimulationResult,
+                mainnetConfirmation: mainnetConfirmation,
+                hasCompletedDevnetSmoke: hasCompletedDevnetSmoke,
+                allowsUnavailableSimulation: allowsUnavailableSimulation,
+                vaultState: vaultState,
+                hasUnlockedSecret: unlockedSecrets[profile.id] != nil,
+                hasPreparedMessage: preparedTokenMessage != nil,
+                preparedDraftFingerprint: preparedTokenDraftFingerprint,
+                currentDraftFingerprint: currentFingerprint,
+                hasBlockingWarnings: draft.warnings.contains { $0.blocksSend }
+            ))
+        } catch {
+            tokenApprovalState = .failed(error.localizedDescription)
             statusMessage = draft.network.isMainnet
-                ? "Mainnet token send requires simulation, exact confirmation, and a completed devnet smoke send for this build."
-                : "Complete token simulation before approval."
+                ? "Mainnet token send requires unlock, simulation, exact confirmation, and matching approval."
+                : error.localizedDescription
+            recordTokenFailure(message: error.localizedDescription)
             return
         }
 
-        guard let secret = unlockedSecrets[profile.id] else {
-            vaultState = .locked
-            statusMessage = "Unlock the wallet before signing."
+        guard await authenticateIfNeeded(
+            required: securityPolicy.requireLocalAuthenticationForSigning,
+            reason: "Authorize local signing for this SPL token transfer."
+        ) else {
+            tokenApprovalState = .failed("Device authentication failed.")
             return
         }
 
-        guard let message = preparedTokenMessage else {
-            tokenSimulationResult = .unavailable("Prepared token transaction message is missing. Simulate again.")
-            statusMessage = "Simulate again before signing."
+        guard let secret = unlockedSecrets[profile.id],
+              let message = preparedTokenMessage else {
+            tokenApprovalState = .failed(WalletSigningPreflightError.missingPreparedMessage.localizedDescription)
+            statusMessage = WalletSigningPreflightError.missingPreparedMessage.localizedDescription
             return
         }
 
+        noteUserActivity()
         record(
             kind: .tokenTransferApproved,
             walletID: profile.id,
             publicAddress: profile.publicAddress,
             message: "SPL token transfer approved by user.",
-                details: [
-                    "network": draft.network.rawValue,
-                    "mint": draft.mintAddress,
-                    "tokenSymbol": draft.tokenSymbol ?? "UNKNOWN",
-                    "amountRaw": "\(draft.amountRaw)",
-                    "createsAssociatedTokenAccount": "\(draft.ataPlan.shouldCreateAssociatedTokenAccount)",
-                    "warnings": draft.warnings.map(\.rawValue).joined(separator: ","),
-                    "warningsCount": "\(draft.warnings.count)"
-                ]
-            )
+            details: [
+                "network": draft.network.rawValue,
+                "mint": draft.mintAddress,
+                "tokenSymbol": draft.tokenSymbol ?? "UNKNOWN",
+                "amountRaw": "\(draft.amountRaw)",
+                "createsAssociatedTokenAccount": "\(draft.ataPlan.shouldCreateAssociatedTokenAccount)",
+                "warnings": draft.warnings.map(\.rawValue).joined(separator: ","),
+                "warningsCount": "\(draft.warnings.count)"
+            ]
+        )
 
         tokenApprovalState = .approved
         isBusy = true
@@ -713,6 +840,7 @@ final class WalletManager: ObservableObject {
     }
 
     func draftTransaction(recipient: String, amountSOLText: String) {
+        noteUserActivity()
         guard let profile = selectedProfile else {
             vaultState = .missing
             return
@@ -732,6 +860,7 @@ final class WalletManager: ObservableObject {
             currentDraft = draft
             simulationResult = nil
             preparedMessage = nil
+            preparedDraftFingerprint = nil
             lastTransactionSignature = nil
             lastConfirmationStatus = nil
             approvalState = .drafted
@@ -755,6 +884,7 @@ final class WalletManager: ObservableObject {
     }
 
     func simulateCurrentDraft() async {
+        noteUserActivity()
         guard let draft = currentDraft, let profile = selectedProfile else {
             return
         }
@@ -769,6 +899,7 @@ final class WalletManager: ObservableObject {
             result.estimatedFeeLamports = fee ?? result.estimatedFeeLamports
 
             preparedMessage = message
+            preparedDraftFingerprint = WalletApprovalGuard.fingerprint(draft: draft)
             simulationResult = result
             approvalState = result.status == .success ? .simulated : .failed(result.errorMessage ?? "Simulation failed.")
             record(
@@ -795,31 +926,48 @@ final class WalletManager: ObservableObject {
             return
         }
 
-        guard TransactionApprovalPolicy.canApprove(
-            network: draft.network,
-            simulation: simulationResult,
-            mainnetConfirmation: mainnetConfirmation,
-            hasCompletedDevnetSmoke: hasCompletedDevnetSmoke,
-            allowsUnavailableSimulation: allowsUnavailableSimulation
-        ) else {
+        enforceAutoLockIfNeeded()
+
+        let currentFingerprint = WalletApprovalGuard.fingerprint(draft: draft)
+        do {
+            try WalletApprovalGuard.validate(WalletSigningPreflightContext(
+                network: draft.network,
+                simulation: simulationResult,
+                mainnetConfirmation: mainnetConfirmation,
+                hasCompletedDevnetSmoke: hasCompletedDevnetSmoke,
+                allowsUnavailableSimulation: allowsUnavailableSimulation,
+                vaultState: vaultState,
+                hasUnlockedSecret: unlockedSecrets[profile.id] != nil,
+                hasPreparedMessage: preparedMessage != nil,
+                preparedDraftFingerprint: preparedDraftFingerprint,
+                currentDraftFingerprint: currentFingerprint,
+                hasBlockingWarnings: false
+            ))
+        } catch {
+            approvalState = .failed(error.localizedDescription)
             statusMessage = draft.network.isMainnet
-                ? "Mainnet requires simulation, exact confirmation, and a completed devnet smoke send for this build."
-                : "Complete simulation before approval."
+                ? "Mainnet requires unlock, simulation, exact confirmation, and matching approval."
+                : error.localizedDescription
+            recordFailure(message: error.localizedDescription)
             return
         }
 
-        guard let secret = unlockedSecrets[profile.id] else {
-            vaultState = .locked
-            statusMessage = "Unlock the wallet before signing."
+        guard await authenticateIfNeeded(
+            required: securityPolicy.requireLocalAuthenticationForSigning,
+            reason: "Authorize local signing for this SOL transfer."
+        ) else {
+            approvalState = .failed("Device authentication failed.")
             return
         }
 
-        guard let message = preparedMessage else {
-            simulationResult = .unavailable("Prepared transaction message is missing. Simulate again.")
-            statusMessage = "Simulate again before signing."
+        guard let secret = unlockedSecrets[profile.id],
+              let message = preparedMessage else {
+            approvalState = .failed(WalletSigningPreflightError.missingPreparedMessage.localizedDescription)
+            statusMessage = WalletSigningPreflightError.missingPreparedMessage.localizedDescription
             return
         }
 
+        noteUserActivity()
         record(
             kind: .transactionApproved,
             walletID: profile.id,
@@ -887,6 +1035,46 @@ final class WalletManager: ObservableObject {
         metadataStore.saveProfiles(profiles)
         metadataStore.saveSelectedWalletID(selectedWalletID)
         metadataStore.saveSelectedNetwork(selectedNetwork)
+    }
+
+    private func updateSecurityPolicy(_ policy: WalletSecurityPolicy) {
+        securityPolicy = policy
+        securitySettingsStore.savePolicy(policy)
+        lockController.updatePolicy(policy)
+        record(
+            kind: .securityPolicyUpdated,
+            walletID: selectedWalletID,
+            publicAddress: selectedProfile?.publicAddress,
+            message: "Wallet security policy updated.",
+            details: [
+                "autoLockTimeout": policy.autoLockTimeout.rawValue,
+                "lockWhenAppInactive": "\(policy.lockWhenAppInactive)",
+                "authForUnlock": "\(policy.requireLocalAuthenticationForUnlock)",
+                "authForSigning": "\(policy.requireLocalAuthenticationForSigning)"
+            ]
+        )
+    }
+
+    private func authenticateIfNeeded(required: Bool, reason: String) async -> Bool {
+        guard required else {
+            authenticationStatusMessage = "Device authentication is disabled in local settings."
+            return true
+        }
+
+        let result = await localAuthenticationService.authenticate(reason: reason)
+        authenticationStatusMessage = result.message
+        if result.succeeded {
+            return true
+        }
+        statusMessage = result.message
+        record(
+            kind: .localAuthenticationFailed,
+            walletID: selectedWalletID,
+            publicAddress: selectedProfile?.publicAddress,
+            message: "Local authentication failed.",
+            details: ["authResult": result.message]
+        )
+        return false
     }
 
     private func runSensitiveOperation(_ operation: () throws -> Void) {

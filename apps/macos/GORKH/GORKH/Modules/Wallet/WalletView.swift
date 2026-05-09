@@ -1,7 +1,9 @@
+import Combine
 import SwiftUI
 
 struct WalletView: View {
     @EnvironmentObject private var walletManager: WalletManager
+    private let autoLockTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
     var body: some View {
         HStack(spacing: 0) {
@@ -13,6 +15,7 @@ struct WalletView: View {
                     WalletImportView()
 
                     if walletManager.selectedProfile != nil {
+                        WalletSecurityView()
                         WalletBalanceView()
                         TokenBalancesView()
                         SendSolView()
@@ -29,6 +32,9 @@ struct WalletView: View {
 
             WalletInspectorView()
                 .frame(width: 310)
+        }
+        .onReceive(autoLockTimer) { now in
+            walletManager.enforceAutoLockIfNeeded(now: now)
         }
     }
 
@@ -88,7 +94,7 @@ struct WalletView: View {
                         vaultChip
                         Spacer()
                         Button {
-                            walletManager.unlockWallet()
+                            Task { await walletManager.unlockWallet() }
                         } label: {
                             Label("Unlock", systemImage: "lock.open")
                         }

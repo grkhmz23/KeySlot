@@ -15,7 +15,12 @@ struct WalletInspectorView: View {
                     inspectorRow("Network", walletManager.selectedNetwork.displayName)
                     inspectorRow("Vault", walletManager.vaultState.title)
                     inspectorRow("Signer", walletManager.vaultState == .unlocked ? "Available locally" : "Locked")
+                    inspectorRow("Auto-lock", walletManager.securityPolicy.autoLockTimeout.displayName)
+                    inspectorRow("Auth", walletManager.securityPolicy.requireLocalAuthenticationForSigning ? "Required before signing" : "Disabled")
                     inspectorRow("Mainnet", walletManager.selectedNetwork.isMainnet ? "Explicit phrase required" : "Disabled for current draft")
+                    if let backupStatus = walletManager.selectedBackupStatus {
+                        inspectorRow("Backup", backupStatus.riskStatus.displayName)
+                    }
                 }
             }
 

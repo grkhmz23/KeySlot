@@ -18,6 +18,8 @@ struct TokenTransferApprovalView: View {
                 .foregroundStyle(GorkhColors.primaryText)
 
             VStack(alignment: .leading, spacing: 6) {
+                approvalRow("Network", draft.network.displayName)
+                approvalRow("RPC", draft.network.rpcURL.absoluteString)
                 approvalRow("Token", draft.tokenDisplayName)
                 approvalRow("Mint", draft.mintAddress)
                 approvalRow("Program", draft.tokenProgramKind.displayName)
@@ -26,6 +28,10 @@ struct TokenTransferApprovalView: View {
                 approvalRow("Recipient owner", draft.recipientOwnerAddress)
                 approvalRow("Recipient ATA", draft.recipientTokenAccount ?? "Missing")
                 approvalRow("Amount", "\(draft.formattedAmount) (\(draft.amountRaw) raw)")
+                if let fee = walletManager.tokenSimulationResult?.estimatedFeeLamports {
+                    approvalRow("Estimated fee", "\(fee) lamports")
+                }
+                approvalRow("Simulation", walletManager.tokenSimulationResult?.status.rawValue ?? "missing")
             }
 
             if !draft.warnings.isEmpty {
@@ -71,6 +77,9 @@ struct TokenTransferApprovalView: View {
                     Text("Token transfers can permanently move real funds on mainnet.")
                         .font(.caption)
                         .foregroundStyle(GorkhColors.secondaryText)
+                    Text("Verify the RPC endpoint, token mint, recipient owner, ATA state, amount, and simulation before approving.")
+                        .font(.caption)
+                        .foregroundStyle(GorkhColors.secondaryText)
                 }
             }
 
@@ -103,7 +112,10 @@ struct TokenTransferApprovalView: View {
                     )
                 }
             } label: {
-                Label("Approve, Sign Locally, and Send Token", systemImage: "signature")
+                Label(
+                    draft.network.isMainnet ? "Approve Mainnet, Sign Locally, and Send Token" : "Approve, Sign Locally, and Send Token",
+                    systemImage: "signature"
+                )
             }
             .buttonStyle(.gorkhPrimary)
             .disabled(!canApprove || walletManager.vaultState != .unlocked || walletManager.isBusy || draft.recipientTokenAccount == nil)

@@ -902,6 +902,171 @@ struct GORKHTests {
         ))
     }
 
+    @Test func autoLockTimeoutModelLocksAfterConfiguredInactivity() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        var controller = WalletLockController(policy: .default, now: start)
+
+        #expect(!controller.shouldAutoLock(now: start.addingTimeInterval(299)))
+        #expect(controller.shouldAutoLock(now: start.addingTimeInterval(300)))
+
+        var policy = WalletSecurityPolicy.default
+        policy.autoLockTimeout = .never
+        controller.updatePolicy(policy, now: start)
+        #expect(!controller.shouldAutoLock(now: start.addingTimeInterval(10_000)))
+    }
+
+    @Test func signingPreflightBlocksLockedMissingSimulationAndDraftMismatch() throws {
+        let simulation = SimulationResult(
+            status: .success,
+            logs: [],
+            estimatedFeeLamports: 5_000,
+            errorMessage: nil,
+            simulatedAt: Date()
+        )
+        let fingerprint = "approved"
+
+        #expect(throws: WalletSigningPreflightError.walletLocked) {
+            try WalletApprovalGuard.validate(WalletSigningPreflightContext(
+                network: .devnet,
+                simulation: simulation,
+                mainnetConfirmation: "",
+                hasCompletedDevnetSmoke: false,
+                allowsUnavailableSimulation: false,
+                vaultState: .locked,
+                hasUnlockedSecret: true,
+                hasPreparedMessage: true,
+                preparedDraftFingerprint: fingerprint,
+                currentDraftFingerprint: fingerprint,
+                hasBlockingWarnings: false
+            ))
+        }
+
+        #expect(throws: WalletSigningPreflightError.missingSimulation) {
+            try WalletApprovalGuard.validate(WalletSigningPreflightContext(
+                network: .devnet,
+                simulation: nil,
+                mainnetConfirmation: "",
+                hasCompletedDevnetSmoke: false,
+                allowsUnavailableSimulation: false,
+                vaultState: .unlocked,
+                hasUnlockedSecret: true,
+                hasPreparedMessage: true,
+                preparedDraftFingerprint: fingerprint,
+                currentDraftFingerprint: fingerprint,
+                hasBlockingWarnings: false
+            ))
+        }
+
+        #expect(throws: WalletSigningPreflightError.draftMismatch) {
+            try WalletApprovalGuard.validate(WalletSigningPreflightContext(
+                network: .devnet,
+                simulation: simulation,
+                mainnetConfirmation: "",
+                hasCompletedDevnetSmoke: false,
+                allowsUnavailableSimulation: false,
+                vaultState: .unlocked,
+                hasUnlockedSecret: true,
+                hasPreparedMessage: true,
+                preparedDraftFingerprint: fingerprint,
+                currentDraftFingerprint: "changed",
+                hasBlockingWarnings: false
+            ))
+        }
+
+        try WalletApprovalGuard.validate(WalletSigningPreflightContext(
+            network: .devnet,
+            simulation: simulation,
+            mainnetConfirmation: "",
+            hasCompletedDevnetSmoke: false,
+            allowsUnavailableSimulation: false,
+            vaultState: .unlocked,
+            hasUnlockedSecret: true,
+            hasPreparedMessage: true,
+            preparedDraftFingerprint: fingerprint,
+            currentDraftFingerprint: fingerprint,
+            hasBlockingWarnings: false
+        ))
+    }
+
+    @Test func backupStatusIsHonestForRecoveryAndSeedOnlyWallets() {
+        let recovery = WalletProfile(
+            label: "Recovery",
+            publicAddress: SolanaConstants.systemProgramID,
+            walletOrigin: .generatedRecovery,
+            derivationPath: DerivationPath.defaultSolana.rawValue
+        )
+        let importedKey = WalletProfile(
+            label: "Imported",
+            publicAddress: SolanaConstants.systemProgramID,
+            walletOrigin: .importedPrivateKey
+        )
+
+        let recoveryStatus = WalletBackupStatus.evaluate(profile: recovery)
+        let importedStatus = WalletBackupStatus.evaluate(profile: importedKey)
+
+        #expect(recoveryStatus.recoveryPhraseConfirmed)
+        #expect(!recoveryStatus.recoveryPhraseExportAvailable)
+        #expect(recoveryStatus.riskStatus == .backedUp)
+        #expect(importedStatus.riskStatus == .seedOnlyWallet)
+        #expect(!importedStatus.recoveryPhraseExportAvailable)
+    }
+
+    @Test func walletDeleteRemovesMetadataAndVaultSecret() throws {
+        let vault = InMemoryWalletVault()
+        let suiteName = "ai.gorkh.tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let auditURL = FileManager.default.temporaryDirectory.appendingPathComponent("gorkh-delete-test-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: auditURL) }
+        let manager = WalletManager(
+            vault: vault,
+            rpcClient: SolanaRPCClient(),
+            auditLog: AuditLog(fileURL: auditURL),
+            metadataStore: WalletMetadataStore(defaults: defaults),
+            securitySettingsStore: WalletSecuritySettingsStore(defaults: defaults),
+            localAuthenticationService: MockLocalAuthenticationService(result: .success),
+            mnemonicService: Bip39MnemonicService.shared
+        )
+
+        manager.createWallet(label: "Delete Me")
+        let profile = try #require(manager.selectedProfile)
+        #expect(vault.containsSecret(for: profile.id))
+
+        manager.deleteSelectedWallet(confirmation: "wrong")
+        #expect(vault.containsSecret(for: profile.id))
+        #expect(!manager.profiles.isEmpty)
+
+        manager.deleteSelectedWallet(confirmation: "DELETE WALLET")
+        #expect(!vault.containsSecret(for: profile.id))
+        #expect(manager.profiles.isEmpty)
+        #expect(manager.auditEvents.contains { $0.kind == .walletDeleted })
+    }
+
+    @Test func localAuthenticationGateBlocksFailedUnlock() async throws {
+        let vault = InMemoryWalletVault()
+        let suiteName = "ai.gorkh.tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let auditURL = FileManager.default.temporaryDirectory.appendingPathComponent("gorkh-auth-test-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: auditURL) }
+        let manager = WalletManager(
+            vault: vault,
+            rpcClient: SolanaRPCClient(),
+            auditLog: AuditLog(fileURL: auditURL),
+            metadataStore: WalletMetadataStore(defaults: defaults),
+            securitySettingsStore: WalletSecuritySettingsStore(defaults: defaults),
+            localAuthenticationService: MockLocalAuthenticationService(result: .failed("Denied")),
+            mnemonicService: Bip39MnemonicService.shared
+        )
+
+        manager.createWallet(label: "Auth")
+        manager.lockWallet()
+        await manager.unlockWallet()
+
+        #expect(manager.vaultState == .locked)
+        #expect(manager.auditEvents.contains { $0.kind == .localAuthenticationFailed })
+    }
+
     @Test func mockVaultStoresAndDeletesSecrets() throws {
         let vault = InMemoryWalletVault()
         let walletID = UUID()
@@ -932,6 +1097,7 @@ struct GORKHTests {
         store.saveSelectedNetwork(.mainnetBeta)
 
         #expect(WalletMetadataStore.allowedKeys.allSatisfy { !Redaction.isSensitiveKey($0) })
+        #expect(WalletSecuritySettingsStore.allowedKeys.allSatisfy { !Redaction.isSensitiveKey($0) })
 
         let domain = defaults.dictionaryRepresentation()
         let persistedText = String(describing: domain)
@@ -1060,6 +1226,18 @@ private func parseMessage(_ message: Data) throws -> ParsedSolanaMessage {
 
 private enum TestParsingError: Error {
     case outOfBounds
+}
+
+private struct MockLocalAuthenticationService: LocalAuthenticationService {
+    let result: LocalAuthenticationResult
+
+    var statusDescription: String {
+        "Mock authentication"
+    }
+
+    func authenticate(reason: String) async -> LocalAuthenticationResult {
+        result
+    }
 }
 
 private func sampleTokenBalance(

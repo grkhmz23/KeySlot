@@ -20,6 +20,18 @@ struct TransactionApprovalView: View {
                     .font(.headline)
                     .foregroundStyle(GorkhColors.primaryText)
 
+                VStack(alignment: .leading, spacing: 6) {
+                    approvalRow("Network", draft.network.displayName)
+                    approvalRow("RPC", draft.network.rpcURL.absoluteString)
+                    approvalRow("From", draft.fromAddress)
+                    approvalRow("Recipient", draft.toAddress)
+                    approvalRow("Amount", draft.amountSOLText)
+                    if let fee = walletManager.simulationResult?.estimatedFeeLamports {
+                        approvalRow("Estimated fee", "\(fee) lamports")
+                    }
+                    approvalRow("Simulation", walletManager.simulationResult?.status.rawValue ?? "missing")
+                }
+
                 if draft.network.isMainnet {
                     VStack(alignment: .leading, spacing: 8) {
                         GorkhStatusChip(title: "Real mainnet transaction", systemImage: "exclamationmark.triangle.fill", color: GorkhColors.warning)
@@ -28,7 +40,7 @@ struct TransactionApprovalView: View {
                         Toggle("I have completed a devnet smoke send for this build.", isOn: $completedDevnetSmoke)
                             .toggleStyle(.checkbox)
                             .foregroundStyle(GorkhColors.warning)
-                        Text("Mainnet is present for review only until this build has proven key compatibility and transaction serialization on devnet.")
+                        Text("Mainnet transactions are irreversible and can permanently move real funds. Verify the RPC endpoint, recipient, amount, and simulation before approving.")
                             .font(.caption)
                             .foregroundStyle(GorkhColors.secondaryText)
                     }
@@ -63,7 +75,10 @@ struct TransactionApprovalView: View {
                         )
                     }
                 } label: {
-                    Label("Approve, Sign Locally, and Send", systemImage: "signature")
+                    Label(
+                        draft.network.isMainnet ? "Approve Mainnet, Sign Locally, and Send" : "Approve, Sign Locally, and Send",
+                        systemImage: "signature"
+                    )
                 }
                 .buttonStyle(.gorkhPrimary)
                 .disabled(!canApprove(draft: draft) || walletManager.vaultState != .unlocked || walletManager.isBusy)
@@ -101,5 +116,18 @@ struct TransactionApprovalView: View {
             hasCompletedDevnetSmoke: completedDevnetSmoke,
             allowsUnavailableSimulation: allowUnavailableSimulation
         )
+    }
+
+    private func approvalRow(_ title: String, _ value: String) -> some View {
+        HStack(alignment: .top) {
+            Text(title)
+                .foregroundStyle(GorkhColors.secondaryText)
+                .frame(width: 96, alignment: .leading)
+            Text(value)
+                .font(.system(.caption, design: title == "Amount" || title == "Network" || title == "Simulation" ? .default : .monospaced))
+                .foregroundStyle(GorkhColors.primaryText)
+                .textSelection(.enabled)
+            Spacer()
+        }
     }
 }
