@@ -10,6 +10,7 @@ enum PortfolioAggregator {
         prices: [String: PortfolioPriceQuote],
         stakeAccounts: [UUID: [StakeAccountSummary]] = [:],
         stakeErrors: [UUID: String] = [:],
+        lendingAdapterResults: [LendingAdapterResult] = [],
         fetchedAt: Date = Date(),
         errors: [UUID: String] = [:]
     ) -> PortfolioAggregateSummary {
@@ -46,6 +47,10 @@ enum PortfolioAggregator {
             network: network,
             refreshedAt: fetchedAt
         )
+        let lendingSummary = LendingPortfolioAggregator.aggregate(
+            adapterResults: lendingAdapterResults,
+            refreshedAt: fetchedAt
+        )
         let totalUSD = liquidAssetsUSD + (nativeStakeSummary.estimatedUSD ?? 0)
         let unavailablePriceCount = assetUnavailablePriceCount + (nativeStakeSummary.priceUnavailable ? 1 : 0)
         let liquidSolLamports = solBalances.values.reduce(UInt64(0)) { partial, lamports in
@@ -62,6 +67,7 @@ enum PortfolioAggregator {
             liquidAssetsUSD: liquidAssetsUSD,
             nativeStakeSummary: nativeStakeSummary,
             lstSummary: lstSummary,
+            lendingSummary: lendingSummary,
             totalUSD: totalUSD,
             unavailablePriceCount: unavailablePriceCount,
             assetCount: assetCount,

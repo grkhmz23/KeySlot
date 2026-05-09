@@ -22,9 +22,14 @@ struct PortfolioSummaryView: View {
                     metric("Liquid SOL", value: "\(TokenAmountFormatter.format(rawAmount: summary.liquidSolLamports, decimals: 9)) SOL")
                     metric("Staked SOL", value: "\(TokenAmountFormatter.format(rawAmount: summary.nativeStakeSummary.totalDelegatedLamports, decimals: 9)) SOL")
                     metric("LSTs", value: "\(summary.lstSummary.holdingCount)")
+                    metric("Lending Net", value: summary.lendingSummary.netValueUSD?.portfolioCurrencyText ?? "Separate")
                     metric("Missing Prices", value: "\(summary.unavailablePriceCount)")
                     metric("Source", value: summary.priceSource)
                 }
+
+                Text("Lending values are tracked separately from wallet token balances and are not added to total value.")
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.secondaryText)
 
                 if summary.status == .idle {
                     Text("Refresh Portfolio to load read-only SOL, SPL, and USD estimates.")

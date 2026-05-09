@@ -15,7 +15,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Phase 1 keeps signer access local to this Mac.")
                             .foregroundStyle(GorkhColors.primaryText)
-                        Text("Agent execution, swaps, staking, lending, bridging, and autonomous sends are intentionally not implemented.")
+                        Text("Agent execution, staking execution, lending execution, bridging, and autonomous sends are intentionally not implemented. Swaps require native review, simulation, approval, and local signing.")
                             .foregroundStyle(GorkhColors.secondaryText)
                     }
                 }

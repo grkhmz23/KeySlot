@@ -4,7 +4,7 @@ enum PortfolioDeFiPlaceholderContent {
     static let items = [
         ("DeFi positions", "coming later"),
         ("LP positions", "coming later"),
-        ("Lending positions", "coming later"),
+        ("Lending execution", "locked"),
         ("Yield routes", "coming later"),
         ("PnL", "coming later")
     ]

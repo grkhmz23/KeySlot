@@ -9,11 +9,17 @@ struct PortfolioManager {
     let rpcClient: SolanaRPCClient
     let priceClient: any PortfolioPriceClient
     let stakeClient: StakeAccountClient
+    let lendingAdapters: [any LendingPositionAdapter]
 
-    init(rpcClient: SolanaRPCClient, priceClient: any PortfolioPriceClient) {
+    init(
+        rpcClient: SolanaRPCClient,
+        priceClient: any PortfolioPriceClient,
+        lendingAdapters: [any LendingPositionAdapter] = [KaminoReadOnlyAdapter(), MarginFiReadOnlyAdapter()]
+    ) {
         self.rpcClient = rpcClient
         self.priceClient = priceClient
         self.stakeClient = StakeAccountClient(rpcClient: rpcClient)
+        self.lendingAdapters = lendingAdapters
     }
 
     func refresh(
@@ -80,6 +86,15 @@ struct PortfolioManager {
             priceError = error.localizedDescription
         }
 
+        var lendingResults: [LendingAdapterResult] = []
+        for adapter in lendingAdapters {
+            lendingResults.append(await adapter.fetchPositions(
+                profiles: scopedProfiles,
+                network: network,
+                prices: prices
+            ))
+        }
+
         let summary = PortfolioAggregator.aggregate(
             scope: scope,
             network: network,
@@ -89,6 +104,7 @@ struct PortfolioManager {
             prices: prices,
             stakeAccounts: stakeAccounts,
             stakeErrors: stakeErrors,
+            lendingAdapterResults: lendingResults,
             fetchedAt: Date(),
             errors: walletErrors
         )
@@ -104,6 +120,7 @@ struct PortfolioManager {
                     liquidAssetsUSD: summary.liquidAssetsUSD,
                     nativeStakeSummary: summary.nativeStakeSummary,
                     lstSummary: summary.lstSummary,
+                    lendingSummary: summary.lendingSummary,
                     totalUSD: summary.totalUSD,
                     unavailablePriceCount: summary.unavailablePriceCount,
                     assetCount: summary.assetCount,

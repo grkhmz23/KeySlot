@@ -192,7 +192,12 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
                 .stakeRefreshFailed,
                 .lstComparisonRefreshed,
                 .lstDataUnavailable,
-                .portfolioStakeSnapshotStored
+                .portfolioStakeSnapshotStored,
+                .lendingRefreshed,
+                .lendingAdapterUnavailable,
+                .lendingAdapterError,
+                .lendingSnapshotStored,
+                .lendingActionBlocked
             ].contains(event.kind)
         case .security:
             return [.walletAutoLocked, .securityPolicyUpdated, .localAuthenticationFailed].contains(event.kind)
@@ -210,6 +215,9 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
                 .portfolioPriceRefreshFailed,
                 .stakeRefreshFailed,
                 .lstDataUnavailable,
+                .lendingAdapterUnavailable,
+                .lendingAdapterError,
+                .lendingActionBlocked,
                 .swapQuoteFailed,
                 .swapSimulationFailed,
                 .swapFailed,
@@ -267,6 +275,9 @@ private extension AuditEvent {
             "nativeStakeLamports",
             "lstHoldingCount",
             "lstPriceUnavailableCount",
+            "lendingPositionCount",
+            "lendingRiskyPositionCount",
+            "lendingUnavailableAdapterCount",
             "unavailablePriceCount",
             "priceSource",
             "status",

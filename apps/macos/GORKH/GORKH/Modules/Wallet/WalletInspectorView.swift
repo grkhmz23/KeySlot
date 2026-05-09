@@ -30,7 +30,8 @@ struct WalletInspectorView: View {
                     safetyLine("No automatic send")
                     safetyLine("No backend secret upload")
                     safetyLine("No agent signer access")
-                    safetyLine("No swap or DeFi execution")
+                    safetyLine("Swaps require review and approval")
+                    safetyLine("No lending or DeFi execution")
                 }
             }
 

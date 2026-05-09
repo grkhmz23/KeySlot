@@ -1879,6 +1879,107 @@ struct GORKHTests {
         #expect(visibleCopy.contains("lending"))
     }
 
+    @Test func lendingModelsSerializeWithoutSecretsAndActionsStayLocked() throws {
+        let profile = WalletProfile(label: "Lender", publicAddress: SolanaConstants.systemProgramID)
+        let position = sampleLendingPosition(
+            profile: profile,
+            protocolKind: .kamino,
+            suppliedUSD: 100,
+            borrowedUSD: 25,
+            healthFactor: Decimal(string: "2.0", locale: Locale(identifier: "en_US_POSIX"))
+        )
+        let result = LendingAdapterResult(
+            protocolKind: .kamino,
+            status: .loaded,
+            positions: [position],
+            source: .publicAPI,
+            updatedAt: Date(timeIntervalSince1970: 0),
+            errorMessage: nil
+        )
+        let summary = LendingPortfolioAggregator.aggregate(adapterResults: [result], refreshedAt: Date(timeIntervalSince1970: 0))
+        let json = try #require(String(data: JSONEncoder().encode(summary), encoding: .utf8)).lowercased()
+
+        #expect(summary.positionCount == 1)
+        #expect(summary.suppliedValueUSD == 100)
+        #expect(summary.borrowedValueUSD == 25)
+        #expect(summary.netValueUSD == 75)
+        #expect(summary.noDoubleCountNotice.lowercased().contains("separately"))
+        #expect(LendingLockedAction.allCases.allSatisfy { !$0.isEnabled })
+        for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "serializedtransaction", "transactionpayload"] {
+            #expect(!json.contains(forbidden))
+        }
+    }
+
+    @Test func lendingUnavailableAdaptersAreHonestAndRiskMappingIsDeterministic() async {
+        let profile = WalletProfile(label: "Read Only", publicAddress: SolanaConstants.systemProgramID)
+        let kamino = await KaminoReadOnlyAdapter().fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
+        let margin = await MarginFiReadOnlyAdapter().fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
+        let summary = LendingPortfolioAggregator.aggregate(adapterResults: [kamino, margin], refreshedAt: Date(timeIntervalSince1970: 0))
+
+        #expect(kamino.status == .unavailable)
+        #expect(margin.status == .unavailable)
+        #expect(kamino.positions.isEmpty)
+        #expect(margin.positions.isEmpty)
+        #expect(summary.status == .unavailable)
+        #expect(summary.unavailableAdapterCount == 2)
+        #expect(LendingHealthSummary.riskLevel(healthFactor: Decimal(string: "2.0"), ltv: nil) == .healthy)
+        #expect(LendingHealthSummary.riskLevel(healthFactor: Decimal(string: "1.3"), ltv: nil) == .caution)
+        #expect(LendingHealthSummary.riskLevel(healthFactor: Decimal(string: "1.1"), ltv: nil) == .highRisk)
+        #expect(LendingHealthSummary.riskLevel(healthFactor: Decimal(string: "1.0"), ltv: nil) == .liquidationRisk)
+        #expect(LendingHealthSummary.riskLevel(healthFactor: nil, ltv: nil) == .unavailable)
+    }
+
+    @Test func lendingSummaryStaysSeparateFromPortfolioTotalsAndSnapshotsSafely() throws {
+        let profile = WalletProfile(label: "Portfolio Lender", publicAddress: SolanaConstants.systemProgramID)
+        let lendingPosition = sampleLendingPosition(
+            profile: profile,
+            protocolKind: .marginFi,
+            suppliedUSD: 200,
+            borrowedUSD: 50,
+            healthFactor: Decimal(string: "1.1", locale: Locale(identifier: "en_US_POSIX"))
+        )
+        let lendingResult = LendingAdapterResult(
+            protocolKind: .marginFi,
+            status: .loaded,
+            positions: [lendingPosition],
+            source: .publicAPI,
+            updatedAt: Date(timeIntervalSince1970: 0),
+            errorMessage: nil
+        )
+        let prices = [
+            PortfolioConstants.nativeSolMint: PortfolioPriceQuote(
+                mintAddress: PortfolioConstants.nativeSolMint,
+                usdPrice: 100,
+                source: PortfolioConstants.priceSource,
+                blockID: 1,
+                priceChange24h: nil,
+                fetchedAt: Date(),
+                errorMessage: nil
+            )
+        ]
+        let summary = PortfolioAggregator.aggregate(
+            scope: .activeWallet,
+            network: .mainnetBeta,
+            profiles: [profile],
+            solBalances: [profile.id: 1_000_000_000],
+            tokenBalances: [:],
+            prices: prices,
+            lendingAdapterResults: [lendingResult]
+        )
+        let snapshot = PortfolioSnapshot(summary: summary)
+        let json = try #require(String(data: JSONEncoder().encode(snapshot), encoding: .utf8)).lowercased()
+
+        #expect(summary.totalUSD == 100)
+        #expect(summary.lendingSummary.netValueUSD == 150)
+        #expect(summary.lendingSummary.riskyPositionCount == 1)
+        #expect(snapshot.lendingPositionCount == 1)
+        #expect(snapshot.lendingRiskyPositionCount == 1)
+        #expect(snapshot.lendingNetValueUSD == 150)
+        for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "serializedtransaction", "transactionpayload"] {
+            #expect(!json.contains(forbidden))
+        }
+    }
+
     @Test func swapQuoteRequestValidationAndEndpointGuard() throws {
         let usdcMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
         let url = try JupiterQuoteClient.quoteURL(
@@ -2844,6 +2945,60 @@ private func sampleStakeAccount(
         withdrawerAuthorityMatches: false,
         source: StakeConstants.source,
         fetchedAt: Date(timeIntervalSince1970: 0),
+        errorMessage: nil
+    )
+}
+
+private func sampleLendingPosition(
+    profile: WalletProfile,
+    protocolKind: LendingProtocolKind,
+    suppliedUSD: Decimal,
+    borrowedUSD: Decimal,
+    healthFactor: Decimal?
+) -> LendingPositionSummary {
+    let supplied = LendingAssetAmount(
+        mintAddress: PortfolioConstants.nativeSolMint,
+        symbol: "SOL",
+        name: "Solana",
+        amountRaw: 1_000_000_000,
+        decimals: 9,
+        uiAmountString: "1",
+        usdValue: suppliedUSD,
+        priceQuote: nil,
+        source: .publicAPI
+    )
+    let borrowed = LendingAssetAmount(
+        mintAddress: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        symbol: "USDC",
+        name: "USD Coin",
+        amountRaw: UInt64((borrowedUSD as NSDecimalNumber).uint64Value * 1_000_000),
+        decimals: 6,
+        uiAmountString: "\(borrowedUSD)",
+        usdValue: borrowedUSD,
+        priceQuote: nil,
+        source: .publicAPI
+    )
+    let health = LendingHealthSummary(
+        ltv: nil,
+        liquidationThreshold: nil,
+        healthFactor: healthFactor,
+        riskLevel: LendingHealthSummary.riskLevel(healthFactor: healthFactor, ltv: nil),
+        unavailableReason: healthFactor == nil ? "Unavailable in sample." : nil
+    )
+
+    return LendingPositionSummary(
+        walletID: profile.id,
+        walletLabel: profile.label,
+        walletPublicAddress: profile.publicAddress,
+        network: profile.selectedNetwork,
+        protocolKind: protocolKind,
+        suppliedAssets: [supplied],
+        borrowedAssets: [borrowed],
+        netValueUSD: suppliedUSD - borrowedUSD,
+        health: health,
+        source: .publicAPI,
+        updatedAt: Date(timeIntervalSince1970: 0),
+        status: .loaded,
         errorMessage: nil
     )
 }

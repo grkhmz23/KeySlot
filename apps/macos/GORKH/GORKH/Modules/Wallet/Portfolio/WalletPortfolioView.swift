@@ -63,6 +63,7 @@ struct WalletPortfolioView: View {
             PortfolioWalletBreakdownView(summary: walletManager.portfolioSummary)
             PortfolioStakeView(summary: walletManager.portfolioSummary.nativeStakeSummary)
             PortfolioLSTView(summary: walletManager.portfolioSummary.lstSummary)
+            PortfolioLendingView(summary: walletManager.portfolioSummary.lendingSummary)
             PortfolioHistoryView(
                 snapshots: walletManager.portfolioHistory,
                 clearAction: walletManager.clearPortfolioHistory(confirmation:)

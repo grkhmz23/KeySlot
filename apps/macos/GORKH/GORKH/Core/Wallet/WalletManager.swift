@@ -1134,6 +1134,8 @@ final class WalletManager: ObservableObject {
                 "assetCount": "\(result.summary.assetCount)",
                 "stakeAccountCount": "\(result.summary.nativeStakeSummary.accountCount)",
                 "lstHoldingCount": "\(result.summary.lstSummary.holdingCount)",
+                "lendingPositionCount": "\(result.summary.lendingSummary.positionCount)",
+                "lendingUnavailableAdapterCount": "\(result.summary.lendingSummary.unavailableAdapterCount)",
                 "unavailablePriceCount": "\(result.summary.unavailablePriceCount)",
                 "priceSource": result.summary.priceSource
             ]
@@ -1172,6 +1174,23 @@ final class WalletManager: ObservableObject {
             ]
         )
 
+        let lendingStatus = result.summary.lendingSummary.status
+        record(
+            kind: lendingAuditKind(for: lendingStatus),
+            walletID: selectedWalletID,
+            publicAddress: selectedProfile?.publicAddress,
+            message: lendingAuditMessage(for: lendingStatus),
+            details: [
+                "network": selectedNetwork.rawValue,
+                "portfolioScope": selectedPortfolioScope.rawValue,
+                "lendingPositionCount": "\(result.summary.lendingSummary.positionCount)",
+                "lendingRiskyPositionCount": "\(result.summary.lendingSummary.riskyPositionCount)",
+                "lendingUnavailableAdapterCount": "\(result.summary.lendingSummary.unavailableAdapterCount)",
+                "status": result.summary.lendingSummary.status.rawValue,
+                "source": result.summary.lendingSummary.source
+            ]
+        )
+
         if let priceError = result.priceErrorMessage {
             record(
                 kind: .portfolioPriceRefreshFailed,
@@ -1200,8 +1219,23 @@ final class WalletManager: ObservableObject {
                     "assetCount": "\(snapshot.assetCount)",
                     "stakeAccountCount": "\(snapshot.stakeAccountCount)",
                     "lstHoldingCount": "\(snapshot.lstHoldingCount)",
+                    "lendingPositionCount": "\(snapshot.lendingPositionCount)",
+                    "lendingUnavailableAdapterCount": "\(snapshot.lendingUnavailableAdapterCount)",
                     "unavailablePriceCount": "\(snapshot.unavailablePriceCount)",
                     "priceSource": snapshot.priceSource
+                ]
+            )
+            record(
+                kind: .lendingSnapshotStored,
+                walletID: selectedWalletID,
+                publicAddress: selectedProfile?.publicAddress,
+                message: "Portfolio lending snapshot summary stored locally.",
+                details: [
+                    "network": selectedNetwork.rawValue,
+                    "portfolioScope": selectedPortfolioScope.rawValue,
+                    "lendingPositionCount": "\(snapshot.lendingPositionCount)",
+                    "lendingRiskyPositionCount": "\(snapshot.lendingRiskyPositionCount)",
+                    "lendingUnavailableAdapterCount": "\(snapshot.lendingUnavailableAdapterCount)"
                 ]
             )
             if snapshot.stakeAccountCount > 0 || snapshot.lstHoldingCount > 0 {
@@ -1225,6 +1259,34 @@ final class WalletManager: ObservableObject {
         }
 
         statusMessage = "Portfolio refreshed."
+    }
+
+    private func lendingAuditKind(for status: LendingAdapterStatus) -> AuditEvent.Kind {
+        switch status {
+        case .error:
+            return .lendingAdapterError
+        case .unavailable:
+            return .lendingAdapterUnavailable
+        case .idle, .loaded, .empty, .stale:
+            return .lendingRefreshed
+        }
+    }
+
+    private func lendingAuditMessage(for status: LendingAdapterStatus) -> String {
+        switch status {
+        case .loaded:
+            return "Lending positions refreshed read-only."
+        case .empty:
+            return "Lending adapters returned no positions."
+        case .unavailable:
+            return "Lending adapters are unavailable; no positions are shown."
+        case .error:
+            return "Lending adapter refresh failed."
+        case .stale:
+            return "Lending positions refreshed with stale or partial data."
+        case .idle:
+            return "Lending dashboard is idle."
+        }
     }
 
     func clearPortfolioHistory(confirmation: String) {
