@@ -16,6 +16,10 @@ export function response(
     signerRequestSummary?: CloakBridgeResponse["signerRequestSummary"];
     nextRequiredGates?: CloakBridgeResponse["nextRequiredGates"];
   },
+  executionIdentifiers?: {
+    txSignature?: string;
+    commitmentPrefix?: string;
+  },
 ): CloakBridgeResponse {
   return {
     id: randomUUID(),
@@ -32,6 +36,8 @@ export function response(
     environmentValidation: options.environmentValidation,
     signerRequestSummary: options.signerRequestSummary,
     nextRequiredGates: options.nextRequiredGates,
+    txSignature: executionIdentifiers?.txSignature,
+    commitmentPrefix: executionIdentifiers?.commitmentPrefix,
     timestamp: new Date().toISOString(),
   };
 }

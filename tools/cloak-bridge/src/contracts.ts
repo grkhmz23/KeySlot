@@ -21,9 +21,9 @@ export type CloakBridgeCommand =
 
 export type CloakActionKind =
   | "deposit"
-  | "private-transfer"
-  | "full-withdraw"
-  | "partial-withdraw"
+  | "private_transfer"
+  | "full_withdraw"
+  | "partial_withdraw"
   | "scan";
 
 export type CloakBridgeStatus =
@@ -154,6 +154,54 @@ export const ALLOWED_COMMANDS: CloakBridgeCommand[] = [
   "env-check",
   "deposit-plan",
 ];
+
+export const EXECUTION_COMMANDS: CloakBridgeCommand[] = [
+  "execute-deposit",
+  "full-withdraw",
+];
+
+export type CloakSigningRequestKind = "sign_transaction" | "sign_message";
+
+export type CloakSigningRequestFrame = {
+  type: "sign-request";
+  id: string;
+  requestId?: string;
+  signingKind: CloakSigningRequestKind;
+  walletPublicKey: string;
+  network: "mainnet-beta";
+  actionKind: "deposit" | "full_withdraw";
+  amountLamports: string;
+  mintAddress: string;
+  programId: string;
+  draftFingerprint: string;
+  purpose: string;
+  payloadBase64: string;
+  timestamp: string;
+  expiresAt: string;
+};
+
+export type CloakSigningResponseFrame = {
+  type: "sign-response";
+  id: string;
+  signedPayloadBase64: string;
+};
+
+export type CloakExecutionResultFrame = {
+  type: "result";
+  response: CloakBridgeResponse;
+  secureOutputStateBase64?: string;
+  secureViewingStateBase64?: string;
+  secureSpentStateBase64?: string;
+  leafIndex?: number;
+};
+
+export type CloakExecutionRequest = CloakBridgeRequest & {
+  approvedDraftFingerprint?: string;
+  recipientAddress?: string;
+  rpcUrl?: string;
+  relayUrl?: string;
+  spendStateBase64?: string;
+};
 
 export function calculateFeeQuote(amountLamports: string | number): CloakFeeQuote {
   const gross = parseLamports(amountLamports);

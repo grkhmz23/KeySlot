@@ -1492,6 +1492,137 @@ struct GORKHTests {
         #expect(response.transactionSignature == nil)
     }
 
+    @Test func cloakSigningRequestValidatorRequiresExactApprovedContext() throws {
+        let requestID = UUID()
+        let fingerprint = "approved-fingerprint"
+        let request = try CloakBridgeSigningRequest.testRequest(
+            requestID: requestID,
+            fingerprint: fingerprint
+        )
+        let context = CloakSigningApprovalContext(
+            requestID: requestID,
+            command: .executeDeposit,
+            actionKind: .deposit,
+            walletPublicKey: SolanaConstants.systemProgramID,
+            network: .mainnetBeta,
+            amountLamports: 50_000_000,
+            mintAddress: CloakConstants.nativeSolMint,
+            programID: CloakConstants.programID,
+            approvedDraftFingerprint: fingerprint,
+            feeAcknowledged: true,
+            shieldReviewCompleted: true,
+            explicitApproval: true,
+            mainnetConfirmation: TransactionApprovalPolicy.requiredMainnetConfirmation
+        )
+
+        try CloakSigningRequestValidator.validate(request, context: context)
+
+        #expect(throws: CloakExecutionBridgeError.self) {
+            try CloakSigningRequestValidator.validate(
+                request.replacing(programID: "bad-program"),
+                context: context
+            )
+        }
+        #expect(throws: CloakExecutionBridgeError.self) {
+            try CloakSigningRequestValidator.validate(
+                request.replacing(walletPublicKey: "different-wallet"),
+                context: context
+            )
+        }
+        #expect(throws: CloakExecutionBridgeError.self) {
+            try CloakSigningRequestValidator.validate(
+                request.replacing(amountLamports: 49_999_999),
+                context: context
+            )
+        }
+        #expect(throws: CloakExecutionBridgeError.self) {
+            try CloakSigningRequestValidator.validate(
+                request.replacing(expiresAt: Date().addingTimeInterval(-1)),
+                context: context
+            )
+        }
+        #expect(throws: CloakExecutionBridgeError.self) {
+            try CloakSigningRequestValidator.validate(
+                request,
+                context: CloakSigningApprovalContext(
+                    requestID: requestID,
+                    command: .executeDeposit,
+                    actionKind: .deposit,
+                    walletPublicKey: SolanaConstants.systemProgramID,
+                    network: .mainnetBeta,
+                    amountLamports: 50_000_000,
+                    mintAddress: CloakConstants.nativeSolMint,
+                    programID: CloakConstants.programID,
+                    approvedDraftFingerprint: fingerprint,
+                    feeAcknowledged: true,
+                    shieldReviewCompleted: true,
+                    explicitApproval: false,
+                    mainnetConfirmation: TransactionApprovalPolicy.requiredMainnetConfirmation
+                )
+            )
+        }
+    }
+
+    @Test func cloakPrivateRecordMetadataAndExecutionFramesStaySafeToSerialize() throws {
+        let metadata = CloakPrivateRecordMetadata(
+            id: UUID(),
+            walletID: UUID(),
+            walletPublicKey: SolanaConstants.systemProgramID,
+            mintAddress: CloakConstants.nativeSolMint,
+            amountLamports: 44_850_000,
+            commitmentPrefix: "abcdef123456",
+            leafIndex: 7,
+            depositSignature: "depositSignature",
+            withdrawSignature: nil,
+            requestID: UUID(),
+            state: .deposited,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+        let frame = CloakExecutionResultFrame(
+            type: "result",
+            response: CloakBridgeResponse(
+                requestID: metadata.requestID,
+                command: .executeDeposit,
+                actionKind: .deposit,
+                status: .ok,
+                message: "safe",
+                transactionSignature: "depositSignature",
+                commitmentPrefix: "abcdef123456"
+            ),
+            secureOutputStateBase64: Data([1, 2, 3]).base64EncodedString(),
+            secureViewingStateBase64: Data([4, 5, 6]).base64EncodedString(),
+            secureSpentStateBase64: nil,
+            leafIndex: 7
+        )
+
+        try CloakBridgeContractValidator.validate(metadata)
+        try CloakBridgeContractValidator.validate(frame.response)
+
+        let combined = try #require(String(
+            data: JSONEncoder().encode([String(data: JSONEncoder().encode(metadata), encoding: .utf8) ?? ""]),
+            encoding: .utf8
+        )).lowercased()
+        for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "utxoprivatekey", "nullifier", "proofinput", "transactionpayload"] {
+            #expect(!combined.contains(forbidden))
+        }
+        #expect(frame.response.transactionSignature == "depositSignature")
+        #expect(frame.secureOutputStateBase64 != nil)
+    }
+
+    @Test func cloakPhase25AllowsOnlyDepositAndFullWithdrawExecutionCommands() {
+        let policy = CloakBridgeExecutionPolicy.phase25Enabled(allowedNodeExecutablePaths: ["/usr/bin/node"])
+
+        #expect(policy.allowedCommands.contains(.executeDeposit))
+        #expect(policy.allowedCommands.contains(.fullWithdraw))
+        #expect(CloakBridgeCommand.executeDeposit.isHelperCommandAllowedInPhase25)
+        #expect(CloakBridgeCommand.fullWithdraw.isHelperCommandAllowedInPhase25)
+        #expect(!policy.allowedCommands.contains(.partialWithdraw))
+        #expect(!CloakBridgeCommand.partialWithdraw.isHelperCommandAllowedInPhase25)
+        #expect(!CloakBridgeCommand.privateTransfer.isHelperCommandAllowedInPhase25)
+        #expect(!CloakBridgeCommand.swap.isHelperCommandAllowedInPhase25)
+    }
+
     @Test func portfolioModelsAndSnapshotsSerializeWithoutSecrets() throws {
         let profile = WalletProfile(label: "Portfolio", publicAddress: SolanaConstants.systemProgramID)
         let token = sampleTokenBalance(owner: profile.publicAddress, amountRaw: 1_000_000, decimals: 6)
@@ -3957,6 +4088,57 @@ private extension CloakBridgeResponse {
             feeValidation: feeValidation,
             environmentValidation: environmentValidation,
             nextRequiredGates: nextRequiredGates
+        )
+    }
+}
+
+@MainActor private extension CloakBridgeSigningRequest {
+    static func testRequest(
+        requestID: UUID,
+        fingerprint: String,
+        id: UUID = UUID(),
+        programID: String = CloakConstants.programID,
+        walletPublicKey: String = SolanaConstants.systemProgramID,
+        amountLamports: UInt64 = 50_000_000,
+        expiresAt: Date = Date().addingTimeInterval(120)
+    ) throws -> CloakBridgeSigningRequest {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let object: [String: Any] = [
+            "type": "sign-request",
+            "id": id.uuidString,
+            "requestId": requestID.uuidString,
+            "signingKind": "sign_transaction",
+            "walletPublicKey": walletPublicKey,
+            "network": WalletNetwork.mainnetBeta.rawValue,
+            "actionKind": CloakActionKind.deposit.rawValue,
+            "amountLamports": "\(amountLamports)",
+            "mintAddress": CloakConstants.nativeSolMint,
+            "programId": programID,
+            "draftFingerprint": fingerprint,
+            "purpose": "Approve Cloak SOL deposit transaction.",
+            "payloadBase64": Data([1, 2, 3]).base64EncodedString(),
+            "timestamp": ISO8601DateFormatter().string(from: Date()),
+            "expiresAt": ISO8601DateFormatter().string(from: expiresAt)
+        ]
+        let data = try JSONSerialization.data(withJSONObject: object)
+        return try decoder.decode(CloakBridgeSigningRequest.self, from: data)
+    }
+
+    func replacing(
+        programID: String? = nil,
+        walletPublicKey: String? = nil,
+        amountLamports: UInt64? = nil,
+        expiresAt: Date? = nil
+    ) throws -> CloakBridgeSigningRequest {
+        try CloakBridgeSigningRequest.testRequest(
+            requestID: requestID ?? UUID(),
+            fingerprint: draftFingerprint,
+            id: id,
+            programID: programID ?? self.programID,
+            walletPublicKey: walletPublicKey ?? self.walletPublicKey,
+            amountLamports: amountLamports ?? self.amountLamports,
+            expiresAt: expiresAt ?? self.expiresAt
         )
     }
 }

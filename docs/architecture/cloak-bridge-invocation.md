@@ -1,19 +1,22 @@
 # Cloak Bridge Invocation
 
-Phase 2.4 keeps native invocation disabled by default, validates SDK import and environment state, and adds locked signer request summaries without executing SDK transaction methods.
+Phase 2.5 keeps the helper behind the fixed native bridge and enables only reviewed Cloak SOL deposit/full-withdraw execution. All other Cloak execution paths remain locked.
 
 ## Allowed Commands
 
-Only dry-run commands are allowed:
+Dry-run commands remain allowed:
 
 - `health`
 - `env-check`
 - `deposit-plan`
 
-All transaction or history commands remain locked:
+Execution commands allowed only through the interactive native signer bridge:
 
 - `execute-deposit`
 - `full-withdraw`
+
+All other transaction or history commands remain locked:
+
 - `partial-withdraw`
 - `private-transfer`
 - `swap`
@@ -22,7 +25,7 @@ All transaction or history commands remain locked:
 
 ## Process Boundary
 
-The adapter uses direct process invocation only when an internal development policy enables it. It must not use `/bin/sh`, `sh -c`, or user-provided command strings.
+The adapter uses direct process invocation only. It must not use `/bin/sh`, `sh -c`, or user-provided command strings.
 
 The helper path is fixed:
 
@@ -38,20 +41,32 @@ No arbitrary executable path or helper path is accepted.
 
 ## Data Boundary
 
-Swift validates requests before invocation and validates responses after invocation. The helper also validates input before handling commands.
+Swift validates requests before invocation, validates every signing request from the helper, and validates final responses. The helper also validates input before handling commands.
 
 Forbidden fields include private keys, secret keys, signing seeds, seed phrases, mnemonics, wallet JSON, UTXO private keys, notes, viewing keys, nullifiers, proof inputs, serialized transactions, transaction payloads, transaction bytes, message bytes, raw messages, raw transactions, and raw signer bytes.
 
-## SDK Validation
+## SDK Validation and Execution
 
-The helper may import `@cloak.dev/sdk` for non-executing checks only:
+The helper may import `@cloak.dev/sdk` for validation:
 
 - SDK import/package version
 - `CLOAK_PROGRAM_ID`
 - `NATIVE_SOL_MINT`
 - SDK SOL fee helpers, if exported
 
-The helper must not call Cloak transaction, proof, scan, compliance, relay submit, signer, or serialized-transaction APIs in Phase 2.4.
+For Phase 2.5 execution, the helper may call only:
+
+- `generateUtxoKeypair`
+- `createUtxo`
+- `createZeroUtxo`
+- `transact`
+- `fullWithdraw`
+- `serializeUtxo`
+- `deserializeUtxo`
+- `getNkFromUtxoPrivateKey`
+- SDK parsing helpers for safe errors
+
+The helper must not call private transfer, swap, partial withdraw, scan, compliance export, relay submit, or any method that signs directly in TypeScript.
 
 ## Signer Bridge Summary
 
@@ -61,6 +76,8 @@ The helper must not return transaction bytes, message bytes, serialized transact
 
 ## Execution State
 
-Even when dry-run invocation is enabled, `deposit-plan` returns SDK validation, environment-safe fee validation, a fee quote, a locked signer request summary, and locked status only. It does not return a serialized transaction, signer bytes, SDK payload, proof input, note, UTXO, message bytes, transaction bytes, or executable instruction.
+`deposit-plan` returns SDK validation, environment-safe fee validation, a fee quote, a locked signer request summary, and locked status only. It does not return a serialized transaction, signer bytes, SDK payload, proof input, note, UTXO, message bytes, transaction bytes, or executable instruction.
 
-Future live Cloak deposit work must add a separate reviewed payload, approval, native signing, execution, confirmation, and audit phase.
+`execute-deposit` and `full-withdraw` are line-framed interactive commands. They may emit signing requests with payload bytes only over stdin/stdout during the approved operation. Final responses include safe summaries plus secure state blobs for Swift Keychain storage. Those secure state blobs must not be logged, audited, stored in UserDefaults, or sent to Agent/Assistant context.
+
+The helper process receives no secret environment. Until a header-safe RPC proxy is added for RPC Fast authentication, the Cloak helper uses a public mainnet RPC URL for SDK execution rather than receiving RPC provider tokens.

@@ -32,6 +32,7 @@ final class WalletManager: ObservableObject {
     @Published private(set) var cloakBridgeResponse: CloakBridgeResponseSummary?
     @Published private(set) var cloakBridgeContractResponse: CloakBridgeResponse?
     @Published private(set) var cloakHelperInvocationStatus: CloakHelperInvocationStatus = .disabled
+    @Published private(set) var cloakPrivateRecords: [CloakPrivateRecordMetadata] = []
     @Published var selectedPortfolioScope: PortfolioWalletScope = .activeWallet
     @Published private(set) var portfolioSummary: PortfolioAggregateSummary = .empty()
     @Published private(set) var portfolioHistory: [PortfolioSnapshot] = []
@@ -60,6 +61,7 @@ final class WalletManager: ObservableObject {
     private let cloakBridge: any CloakBridgeProtocol
     private let cloakPrivateVault: any CloakPrivateVault
     private let cloakHelperInvocationAdapter: CloakHelperInvocationAdapter
+    private let cloakExecutionBridge: CloakExecutionBridge
     private let cloakSignerBridgePolicy: CloakSignerBridgePolicy
     private let portfolioRefreshService: PortfolioManager
     private let portfolioSnapshotStore: PortfolioSnapshotStore
@@ -220,8 +222,14 @@ final class WalletManager: ObservableObject {
             localAuthenticationService: SystemLocalAuthenticationService(),
             mnemonicService: Bip39MnemonicService.shared,
             cloakBridge: CloakBridgeUnavailable(),
-            cloakPrivateVault: CloakPrivateVaultStatusOnly(),
-            cloakHelperInvocationAdapter: .disabled(),
+            cloakPrivateVault: KeychainCloakPrivateVault(),
+            cloakHelperInvocationAdapter: CloakHelperInvocationAdapter(
+                policy: .phase25Enabled(),
+                projectRoot: CloakProjectRootResolver.resolve(),
+                pathResolver: CloakHelperPathResolver(),
+                processRunner: CloakHelperDirectProcessRunner()
+            ),
+            cloakExecutionBridge: .liveDefault(),
             portfolioPriceClient: JupiterPriceClient(),
             portfolioSnapshotStore: PortfolioSnapshotStore()
         )
@@ -238,6 +246,7 @@ final class WalletManager: ObservableObject {
         cloakBridge: any CloakBridgeProtocol,
         cloakPrivateVault: any CloakPrivateVault,
         cloakHelperInvocationAdapter: CloakHelperInvocationAdapter,
+        cloakExecutionBridge: CloakExecutionBridge? = nil,
         portfolioPriceClient: (any PortfolioPriceClient)? = nil,
         portfolioSnapshotStore: PortfolioSnapshotStore? = nil,
         pusdCirculationClient: PUSDCirculationClient? = nil,
@@ -256,7 +265,8 @@ final class WalletManager: ObservableObject {
         self.cloakBridge = cloakBridge
         self.cloakPrivateVault = cloakPrivateVault
         self.cloakHelperInvocationAdapter = cloakHelperInvocationAdapter
-        self.cloakSignerBridgePolicy = .locked
+        self.cloakExecutionBridge = cloakExecutionBridge ?? .liveDefault()
+        self.cloakSignerBridgePolicy = .phase25
         self.portfolioRefreshService = PortfolioManager(rpcClient: rpcClient, priceClient: resolvedPortfolioPriceClient)
         self.portfolioSnapshotStore = portfolioSnapshotStore ?? PortfolioSnapshotStore()
         self.pusdCirculationClient = pusdCirculationClient ?? PUSDCirculationClient()
@@ -275,6 +285,7 @@ final class WalletManager: ObservableObject {
         portfolioHistory = Array(self.portfolioSnapshotStore.load().reversed())
         refreshVaultState()
         refreshCloakVaultStatus(recordAudit: false)
+        cloakPrivateRecords = cloakPrivateVault.records(for: selectedWalletID)
     }
 
     func selectProfile(_ profileID: UUID?) {
@@ -302,6 +313,7 @@ final class WalletManager: ObservableObject {
         cloakSignerPreflightResult = nil
         cloakBridgeResponse = nil
         cloakBridgeContractResponse = nil
+        cloakPrivateRecords = []
         portfolioSummary = .empty(scope: selectedPortfolioScope, network: selectedNetwork)
         portfolioStatus = .idle
         portfolioErrorMessage = nil
@@ -344,6 +356,7 @@ final class WalletManager: ObservableObject {
         resetSwapState()
         cloakBridgeResponse = cloakBridge.validateEnvironment(network: network)
         cloakBridgeContractResponse = cloakBridge.environmentCheck(network: network)
+        cloakPrivateRecords = cloakPrivateVault.records(for: selectedWalletID)
     }
 
     func refreshRPCProviderHealth() async {
@@ -403,7 +416,7 @@ final class WalletManager: ObservableObject {
             details: [
                 "cloakProgramID": CloakConstants.programID,
                 "bridgeStatus": cloakAdapterStatus.rawValue,
-                "phase": "2.4"
+                "phase": "2.5"
             ]
         )
         record(
@@ -415,7 +428,7 @@ final class WalletManager: ObservableObject {
                 "cloakProgramID": CloakConstants.programID,
                 "bridgeStatus": cloakAdapterStatus.rawValue,
                 "signingEnabled": "\(cloakSignerBridgePolicy.signingEnabled)",
-                "phase": "2.4"
+                "phase": "2.5"
             ]
         )
     }
@@ -423,6 +436,7 @@ final class WalletManager: ObservableObject {
     func refreshCloakVaultStatus(recordAudit: Bool = true) {
         cloakAdapterStatus = cloakBridge.checkAvailability()
         cloakVaultStatus = cloakPrivateVault.status(for: selectedWalletID)
+        cloakPrivateRecords = cloakPrivateVault.records(for: selectedWalletID)
         cloakBridgeResponse = cloakBridge.validateEnvironment(network: selectedNetwork)
         cloakBridgeContractResponse = cloakBridge.environmentCheck(network: selectedNetwork)
 
@@ -551,7 +565,7 @@ final class WalletManager: ObservableObject {
             cloakSignerPreflightResult = preflight
             cloakBridgeResponse = response
             cloakBridgeContractResponse = contractResponse
-            statusMessage = "Cloak deposit draft prepared. Execution remains locked."
+            statusMessage = "Cloak deposit draft prepared. Complete all review gates before execution."
 
             record(
                 kind: .cloakDepositPlanGenerated,
@@ -677,6 +691,399 @@ final class WalletManager: ObservableObject {
                 ]
             )
         }
+    }
+
+    func executeCloakDeposit(
+        mainnetConfirmation: String,
+        feeAcknowledged: Bool,
+        shieldReviewCompleted: Bool,
+        explicitApproval: Bool
+    ) async {
+        noteUserActivity()
+        guard let profile = selectedProfile,
+              let draft = currentCloakDepositDraft,
+              let secret = unlockedSecrets[profile.id] else {
+            cloakBridgeResponse = CloakBridgeResponseSummary(
+                requestID: nil,
+                actionKind: .deposit,
+                status: .blocked,
+                message: WalletSigningPreflightError.missingSecret.localizedDescription,
+                programID: CloakConstants.programID,
+                createdAt: Date()
+            )
+            return
+        }
+
+        do {
+            try validateCloakApproval(
+                profile: profile,
+                network: draft.network,
+                actionKind: .deposit,
+                amountLamports: draft.grossLamports,
+                mainnetConfirmation: mainnetConfirmation,
+                feeAcknowledged: feeAcknowledged,
+                shieldReviewCompleted: shieldReviewCompleted,
+                explicitApproval: explicitApproval
+            )
+        } catch {
+            cloakBridgeResponse = CloakBridgeResponseSummary(
+                requestID: draft.id,
+                actionKind: .deposit,
+                status: .blocked,
+                message: error.localizedDescription,
+                programID: CloakConstants.programID,
+                createdAt: Date()
+            )
+            recordCloakBlocked(action: .deposit, profile: profile, message: error.localizedDescription)
+            return
+        }
+
+        guard await authenticateIfNeeded(
+            required: securityPolicy.requireLocalAuthenticationForSigning,
+            reason: "Authorize local signing for this Cloak Shield SOL transaction."
+        ) else {
+            cloakBridgeResponse = CloakBridgeResponseSummary(
+                requestID: draft.id,
+                actionKind: .deposit,
+                status: .blocked,
+                message: "Device authentication failed.",
+                programID: CloakConstants.programID,
+                createdAt: Date()
+            )
+            return
+        }
+
+        let fingerprint = CloakSignerRequestSummary.fingerprint(
+            walletPublicKey: draft.sourceWalletAddress,
+            network: draft.network,
+            actionKind: .deposit,
+            amountLamports: draft.grossLamports,
+            mintAddress: draft.mintAddress,
+            programID: CloakConstants.programID,
+            feeQuote: draft.feeQuote
+        )
+        let requestID = UUID()
+        let request = CloakExecutionRequest(
+            requestID: requestID,
+            command: .executeDeposit,
+            actionKind: .deposit,
+            network: draft.network,
+            walletPublicAddress: profile.publicAddress,
+            amountLamports: draft.grossLamports,
+            mintAddress: draft.mintAddress,
+            programID: CloakConstants.programID,
+            feeQuote: draft.feeQuote,
+            approvedDraftFingerprint: fingerprint,
+            recipientAddress: nil,
+            rpcURL: rpcURLForCloakHelper(),
+            relayURL: nil,
+            spendStateBase64: nil,
+            timestamp: Date()
+        )
+        let context = CloakSigningApprovalContext(
+            requestID: requestID,
+            command: .executeDeposit,
+            actionKind: .deposit,
+            walletPublicKey: profile.publicAddress,
+            network: draft.network,
+            amountLamports: draft.grossLamports,
+            mintAddress: draft.mintAddress,
+            programID: CloakConstants.programID,
+            approvedDraftFingerprint: fingerprint,
+            feeAcknowledged: feeAcknowledged,
+            shieldReviewCompleted: shieldReviewCompleted,
+            explicitApproval: explicitApproval,
+            mainnetConfirmation: mainnetConfirmation
+        )
+
+        record(
+            kind: .cloakDepositApproved,
+            walletID: profile.id,
+            publicAddress: profile.publicAddress,
+            message: "Cloak SOL deposit approved by user.",
+            details: [
+                "network": draft.network.rawValue,
+                "grossLamports": "\(draft.grossLamports)",
+                "withdrawFeeModelLamports": "\(draft.feeQuote.totalFeeLamports)",
+                "shieldedLamports": "\(draft.grossLamports)",
+                "requestID": requestID.uuidString
+            ]
+        )
+
+        cloakBridgeResponse = CloakBridgeResponseSummary(
+            requestID: requestID,
+            actionKind: .deposit,
+            status: .executing,
+            message: "Cloak deposit executing. Native signer will only sign scoped SDK requests.",
+            programID: CloakConstants.programID,
+            createdAt: Date()
+        )
+
+        await runAsyncOperation {
+            let frame = try await cloakExecutionBridge.execute(request: request, context: context, seed: secret.seed)
+            cloakBridgeContractResponse = frame.response
+            guard frame.response.status == .ok,
+                  let stateBase64 = frame.secureOutputStateBase64,
+                  let state = Data(base64Encoded: stateBase64) else {
+                throw CloakExecutionBridgeError.responseRejected(frame.response.message)
+            }
+            let viewingState = frame.secureViewingStateBase64.flatMap { Data(base64Encoded: $0) }
+            let metadata = CloakPrivateRecordMetadata(
+                id: UUID(),
+                walletID: profile.id,
+                walletPublicKey: profile.publicAddress,
+                mintAddress: draft.mintAddress,
+                amountLamports: draft.grossLamports,
+                commitmentPrefix: frame.response.commitmentPrefix,
+                leafIndex: frame.leafIndex,
+                depositSignature: frame.response.transactionSignature,
+                withdrawSignature: nil,
+                requestID: requestID,
+                state: .deposited,
+                createdAt: Date(),
+                updatedAt: Date()
+            )
+            try cloakPrivateVault.storeDepositState(state, viewingState: viewingState, metadata: metadata)
+            cloakPrivateRecords = cloakPrivateVault.records(for: selectedWalletID)
+            cloakVaultStatus = cloakPrivateVault.status(for: selectedWalletID)
+            cloakBridgeResponse = CloakBridgeResponseSummary(
+                requestID: requestID,
+                actionKind: .deposit,
+                status: .confirmed,
+                message: "Cloak SOL deposit confirmed. Private state is stored in the local vault.",
+                programID: CloakConstants.programID,
+                createdAt: Date()
+            )
+            record(
+                kind: .cloakDepositConfirmed,
+                walletID: profile.id,
+                publicAddress: profile.publicAddress,
+                transactionSignature: frame.response.transactionSignature,
+                message: "Cloak SOL deposit confirmed.",
+                details: [
+                    "network": draft.network.rawValue,
+                    "shieldedLamports": "\(draft.grossLamports)",
+                    "commitmentPrefix": frame.response.commitmentPrefix ?? "unavailable",
+                    "leafIndex": frame.leafIndex.map(String.init) ?? "unavailable",
+                    "requestID": requestID.uuidString
+                ]
+            )
+            record(
+                kind: .cloakPrivateStateStored,
+                walletID: profile.id,
+                publicAddress: profile.publicAddress,
+                message: "Cloak private state stored in local vault.",
+                details: [
+                    "recordID": metadata.id.uuidString,
+                    "state": metadata.state.rawValue,
+                    "commitmentPrefix": metadata.commitmentPrefix ?? "unavailable"
+                ]
+            )
+        }
+    }
+
+    func executeCloakFullWithdraw(
+        recordID: UUID,
+        recipientAddress: String,
+        mainnetConfirmation: String,
+        feeAcknowledged: Bool,
+        shieldReviewCompleted: Bool,
+        explicitApproval: Bool
+    ) async {
+        noteUserActivity()
+        guard let profile = selectedProfile,
+              let privateRecord = cloakPrivateVault.unspentRecords(for: selectedWalletID).first(where: { $0.id == recordID }),
+              let secret = unlockedSecrets[profile.id] else {
+            statusMessage = "Select an available shielded record and unlock the wallet."
+            return
+        }
+        do {
+            guard SolanaAddressValidator.isValidAddress(recipientAddress) else {
+                throw CloakExecutionBridgeError.invalidRequest("Recipient public address is invalid.")
+            }
+            try validateCloakApproval(
+                profile: profile,
+                network: .mainnetBeta,
+                actionKind: .fullWithdraw,
+                amountLamports: privateRecord.amountLamports,
+                mainnetConfirmation: mainnetConfirmation,
+                feeAcknowledged: feeAcknowledged,
+                shieldReviewCompleted: shieldReviewCompleted,
+                explicitApproval: explicitApproval
+            )
+        } catch {
+            recordCloakBlocked(action: .fullWithdraw, profile: profile, message: error.localizedDescription)
+            return
+        }
+
+        guard await authenticateIfNeeded(
+            required: securityPolicy.requireLocalAuthenticationForSigning,
+            reason: "Authorize local signing for this Cloak private pay / full withdraw."
+        ) else {
+            return
+        }
+
+        let fingerprint = CloakSignerRequestSummary.fingerprint(
+            walletPublicKey: profile.publicAddress,
+            network: .mainnetBeta,
+            actionKind: .fullWithdraw,
+            amountLamports: privateRecord.amountLamports,
+            mintAddress: privateRecord.mintAddress,
+            programID: CloakConstants.programID,
+            feeQuote: nil
+        )
+        let requestID = UUID()
+        do {
+            let spendState = try cloakPrivateVault.loadSpendState(recordID: privateRecord.id, walletID: profile.id)
+            let request = CloakExecutionRequest(
+                requestID: requestID,
+                command: .fullWithdraw,
+                actionKind: .fullWithdraw,
+                network: .mainnetBeta,
+                walletPublicAddress: profile.publicAddress,
+                amountLamports: privateRecord.amountLamports,
+                mintAddress: privateRecord.mintAddress,
+                programID: CloakConstants.programID,
+                feeQuote: nil,
+                approvedDraftFingerprint: fingerprint,
+                recipientAddress: recipientAddress,
+                rpcURL: rpcURLForCloakHelper(),
+                relayURL: nil,
+                spendStateBase64: spendState.base64EncodedString(),
+                timestamp: Date()
+            )
+            let context = CloakSigningApprovalContext(
+                requestID: requestID,
+                command: .fullWithdraw,
+                actionKind: .fullWithdraw,
+                walletPublicKey: profile.publicAddress,
+                network: .mainnetBeta,
+                amountLamports: privateRecord.amountLamports,
+                mintAddress: privateRecord.mintAddress,
+                programID: CloakConstants.programID,
+                approvedDraftFingerprint: fingerprint,
+                feeAcknowledged: feeAcknowledged,
+                shieldReviewCompleted: shieldReviewCompleted,
+                explicitApproval: explicitApproval,
+                mainnetConfirmation: mainnetConfirmation
+            )
+
+            record(
+                kind: .cloakWithdrawApproved,
+                walletID: profile.id,
+                publicAddress: profile.publicAddress,
+                message: "Cloak full withdraw approved by user.",
+                details: [
+                    "network": WalletNetwork.mainnetBeta.rawValue,
+                    "amountLamports": "\(privateRecord.amountLamports)",
+                    "recipient": recipientAddress,
+                    "commitmentPrefix": privateRecord.commitmentPrefix ?? "unavailable",
+                    "requestID": requestID.uuidString
+                ]
+            )
+
+            await runAsyncOperation {
+                let frame = try await cloakExecutionBridge.execute(request: request, context: context, seed: secret.seed)
+                cloakBridgeContractResponse = frame.response
+                guard frame.response.status == .ok else {
+                    throw CloakExecutionBridgeError.responseRejected(frame.response.message)
+                }
+                let updated = try cloakPrivateVault.markSpent(
+                    recordID: privateRecord.id,
+                    walletID: profile.id,
+                    signature: frame.response.transactionSignature
+                )
+                cloakPrivateRecords = cloakPrivateVault.records(for: selectedWalletID)
+                cloakVaultStatus = cloakPrivateVault.status(for: selectedWalletID)
+                cloakBridgeResponse = CloakBridgeResponseSummary(
+                    requestID: requestID,
+                    actionKind: .fullWithdraw,
+                    status: .confirmed,
+                    message: "Cloak private pay / full withdraw confirmed.",
+                    programID: CloakConstants.programID,
+                    createdAt: Date()
+                )
+                record(
+                    kind: .cloakWithdrawConfirmed,
+                    walletID: profile.id,
+                    publicAddress: profile.publicAddress,
+                    transactionSignature: frame.response.transactionSignature,
+                    message: "Cloak full withdraw confirmed.",
+                    details: [
+                        "amountLamports": "\(updated.amountLamports)",
+                        "recipient": recipientAddress,
+                        "commitmentPrefix": updated.commitmentPrefix ?? "unavailable",
+                        "requestID": requestID.uuidString
+                    ]
+                )
+            }
+        } catch {
+            recordCloakBlocked(action: .fullWithdraw, profile: profile, message: error.localizedDescription)
+        }
+    }
+
+    private func validateCloakApproval(
+        profile: WalletProfile,
+        network: WalletNetwork,
+        actionKind: CloakActionKind,
+        amountLamports: UInt64,
+        mainnetConfirmation: String,
+        feeAcknowledged: Bool,
+        shieldReviewCompleted: Bool,
+        explicitApproval: Bool
+    ) throws {
+        enforceAutoLockIfNeeded()
+        guard network == .mainnetBeta, selectedNetwork == .mainnetBeta else {
+            throw CloakExecutionBridgeError.invalidRequest("Cloak execution is mainnet-beta only.")
+        }
+        guard profile.canSign, vaultState == .unlocked, unlockedSecrets[profile.id] != nil else {
+            throw WalletSigningPreflightError.walletLocked
+        }
+        if actionKind == .deposit, amountLamports < CloakConstants.minimumDepositLamports {
+            throw CloakSignerBridgeValidationError.amountBelowMinimum(amountLamports)
+        }
+        if actionKind == .fullWithdraw {
+            _ = try CloakFeeModel.calculateCloakSolNetLamports(gross: amountLamports)
+        }
+        guard feeAcknowledged, shieldReviewCompleted, explicitApproval else {
+            throw CloakExecutionBridgeError.invalidRequest("Review, fee acknowledgement, and explicit approval are required.")
+        }
+        guard mainnetConfirmation == TransactionApprovalPolicy.requiredMainnetConfirmation else {
+            throw CloakExecutionBridgeError.invalidRequest("Exact mainnet confirmation phrase is required.")
+        }
+        guard actionKind == .deposit || actionKind == .fullWithdraw else {
+            throw CloakExecutionBridgeError.invalidRequest("Unsupported Cloak action.")
+        }
+    }
+
+    private func recordCloakBlocked(action: CloakActionKind, profile: WalletProfile, message: String) {
+        cloakBridgeResponse = CloakBridgeResponseSummary(
+            requestID: nil,
+            actionKind: action,
+            status: .blocked,
+            message: message,
+            programID: CloakConstants.programID,
+            createdAt: Date()
+        )
+        statusMessage = message
+        record(
+            kind: .cloakSigningRequestBlocked,
+            walletID: profile.id,
+            publicAddress: profile.publicAddress,
+            message: "Cloak signing request blocked.",
+            details: [
+                "network": selectedNetwork.rawValue,
+                "cloakAction": action.rawValue,
+                "reason": message
+            ]
+        )
+    }
+
+    private func rpcURLForCloakHelper() -> String? {
+        // The Cloak helper receives no secret environment. RPC Fast requires an
+        // X-Token header, so the helper uses its public mainnet fallback until a
+        // header-safe RPC bridge is added.
+        nil
     }
 
     private func statusFromResponse(_ response: CloakBridgeResponse) -> CloakHelperInvocationStatus {

@@ -16,7 +16,7 @@ struct CloakShieldReviewPlaceholderView: View {
     var body: some View {
         GorkhPanel("Shield Review") {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Future Cloak actions will use the same safety posture as SOL and SPL sends, plus a scoped signer bridge review.")
+                Text("Cloak shield and full-withdraw actions use the same safety posture as SOL and SPL sends, plus scoped signer bridge review.")
                     .font(.caption)
                     .foregroundStyle(GorkhColors.secondaryText)
 
@@ -32,8 +32,8 @@ struct CloakShieldReviewPlaceholderView: View {
                         Text(step)
                             .font(.caption)
                             .foregroundStyle(index < 4 ? GorkhColors.primaryText : GorkhColors.secondaryText)
-                        if index >= 5 {
-                            GorkhStatusChip(title: "locked", systemImage: "lock", color: GorkhColors.warning)
+                        if step == "Cloak SDK execution" {
+                            GorkhStatusChip(title: "approved only", systemImage: "signature", color: GorkhColors.warning)
                         }
                     }
                 }

@@ -21,6 +21,7 @@ enum CloakPrivateWalletStatus: String, Codable, Equatable {
     case notInitialized = "not_initialized"
     case statusOnly = "status_only"
     case readyForFutureStorage = "ready_for_future_storage"
+    case ready = "ready"
 
     var title: String {
         switch self {
@@ -30,6 +31,8 @@ enum CloakPrivateWalletStatus: String, Codable, Equatable {
             return "Status Only"
         case .readyForFutureStorage:
             return "Ready for Future Storage"
+        case .ready:
+            return "Ready"
         }
     }
 }
@@ -67,6 +70,10 @@ enum CloakActionState: String, Codable, Equatable {
     case locked = "locked"
     case unavailable = "unavailable"
     case blocked = "blocked"
+    case approved = "approved"
+    case executing = "executing"
+    case confirmed = "confirmed"
+    case failed = "failed"
 
     var title: String {
         switch self {
@@ -78,6 +85,14 @@ enum CloakActionState: String, Codable, Equatable {
             return "Unavailable"
         case .blocked:
             return "Blocked"
+        case .approved:
+            return "Approved"
+        case .executing:
+            return "Executing"
+        case .confirmed:
+            return "Confirmed"
+        case .failed:
+            return "Failed"
         }
     }
 }
@@ -139,7 +154,7 @@ struct CloakFeeQuote: Codable, Equatable {
     var totalFeeSOLText: String { Self.solText(totalFeeLamports) }
     var netSOLText: String { Self.solText(netLamports) }
 
-    private static func solText(_ lamports: UInt64) -> String {
+    static func solText(_ lamports: UInt64) -> String {
         let sol = Decimal(lamports) / Decimal(SolanaConstants.lamportsPerSol)
         return "\(sol) SOL"
     }
@@ -191,7 +206,7 @@ struct CloakDepositDraft: Codable, Equatable, Identifiable {
     }
 
     var networkWarning: String? {
-        network.isMainnet ? "Future Cloak deposits would use real mainnet SOL." : "Cloak is mainnet-oriented. Phase 2.4 does not create a fake devnet Cloak mode."
+        network.isMainnet ? "Cloak deposits use real mainnet SOL after explicit approval." : "Cloak execution is mainnet-only. Devnet drafts cannot execute."
     }
 }
 
@@ -204,6 +219,59 @@ struct CloakPrivateAuditSummary: Codable, Equatable {
     let transactionSignature: String?
     let commitmentPrefix: String?
     let leafIndex: Int?
+}
+
+enum CloakPrivateRecordState: String, Codable, Equatable {
+    case deposited
+    case spent
+    case unknown
+}
+
+struct CloakPrivateRecordMetadata: Codable, Equatable, Identifiable {
+    let id: UUID
+    let walletID: UUID
+    let walletPublicKey: String
+    let mintAddress: String
+    let amountLamports: UInt64
+    let commitmentPrefix: String?
+    let leafIndex: Int?
+    let depositSignature: String?
+    let withdrawSignature: String?
+    let requestID: UUID
+    let state: CloakPrivateRecordState
+    let createdAt: Date
+    let updatedAt: Date
+
+    var amountSOLText: String {
+        CloakFeeQuote.solText(amountLamports)
+    }
+
+    var shortCommitment: String {
+        commitmentPrefix ?? "unavailable"
+    }
+
+    func spent(with signature: String?, at date: Date = Date()) -> CloakPrivateRecordMetadata {
+        CloakPrivateRecordMetadata(
+            id: id,
+            walletID: walletID,
+            walletPublicKey: walletPublicKey,
+            mintAddress: mintAddress,
+            amountLamports: amountLamports,
+            commitmentPrefix: commitmentPrefix,
+            leafIndex: leafIndex,
+            depositSignature: depositSignature,
+            withdrawSignature: signature,
+            requestID: requestID,
+            state: .spent,
+            createdAt: createdAt,
+            updatedAt: date
+        )
+    }
+}
+
+struct CloakPrivateExecutionResult: Codable, Equatable {
+    let response: CloakBridgeResponse
+    let metadata: CloakPrivateRecordMetadata?
 }
 
 struct CloakBridgeRequestSummary: Codable, Equatable, Identifiable {

@@ -62,7 +62,7 @@ enum CloakSignerBridgeValidator {
         guard request.network.isMainnet else {
             throw CloakSignerBridgeValidationError.unsupportedNetwork(request.network)
         }
-        guard request.actionKind == .deposit else {
+        guard request.actionKind == .deposit || request.actionKind == .fullWithdraw else {
             throw CloakSignerBridgeValidationError.unsupportedAction(request.actionKind)
         }
         guard let amountLamports = request.amountLamports else {

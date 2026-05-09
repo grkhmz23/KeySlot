@@ -98,12 +98,15 @@ enum CloakSignerApprovalRequirement: String, Codable, CaseIterable, Identifiable
 }
 
 enum CloakSignerBridgeState: String, Codable, Equatable {
+    case ready
     case locked
     case unavailable
     case rejected
 
     var title: String {
         switch self {
+        case .ready:
+            return "Signer bridge ready"
         case .locked:
             return "Signer bridge locked"
         case .unavailable:

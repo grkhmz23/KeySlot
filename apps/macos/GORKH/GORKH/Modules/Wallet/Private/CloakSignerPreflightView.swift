@@ -27,7 +27,7 @@ struct CloakSignerPreflightView: View {
                 if let request = walletManager.currentCloakSignerRequest {
                     requestSummary(request)
                 } else {
-                    Text("Prepare a Cloak deposit draft to generate a locked signer request summary and review fingerprint.")
+                    Text("Prepare a Cloak deposit draft to generate a signer request summary and review fingerprint.")
                         .font(.caption)
                         .foregroundStyle(GorkhColors.secondaryText)
                 }
@@ -47,7 +47,7 @@ struct CloakSignerPreflightView: View {
                         }
                     }
                 } else {
-                    Text("Future Cloak signTransaction/signMessage requests must pass native policy before any signing prompt can appear.")
+                    Text("Cloak signTransaction/signMessage requests must pass native policy before any local signature can be produced.")
                         .font(.caption)
                         .foregroundStyle(GorkhColors.secondaryText)
                 }
@@ -56,15 +56,15 @@ struct CloakSignerPreflightView: View {
     }
 
     private var stateTitle: String {
-        walletManager.cloakSignerPreflightResult?.state.title ?? "Signer bridge locked"
+        walletManager.cloakSignerPreflightResult?.state.title ?? "Signer bridge ready after draft"
     }
 
     private var stateSystemImage: String {
-        walletManager.cloakSignerPreflightResult?.state == .rejected ? "xmark.octagon" : "lock.shield"
+        walletManager.cloakSignerPreflightResult?.state == .rejected ? "xmark.octagon" : "checkmark.shield"
     }
 
     private var stateColor: Color {
-        walletManager.cloakSignerPreflightResult?.state == .rejected ? GorkhColors.danger : GorkhColors.warning
+        walletManager.cloakSignerPreflightResult?.state == .rejected ? GorkhColors.danger : GorkhColors.accent
     }
 
     private func requestSummary(_ request: CloakSignerRequestSummary) -> some View {

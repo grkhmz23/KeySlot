@@ -22,6 +22,15 @@ enum CloakBridgeCommand: String, Codable, CaseIterable, Identifiable, Equatable 
             return false
         }
     }
+
+    var isHelperCommandAllowedInPhase25: Bool {
+        switch self {
+        case .health, .environmentCheck, .depositPlan, .executeDeposit, .fullWithdraw:
+            return true
+        case .partialWithdraw, .privateTransfer, .swap, .scan, .complianceExport:
+            return false
+        }
+    }
 }
 
 enum CloakBridgeStatus: String, Codable, Equatable {
@@ -291,11 +300,22 @@ struct CloakBridgeExecutionPolicy: Equatable {
         )
     }
 
+    static func phase25Enabled(
+        allowedNodeExecutablePaths: [String] = CloakBridgeExecutionPolicy.disabled.allowedNodeExecutablePaths
+    ) -> CloakBridgeExecutionPolicy {
+        CloakBridgeExecutionPolicy(
+            helperExecutionEnabled: true,
+            allowlistedHelperRelativePath: CloakBridgeExecutionPolicy.disabled.allowlistedHelperRelativePath,
+            allowedNodeExecutablePaths: allowedNodeExecutablePaths,
+            allowedCommands: [.health, .environmentCheck, .depositPlan, .executeDeposit, .fullWithdraw]
+        )
+    }
+
     func canInvokeHelper(command: CloakBridgeCommand, relativePath: String) -> Bool {
         helperExecutionEnabled
             && relativePath == allowlistedHelperRelativePath
             && allowedCommands.contains(command)
-            && command.isHelperCommandAllowedInPhase23
+            && command.isHelperCommandAllowedInPhase25
     }
 }
 

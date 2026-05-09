@@ -6,7 +6,7 @@ struct CloakApprovalRequirementsView: View {
     var body: some View {
         GorkhPanel("Approval Requirements") {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Future Cloak signing requires every native wallet gate before any local signature can be produced.")
+                Text("Cloak signing requires every native wallet gate before any local signature can be produced.")
                     .font(.caption)
                     .foregroundStyle(GorkhColors.secondaryText)
 
@@ -23,7 +23,7 @@ struct CloakApprovalRequirementsView: View {
                     }
                 }
 
-                Text("Phase 2.4 evaluates request summaries and review fingerprints only. It does not sign transaction bytes, message bytes, or SDK payloads.")
+                Text("Phase 2.5 enables scoped Cloak deposit/full-withdraw signing only after review, mainnet phrase, LocalAuthentication, and audit. Other private actions remain locked.")
                     .font(.caption)
                     .foregroundStyle(GorkhColors.warning)
             }

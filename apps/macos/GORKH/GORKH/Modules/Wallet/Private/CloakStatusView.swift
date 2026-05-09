@@ -30,7 +30,7 @@ struct CloakStatusView: View {
                 }
 
                 HStack(spacing: 8) {
-                    GorkhStatusChip(title: "Private balance placeholder", systemImage: "eye.slash", color: GorkhColors.warning)
+                    GorkhStatusChip(title: "\(walletManager.cloakPrivateRecords.filter { $0.state == .deposited }.count) unspent local records", systemImage: "eye.slash", color: walletManager.cloakPrivateRecords.isEmpty ? GorkhColors.warning : GorkhColors.success)
                     GorkhStatusChip(
                         title: walletManager.cloakVaultStatus.hasViewingKeyReference ? "Viewing reference present" : "No viewing reference",
                         systemImage: "key.viewfinder",
@@ -40,16 +40,16 @@ struct CloakStatusView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Cloak is mainnet-oriented in the current SDK documentation.")
+                    Text("Cloak is mainnet-only. Shield and full-withdraw flows can execute real transactions after every native approval gate passes.")
                         .font(.caption)
                         .foregroundStyle(GorkhColors.secondaryText)
-                    Text("Future live deposits must pass wallet unlock, LocalAuthentication, signer preflight, Shield review, explicit approval, and audit.")
+                    Text("Every execution requires wallet unlock, LocalAuthentication, signer preflight, Shield review, explicit approval, exact mainnet phrase, and audit.")
                         .font(.caption)
                         .foregroundStyle(GorkhColors.secondaryText)
-                    Text("Dry-run helper invocation is disabled by default and allowlisted to health, env-check, and deposit-plan.")
+                    Text("Helper execution is fixed-path, command-allowlisted, JSON-framed, and never receives wallet seed or private key material.")
                         .font(.caption)
                         .foregroundStyle(GorkhColors.warning)
-                    Text("Phase 2.4 adds a locked native signer bridge contract. No transaction or message payloads are created.")
+                    Text("Unsigned Cloak transaction/message payloads are transient in memory for native review/signing only, then discarded.")
                         .font(.caption)
                         .foregroundStyle(GorkhColors.secondaryText)
                     Text(walletManager.cloakVaultStatus.storageDescription)

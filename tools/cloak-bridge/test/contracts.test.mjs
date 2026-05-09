@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { calculateFeeQuote } from "../src/contracts.ts";
+import { calculateFeeQuote, EXECUTION_COMMANDS } from "../src/contracts.ts";
 import { SUSPICIOUS_SECRET_ENV_NAMES } from "../src/environment.ts";
 import { handleCommand } from "../src/index.ts";
 import { hasForbiddenField, validateNoForbiddenFields } from "../src/redaction.ts";
@@ -151,6 +151,24 @@ test("future execution commands are locked", async () => {
   assert.equal(complianceResponse.errorCategory, "locked-in-phase-2-3");
 });
 
+test("phase 2.5 execution commands are isolated from dry-run handleCommand", async () => {
+  assert.deepEqual(EXECUTION_COMMANDS, ["execute-deposit", "full-withdraw"]);
+
+  for (const command of EXECUTION_COMMANDS) {
+    const response = await handleCommand(command, {
+      network: "mainnet-beta",
+      walletPublicAddress: "11111111111111111111111111111111",
+      amountLamports: "50000000",
+      approvedDraftFingerprint: "abc",
+    });
+    assert.equal(response.status, "locked");
+    assert.equal(response.errorCategory, "locked-in-phase-2-3");
+    assert.equal("secureOutputStateBase64" in response, false);
+    assert.equal("secureViewingStateBase64" in response, false);
+    assert.equal("secureSpentStateBase64" in response, false);
+  }
+});
+
 test("fee helper rejects below-minimum deposit", () => {
   assert.throws(() => calculateFeeQuote("9999999"));
 });
@@ -176,5 +194,29 @@ test("helper source does not call SDK transaction methods", async () => {
     "toComplianceReport(",
   ]) {
     assert.equal(combined.includes(forbiddenCall), false);
+  }
+});
+
+test("execution helper source only calls approved Cloak SDK execution methods", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(new URL("../src/commands/execute.ts", import.meta.url), "utf8");
+
+  assert.equal(source.includes("transact("), true);
+  assert.equal(source.includes("fullWithdraw("), true);
+  assert.equal(source.includes("privateOutputAmount = amount"), true);
+  assert.equal(source.includes("privateOutputAmount = BigInt(feeQuote.netLamports)"), false);
+  for (const forbiddenCall of [
+    "partialWithdraw(",
+    "transfer(",
+    "swapWithChange(",
+    "swapUtxo(",
+    "scanTransactions(",
+    "toComplianceReport(",
+    "console.log",
+    "child_process",
+    "exec(",
+    "spawn(",
+  ]) {
+    assert.equal(source.includes(forbiddenCall), false);
   }
 });

@@ -25,6 +25,26 @@ struct CloakSignerBridgePolicy: Equatable {
         ]
     )
 
+    static let phase25 = CloakSignerBridgePolicy(
+        signingEnabled: true,
+        approvalRequirements: [
+            .walletUnlocked,
+            .localAuthentication,
+            .signerPublicKeyMatch,
+            .networkMatch,
+            .actionKindMatch,
+            .amountMatch,
+            .cloakProgramMatch,
+            .feeQuoteAcknowledged,
+            .shieldReviewCompleted,
+            .explicitUserApproval,
+            .mainnetConfirmationPhrase,
+            .draftFingerprintMatch,
+            .auditBeforeSigning,
+            .auditAfterSigning
+        ]
+    )
+
     func preflight(
         request: CloakSignerRequestSummary,
         expectedWalletPublicKey: String?
@@ -36,10 +56,12 @@ struct CloakSignerBridgePolicy: Equatable {
             )
             return CloakSignerPreflightResult(
                 requestID: request.id,
-                state: .locked,
+                state: signingEnabled ? .ready : .locked,
                 requirements: approvalRequirements,
-                failures: signingEnabled ? [] : ["Actual Cloak signing is disabled in Phase 2.4."],
-                message: "Signer preflight passed contract checks, but native Cloak signing remains locked.",
+                failures: [],
+                message: signingEnabled
+                    ? "Signer preflight passed contract checks. Native signing requires final approval."
+                    : "Signer preflight passed contract checks, but native Cloak signing remains locked.",
                 createdAt: Date()
             )
         } catch {

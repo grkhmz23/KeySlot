@@ -83,7 +83,7 @@ struct CloakHelperInvocationAdapter {
             throw CloakHelperInvocationError.invalidProgramID
         }
         guard policy.allowedCommands.contains(request.command),
-              request.command.isHelperCommandAllowedInPhase23 else {
+              request.command.isHelperCommandAllowedInPhase25 else {
             throw CloakHelperInvocationError.commandNotAllowlisted(request.command)
         }
         if request.command == .depositPlan {

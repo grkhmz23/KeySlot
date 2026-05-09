@@ -10,9 +10,9 @@ struct WalletPrivateView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Shielded balances, deposits, private transfers, and withdrawals powered by Cloak.")
+                            Text("Shielded SOL deposits and private pay / full withdraw powered by Cloak.")
                                 .foregroundStyle(GorkhColors.primaryText)
-                            Text("Phase 2.4 defines the native signer bridge review flow. GORKH will not build, sign, or send Cloak transactions yet.")
+                            Text("Cloak is mainnet-only. These are real transactions after explicit approval, LocalAuthentication, native signing, and audit.")
                                 .font(.caption)
                                 .foregroundStyle(GorkhColors.warning)
                         }
@@ -20,7 +20,7 @@ struct WalletPrivateView: View {
                         Spacer()
 
                         GorkhStatusChip(
-                            title: walletManager.cloakAdapterStatus.title,
+                            title: "Cloak MVP guarded",
                             systemImage: "lock.shield",
                             color: GorkhColors.warning
                         )
@@ -30,6 +30,7 @@ struct WalletPrivateView: View {
 
             CloakStatusView()
             CloakDepositDraftView()
+            CloakWithdrawView()
             CloakFeeModelView()
             CloakSignerPreflightView()
             CloakApprovalRequirementsView()
