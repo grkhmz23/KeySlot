@@ -3333,6 +3333,183 @@ struct GORKHTests {
         }
     }
 
+    @Test func pnlSnapshotPerformanceCalculatesDeltasAndInsufficientHistory() throws {
+        let profile = WalletProfile(label: "PnL User", publicAddress: SolanaConstants.systemProgramID)
+        let previousDate = Date(timeIntervalSince1970: 1_000)
+        let currentDate = Date(timeIntervalSince1970: 2_000)
+        let previousSummary = PortfolioAggregator.aggregate(
+            scope: .activeWallet,
+            network: .mainnetBeta,
+            profiles: [profile],
+            solBalances: [profile.id: 1_000_000_000],
+            tokenBalances: [:],
+            prices: [
+                PortfolioConstants.nativeSolMint: PortfolioPriceQuote(
+                    mintAddress: PortfolioConstants.nativeSolMint,
+                    usdPrice: 100,
+                    source: PortfolioConstants.priceSource,
+                    blockID: 1,
+                    priceChange24h: nil,
+                    fetchedAt: previousDate,
+                    errorMessage: nil
+                )
+            ],
+            fetchedAt: previousDate
+        )
+        let currentSummary = PortfolioAggregator.aggregate(
+            scope: .activeWallet,
+            network: .mainnetBeta,
+            profiles: [profile],
+            solBalances: [profile.id: 1_000_000_000],
+            tokenBalances: [:],
+            prices: [
+                PortfolioConstants.nativeSolMint: PortfolioPriceQuote(
+                    mintAddress: PortfolioConstants.nativeSolMint,
+                    usdPrice: 125,
+                    source: PortfolioConstants.priceSource,
+                    blockID: 2,
+                    priceChange24h: nil,
+                    fetchedAt: currentDate,
+                    errorMessage: nil
+                )
+            ],
+            fetchedAt: currentDate
+        )
+        let previousSnapshot = PortfolioSnapshot(summary: previousSummary, createdAt: previousDate)
+        let currentSnapshot = PortfolioSnapshot(summary: currentSummary, createdAt: currentDate)
+
+        let summary = PnLCalculator.calculate(
+            currentSummary: currentSummary,
+            snapshots: [currentSnapshot, previousSnapshot],
+            generatedAt: currentDate.addingTimeInterval(60)
+        )
+        let primary = try #require(summary.primaryPerformance)
+
+        #expect(summary.status == .partial)
+        #expect(primary.status == .loaded)
+        #expect(primary.baselineValueUSD == 100)
+        #expect(primary.currentValueUSD == 125)
+        #expect(primary.valueDeltaUSD == 25)
+        #expect(primary.percentageDelta == 25)
+        #expect(summary.assetPerformances.first?.valueDeltaUSD == 25)
+        #expect(summary.walletPerformances.first?.valueDeltaUSD == 25)
+        #expect(summary.realized.status == .unavailable)
+        #expect(summary.unrealized.status == .partial)
+
+        let insufficient = PnLCalculator.calculate(
+            currentSummary: currentSummary,
+            snapshots: [currentSnapshot],
+            generatedAt: currentDate.addingTimeInterval(60)
+        )
+        #expect(insufficient.primaryPerformance?.status == .unavailable)
+        #expect(insufficient.primaryPerformance?.reason?.lowercased().contains("insufficient") == true)
+    }
+
+    @Test func pnlManualCostBasisAndStoreRemainLocalAndSafe() throws {
+        let profile = WalletProfile(label: "Cost Basis", publicAddress: SolanaConstants.systemProgramID)
+        let currentDate = Date(timeIntervalSince1970: 4_000)
+        let currentSummary = PortfolioAggregator.aggregate(
+            scope: .activeWallet,
+            network: .mainnetBeta,
+            profiles: [profile],
+            solBalances: [profile.id: 1_000_000_000],
+            tokenBalances: [:],
+            prices: [
+                PortfolioConstants.nativeSolMint: PortfolioPriceQuote(
+                    mintAddress: PortfolioConstants.nativeSolMint,
+                    usdPrice: 125,
+                    source: PortfolioConstants.priceSource,
+                    blockID: 2,
+                    priceChange24h: nil,
+                    fetchedAt: currentDate,
+                    errorMessage: nil
+                )
+            ],
+            fetchedAt: currentDate
+        )
+        let entry = CostBasisEntry(
+            walletPublicAddress: profile.publicAddress,
+            tokenMint: PortfolioConstants.nativeSolMint,
+            tokenSymbol: "SOL",
+            quantity: 1,
+            totalCostUSD: 100,
+            acquisitionDate: Date(timeIntervalSince1970: 3_000),
+            note: "Manual local estimate"
+        )
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("gorkh-cost-basis-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        let store = CostBasisStore(fileURL: fileURL)
+        try store.upsert(entry)
+        let loaded = store.load()
+        let summary = PnLCalculator.calculate(
+            currentSummary: currentSummary,
+            snapshots: [],
+            costBasisEntries: loaded,
+            generatedAt: currentDate
+        )
+        let json = try #require(String(data: JSONEncoder().encode([entry]), encoding: .utf8)).lowercased()
+        let loadedEntry = try #require(loaded.first)
+
+        #expect(loaded.count == 1)
+        #expect(loadedEntry.id == entry.id)
+        #expect(loadedEntry.walletPublicAddress == entry.walletPublicAddress)
+        #expect(loadedEntry.tokenMint == entry.tokenMint)
+        #expect(loadedEntry.tokenSymbol == entry.tokenSymbol)
+        #expect(loadedEntry.quantity == entry.quantity)
+        #expect(loadedEntry.totalCostUSD == entry.totalCostUSD)
+        #expect(loadedEntry.method == .manual)
+        #expect(summary.costBasisCoverage.status == .loaded)
+        #expect(summary.unrealized.estimatedUSD == 25)
+        #expect(summary.unrealized.status == .loaded)
+        #expect(summary.realized.status == .unavailable)
+        #expect(fileURL.path.contains("UserDefaults") == false)
+        for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "serializedtransaction", "transactionpayload", "unsignedtransaction"] {
+            #expect(!json.contains(forbidden))
+        }
+    }
+
+    @Test func pnlSwapActivityHintsArePartialAndUICopyAvoidsAccountingClaims() throws {
+        let event = AuditEvent(
+            kind: .swapSent,
+            createdAt: Date(timeIntervalSince1970: 5_000),
+            walletID: UUID(),
+            network: .mainnetBeta,
+            publicAddress: SolanaConstants.systemProgramID,
+            transactionSignature: "swapSignature",
+            message: "Swap sent",
+            details: [
+                "inputMint": PortfolioConstants.nativeSolMint,
+                "outputMint": PUSDConstants.mintAddress,
+                "amountRaw": "1000000000",
+                "expectedOutputRaw": "1000000"
+            ]
+        )
+        let hints = PnLActivityMapper.swapHints(from: [event])
+        let hintJSON = try #require(String(data: JSONEncoder().encode(hints), encoding: .utf8)).lowercased()
+        let activeCopy = [
+            PnLConstants.notTaxGradeCopy,
+            PnLConstants.costBasisMissingReason,
+            PnLConstants.realizedUnavailableReason,
+            PnLConstants.unrealizedPartialReason
+        ]
+        .joined(separator: " ")
+        .lowercased()
+
+        #expect(hints.count == 1)
+        #expect(hints.first?.status == .partial)
+        #expect(hints.first?.source == .swapActivity)
+        #expect(!activeCopy.contains("tax report"))
+        #expect(!activeCopy.contains("tax filing"))
+        #expect(!activeCopy.contains("certified"))
+        #expect(!activeCopy.contains("guaranteed"))
+        #expect(!activeCopy.contains("nft"))
+        for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "serializedtransaction", "transactionpayload", "unsignedtransaction"] {
+            #expect(!hintJSON.contains(forbidden))
+        }
+    }
+
     @Test func meteoraHelperBridgeMapsReadOnlyResponseAndRejectsPayloadFields() async throws {
         let profile = WalletProfile(label: "Meteora User", publicAddress: SolanaConstants.systemProgramID)
         let policy = MeteoraHelperInvocationPolicy.readOnlyEnabledForDevelopment(

@@ -93,6 +93,10 @@ struct WalletPortfolioView: View {
                 resetHarvestAction: walletManager.resetOrcaHarvestState
             )
             PortfolioYieldView(summary: walletManager.portfolioSummary.yieldSummary)
+            PortfolioPnLView(
+                summary: walletManager.portfolioPnLSummary,
+                costBasisEntries: walletManager.costBasisEntries
+            )
             PortfolioHistoryView(
                 snapshots: walletManager.portfolioHistory,
                 clearAction: walletManager.clearPortfolioHistory(confirmation:)

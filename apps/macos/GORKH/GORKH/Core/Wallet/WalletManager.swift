@@ -38,6 +38,8 @@ final class WalletManager: ObservableObject {
     @Published var selectedPortfolioScope: PortfolioWalletScope = .activeWallet
     @Published private(set) var portfolioSummary: PortfolioAggregateSummary = .empty()
     @Published private(set) var portfolioHistory: [PortfolioSnapshot] = []
+    @Published private(set) var portfolioPnLSummary: PnLPortfolioSummary = .empty()
+    @Published private(set) var costBasisEntries: [CostBasisEntry] = []
     @Published private(set) var portfolioStatus: PortfolioDataStatus = .idle
     @Published private(set) var portfolioErrorMessage: String?
     @Published private(set) var pusdCirculationSnapshot: PUSDCirculationSnapshot = .idle()
@@ -74,6 +76,7 @@ final class WalletManager: ObservableObject {
     private let cloakSignerBridgePolicy: CloakSignerBridgePolicy
     private let portfolioRefreshService: PortfolioManager
     private let portfolioSnapshotStore: PortfolioSnapshotStore
+    private let costBasisStore: CostBasisStore
     private let pusdCirculationClient: PUSDCirculationClient
     private let jupiterQuoteClient: JupiterQuoteClient
     private let jupiterSwapClient: JupiterSwapClient
@@ -262,6 +265,7 @@ final class WalletManager: ObservableObject {
         cloakScanCacheStore: CloakScanCacheStore? = nil,
         portfolioPriceClient: (any PortfolioPriceClient)? = nil,
         portfolioSnapshotStore: PortfolioSnapshotStore? = nil,
+        costBasisStore: CostBasisStore? = nil,
         pusdCirculationClient: PUSDCirculationClient? = nil,
         jupiterQuoteClient: JupiterQuoteClient? = nil,
         jupiterSwapClient: JupiterSwapClient? = nil,
@@ -284,6 +288,7 @@ final class WalletManager: ObservableObject {
         self.cloakSignerBridgePolicy = .phase25
         self.portfolioRefreshService = PortfolioManager(rpcClient: rpcClient, priceClient: resolvedPortfolioPriceClient)
         self.portfolioSnapshotStore = portfolioSnapshotStore ?? PortfolioSnapshotStore()
+        self.costBasisStore = costBasisStore ?? CostBasisStore()
         self.pusdCirculationClient = pusdCirculationClient ?? PUSDCirculationClient()
         self.jupiterQuoteClient = jupiterQuoteClient ?? JupiterQuoteClient()
         self.jupiterSwapClient = jupiterSwapClient ?? JupiterSwapClient()
@@ -299,6 +304,8 @@ final class WalletManager: ObservableObject {
         rpcHealthSnapshot = .unchecked(network: selectedNetwork, configuration: rpcClient.configuration)
         auditEvents = auditLog.loadRecent()
         portfolioHistory = Array(self.portfolioSnapshotStore.load().reversed())
+        costBasisEntries = self.costBasisStore.load()
+        refreshPnLSummary()
         refreshVaultState()
         refreshCloakVaultStatus(recordAudit: false)
         cloakPrivateRecords = cloakPrivateVault.records(for: selectedWalletID)
@@ -341,6 +348,7 @@ final class WalletManager: ObservableObject {
         refreshVaultState()
         refreshCloakVaultStatus(recordAudit: false)
         refreshCloakScanCacheState()
+        refreshPnLSummary()
     }
 
     func setNetwork(_ network: WalletNetwork) {
@@ -380,6 +388,7 @@ final class WalletManager: ObservableObject {
         cloakBridgeContractResponse = cloakBridge.environmentCheck(network: network)
         cloakPrivateRecords = cloakPrivateVault.records(for: selectedWalletID)
         refreshCloakScanCacheState()
+        refreshPnLSummary()
     }
 
     func refreshRPCProviderHealth() async {
@@ -424,6 +433,7 @@ final class WalletManager: ObservableObject {
         noteUserActivity()
         selectedPortfolioScope = scope
         portfolioSummary = .empty(scope: scope, network: selectedNetwork)
+        refreshPnLSummary()
         portfolioStatus = .idle
         portfolioErrorMessage = nil
     }
@@ -1971,6 +1981,7 @@ final class WalletManager: ObservableObject {
         let snapshot = PortfolioSnapshot(summary: result.summary)
         do {
             portfolioHistory = Array(try portfolioSnapshotStore.append(snapshot).reversed())
+            refreshPnLSummary()
             record(
                 kind: .portfolioSnapshotStored,
                 walletID: selectedWalletID,
@@ -2060,6 +2071,40 @@ final class WalletManager: ObservableObject {
                     "yieldAPYAvailableCount": "\(snapshot.yieldAPYAvailableCount)",
                     "yieldUnavailableCount": "\(snapshot.yieldUnavailableCount)",
                     "yieldTopSource": snapshot.yieldTopSourceLabel ?? ""
+                ]
+            )
+            record(
+                kind: .pnlSnapshotGenerated,
+                walletID: selectedWalletID,
+                publicAddress: selectedProfile?.publicAddress,
+                message: "Portfolio PnL snapshot generated from local portfolio history.",
+                details: [
+                    "network": selectedNetwork.rawValue,
+                    "portfolioScope": selectedPortfolioScope.rawValue,
+                    "pnlStatus": portfolioPnLSummary.status.rawValue,
+                    "pnlTimeframe": portfolioPnLSummary.primaryTimeframe.rawValue,
+                    "pnlHistoryPointCount": "\(portfolioPnLSummary.historyPointCount)",
+                    "pnlAssetPerformanceCount": "\(portfolioPnLSummary.assetPerformances.count)",
+                    "pnlWalletPerformanceCount": "\(portfolioPnLSummary.walletPerformances.count)",
+                    "costBasisEntryCount": "\(portfolioPnLSummary.costBasisCoverage.entryCount)",
+                    "costBasisMissingAssetCount": "\(portfolioPnLSummary.costBasisCoverage.missingAssetCount)",
+                    "swapActivityHintCount": "\(portfolioPnLSummary.swapActivityHintCount)",
+                    "source": portfolioPnLSummary.source.rawValue
+                ]
+            )
+            record(
+                kind: .pnlRefreshed,
+                walletID: selectedWalletID,
+                publicAddress: selectedProfile?.publicAddress,
+                message: "Portfolio PnL refreshed with snapshot-based estimates.",
+                details: [
+                    "network": selectedNetwork.rawValue,
+                    "portfolioScope": selectedPortfolioScope.rawValue,
+                    "pnlStatus": portfolioPnLSummary.status.rawValue,
+                    "pnlTimeframe": portfolioPnLSummary.primaryTimeframe.rawValue,
+                    "realizedStatus": portfolioPnLSummary.realized.status.rawValue,
+                    "unrealizedStatus": portfolioPnLSummary.unrealized.status.rawValue,
+                    "source": portfolioPnLSummary.source.rawValue
                 ]
             )
             if snapshot.stakeAccountCount > 0 || snapshot.lstHoldingCount > 0 {
@@ -2155,6 +2200,80 @@ final class WalletManager: ObservableObject {
                 "yieldAPYAvailableCount": "\(portfolioSummary.yieldSummary.apyAvailableCount)",
                 "yieldUnavailableCount": "\(portfolioSummary.yieldSummary.unavailableCount)"
             ]
+        )
+    }
+
+    func recordPnLPanelViewed() {
+        record(
+            kind: .pnlPanelViewed,
+            walletID: selectedWalletID,
+            publicAddress: selectedProfile?.publicAddress,
+            message: "Portfolio PnL panel viewed.",
+            details: [
+                "network": selectedNetwork.rawValue,
+                "portfolioScope": selectedPortfolioScope.rawValue,
+                "pnlStatus": portfolioPnLSummary.status.rawValue,
+                "pnlTimeframe": portfolioPnLSummary.primaryTimeframe.rawValue,
+                "pnlHistoryPointCount": "\(portfolioPnLSummary.historyPointCount)",
+                "costBasisEntryCount": "\(portfolioPnLSummary.costBasisCoverage.entryCount)",
+                "costBasisMissingAssetCount": "\(portfolioPnLSummary.costBasisCoverage.missingAssetCount)",
+                "swapActivityHintCount": "\(portfolioPnLSummary.swapActivityHintCount)"
+            ]
+        )
+    }
+
+    func upsertCostBasisEntry(_ entry: CostBasisEntry) {
+        do {
+            let existed = costBasisEntries.contains { $0.id == entry.id }
+            costBasisEntries = try costBasisStore.upsert(entry)
+            refreshPnLSummary()
+            record(
+                kind: existed ? .costBasisEntryUpdated : .costBasisEntryAdded,
+                walletID: selectedWalletID,
+                publicAddress: selectedProfile?.publicAddress,
+                message: existed ? "Local cost basis entry updated." : "Local cost basis entry added.",
+                details: [
+                    "network": selectedNetwork.rawValue,
+                    "portfolioScope": selectedPortfolioScope.rawValue,
+                    "tokenMint": entry.tokenMint,
+                    "tokenSymbol": entry.tokenSymbol ?? "",
+                    "costBasisMethod": entry.method.rawValue,
+                    "costBasisEntryCount": "\(costBasisEntries.count)"
+                ]
+            )
+        } catch {
+            portfolioErrorMessage = error.localizedDescription
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    func removeCostBasisEntry(id: UUID) {
+        do {
+            costBasisEntries = try costBasisStore.remove(id: id)
+            refreshPnLSummary()
+            record(
+                kind: .costBasisEntryRemoved,
+                walletID: selectedWalletID,
+                publicAddress: selectedProfile?.publicAddress,
+                message: "Local cost basis entry removed.",
+                details: [
+                    "network": selectedNetwork.rawValue,
+                    "portfolioScope": selectedPortfolioScope.rawValue,
+                    "costBasisEntryCount": "\(costBasisEntries.count)"
+                ]
+            )
+        } catch {
+            portfolioErrorMessage = error.localizedDescription
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    private func refreshPnLSummary() {
+        portfolioPnLSummary = PnLCalculator.calculate(
+            currentSummary: portfolioSummary,
+            snapshots: portfolioHistory,
+            costBasisEntries: costBasisEntries,
+            swapActivityHints: PnLActivityMapper.swapHints(from: auditEvents)
         )
     }
 
@@ -2281,6 +2400,7 @@ final class WalletManager: ObservableObject {
         do {
             try portfolioSnapshotStore.clear()
             portfolioHistory = []
+            refreshPnLSummary()
             record(
                 kind: .portfolioHistoryCleared,
                 walletID: selectedWalletID,
