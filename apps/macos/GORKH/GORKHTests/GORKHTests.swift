@@ -1025,6 +1025,10 @@ struct GORKHTests {
           "environmentValidation":{
             "solanaRpcUrlStatus":"present-redacted",
             "rpcUrlRedacted":"SOLANA_RPC_URL configured (redacted)",
+            "rpcProvider":"rpcfast",
+            "rpcHost":"solana-rpc.rpcfast.com",
+            "rpcFastTokenStatus":"present",
+            "rpcMessage":"Using RPC Fast mainnet endpoint with X-Token header.",
             "requestedNetwork":"mainnet-beta",
             "networkSupportedForFutureExecution":true,
             "helperMode":"dry-run-non-executing",
@@ -1045,6 +1049,9 @@ struct GORKHTests {
         #expect(response.sdkValidation?.programIDMatches == true)
         #expect(response.environmentValidation?.solanaRPCURLStatus == .presentRedacted)
         #expect(response.environmentValidation?.rpcURLRedacted?.contains("redacted") == true)
+        #expect(response.environmentValidation?.rpcProvider == "rpcfast")
+        #expect(response.environmentValidation?.rpcHost == "solana-rpc.rpcfast.com")
+        #expect(response.environmentValidation?.rpcFastTokenStatus == "present")
         #expect(response.environmentValidation?.walletSecretEnvAccepted == false)
     }
 
@@ -1621,6 +1628,182 @@ struct GORKHTests {
         #expect(!CloakBridgeCommand.partialWithdraw.isHelperCommandAllowedInPhase25)
         #expect(!CloakBridgeCommand.privateTransfer.isHelperCommandAllowedInPhase25)
         #expect(!CloakBridgeCommand.swap.isHelperCommandAllowedInPhase25)
+    }
+
+    @Test func cloakPhase26AddsReadOnlyScanWithoutPartialWithdraw() {
+        let policy = CloakBridgeExecutionPolicy.phase26Enabled(allowedNodeExecutablePaths: ["/usr/bin/node"])
+
+        #expect(policy.allowedCommands.contains(.scan))
+        #expect(policy.canInvokeHelper(command: .scan, relativePath: policy.allowlistedHelperRelativePath))
+        #expect(CloakBridgeCommand.scan.isHelperCommandAllowedInPhase26)
+        #expect(!policy.allowedCommands.contains(.partialWithdraw))
+        #expect(!CloakBridgeCommand.partialWithdraw.isHelperCommandAllowedInPhase26)
+        #expect(!CloakBridgeCommand.complianceExport.isHelperCommandAllowedInPhase26)
+    }
+
+    @Test func cloakScanSummarySerializesWithoutSecretFields() throws {
+        let summary = CloakScanSummary(
+            status: .loaded,
+            transactions: [
+                CloakScanTransactionSummary(
+                    signature: "scanSignature",
+                    txType: "deposit",
+                    amountLamports: "10000000",
+                    feeLamports: "5000000",
+                    netAmountLamports: "5000000",
+                    runningBalanceLamports: "5000000",
+                    timestampMillis: "1767225600000",
+                    recipient: nil,
+                    commitmentPrefix: "abcdef123456",
+                    mintAddress: CloakConstants.nativeSolMint,
+                    symbol: "SOL",
+                    status: "scanned"
+                )
+            ],
+            totalDepositsLamports: "10000000",
+            totalWithdrawalsLamports: "0",
+            totalFeesLamports: "5000000",
+            netChangeLamports: "5000000",
+            finalBalanceLamports: "5000000",
+            transactionCount: 1,
+            scannedAt: Date(),
+            lastSignature: "scanSignature",
+            errorMessage: nil,
+            rpcProvider: "rpcfast",
+            rpcHost: "solana-rpc.rpcfast.com",
+            complianceSummary: CloakComplianceSummary(
+                transactionCount: 1,
+                totalDepositsLamports: "10000000",
+                totalWithdrawalsLamports: "0",
+                totalFeesLamports: "5000000",
+                netChangeLamports: "5000000",
+                finalBalanceLamports: "5000000",
+                mintBreakdown: [
+                    CloakComplianceMintBreakdown(mintAddress: CloakConstants.nativeSolMint, symbol: "SOL", netLamports: "5000000")
+                ],
+                dateRangeStart: "1767225600000",
+                dateRangeEnd: "1767225600000",
+                generatedAt: Date()
+            )
+        )
+
+        try CloakBridgeContractValidator.validate(summary)
+        let json = try #require(String(data: JSONEncoder().encode(summary), encoding: .utf8)).lowercased()
+        for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "utxoprivatekey", "viewingkey", "nullifier", "proofinput", "transactionpayload", "serializedtransaction"] {
+            #expect(!json.contains(forbidden))
+        }
+        #expect(json.contains("scansignature"))
+        #expect(json.contains("solana-rpc.rpcfast.com"))
+    }
+
+    @Test func cloakScanCacheClearKeepsOnlySafeSummaries() throws {
+        let suiteName = "ai.gorkh.tests.cloak.scan.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = CloakScanCacheStore(defaults: defaults)
+        let walletID = UUID()
+        let summary = CloakScanSummary(
+            status: .empty,
+            transactions: [],
+            totalDepositsLamports: "0",
+            totalWithdrawalsLamports: "0",
+            totalFeesLamports: "0",
+            netChangeLamports: "0",
+            finalBalanceLamports: "0",
+            transactionCount: 0,
+            scannedAt: Date(),
+            lastSignature: nil,
+            errorMessage: nil,
+            rpcProvider: "fallback",
+            rpcHost: "api.mainnet-beta.solana.com",
+            complianceSummary: nil
+        )
+
+        store.upsert(summary: summary, walletID: walletID)
+        #expect(store.load(walletID: walletID)?.status == .empty)
+        let persisted = try #require(defaults.data(forKey: CloakScanCacheStore.cacheKey))
+        let persistedText = try #require(String(data: persisted, encoding: .utf8)).lowercased()
+        #expect(!persistedText.contains("viewingkey"))
+        #expect(!persistedText.contains("utxoprivatekey"))
+        #expect(!persistedText.contains("nullifier"))
+        #expect(!persistedText.contains("proofinput"))
+
+        store.clear(walletID: walletID)
+        #expect(store.load(walletID: walletID) == nil)
+    }
+
+    @Test func cloakActivityReconcilerReportsMatchedLocalOnlyAndChainOnly() {
+        let walletID = UUID()
+        let localMatched = CloakPrivateRecordMetadata(
+            id: UUID(),
+            walletID: walletID,
+            walletPublicKey: SolanaConstants.systemProgramID,
+            mintAddress: CloakConstants.nativeSolMint,
+            amountLamports: 10_000_000,
+            commitmentPrefix: "localmatch",
+            leafIndex: 1,
+            depositSignature: "matchedSignature",
+            withdrawSignature: nil,
+            requestID: UUID(),
+            state: .deposited,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+        let localOnly = CloakPrivateRecordMetadata(
+            id: UUID(),
+            walletID: walletID,
+            walletPublicKey: SolanaConstants.systemProgramID,
+            mintAddress: CloakConstants.nativeSolMint,
+            amountLamports: 20_000_000,
+            commitmentPrefix: "localonly",
+            leafIndex: 2,
+            depositSignature: "localOnlySignature",
+            withdrawSignature: nil,
+            requestID: UUID(),
+            state: .deposited,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+        let summary = CloakScanSummary(
+            status: .loaded,
+            transactions: [
+                CloakScanTransactionSummary(signature: "matchedSignature", txType: "deposit", amountLamports: "10000000", feeLamports: "0", netAmountLamports: "10000000", runningBalanceLamports: nil, timestampMillis: nil, recipient: nil, commitmentPrefix: "localmatch", mintAddress: CloakConstants.nativeSolMint, symbol: "SOL", status: "scanned"),
+                CloakScanTransactionSummary(signature: "chainOnlySignature", txType: "withdraw", amountLamports: "5000000", feeLamports: "0", netAmountLamports: "-5000000", runningBalanceLamports: nil, timestampMillis: nil, recipient: nil, commitmentPrefix: "chainonly", mintAddress: CloakConstants.nativeSolMint, symbol: "SOL", status: "scanned")
+            ],
+            totalDepositsLamports: "10000000",
+            totalWithdrawalsLamports: "5000000",
+            totalFeesLamports: "0",
+            netChangeLamports: "5000000",
+            finalBalanceLamports: "5000000",
+            transactionCount: 2,
+            scannedAt: Date(),
+            lastSignature: "chainOnlySignature",
+            errorMessage: nil,
+            rpcProvider: "rpcfast",
+            rpcHost: "solana-rpc.rpcfast.com",
+            complianceSummary: nil
+        )
+
+        let reconciled = CloakActivityReconciler.reconcile(localRecords: [localMatched, localOnly], scanSummary: summary)
+
+        #expect(reconciled.contains { $0.state == .matched && $0.chainSignature == "matchedSignature" })
+        #expect(reconciled.contains { $0.state == .localOnly && $0.chainSignature == "localOnlySignature" })
+        #expect(reconciled.contains { $0.state == .chainOnly && $0.chainSignature == "chainOnlySignature" })
+    }
+
+    @Test func cloakScanPolicyRequiresMainnetUnlockAndScanCredential() {
+        let status = CloakVaultStatus(
+            walletID: UUID(),
+            privateWalletStatus: .ready,
+            availableReferenceKinds: [.encryptedUtxoReference, .viewingKeyReference],
+            storageDescription: "ready",
+            canClearPrivateData: true
+        )
+
+        #expect(CloakScanPolicy.credentialStatus(vaultStatus: status, vaultState: .unlocked) == .stored)
+        #expect(CloakScanPolicy.canScan(vaultStatus: status, vaultState: .unlocked, network: .mainnetBeta))
+        #expect(!CloakScanPolicy.canScan(vaultStatus: status, vaultState: .locked, network: .mainnetBeta))
+        #expect(!CloakScanPolicy.canScan(vaultStatus: status, vaultState: .unlocked, network: .devnet))
     }
 
     @Test func portfolioModelsAndSnapshotsSerializeWithoutSecrets() throws {

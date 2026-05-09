@@ -35,7 +35,9 @@ struct WalletPrivateView: View {
             CloakSignerPreflightView()
             CloakApprovalRequirementsView()
             CloakShieldReviewPlaceholderView()
-            CloakPrivateHistoryPlaceholderView()
+            CloakScanStatusView()
+            CloakPrivateActivityView()
+            CloakComplianceSummaryView()
             CloakSafetyPanelView()
         }
         .onAppear {

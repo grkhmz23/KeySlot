@@ -76,6 +76,10 @@ struct CloakWithdrawView: View {
                     }
                     .buttonStyle(.gorkhSecondary)
                 }
+
+                Text("Partial withdraw remains locked until deposit/withdraw smoke and scan reconciliation are validated.")
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.secondaryText)
             }
             .onAppear(perform: syncDefaultSelection)
             .onChange(of: walletManager.cloakPrivateRecords) {

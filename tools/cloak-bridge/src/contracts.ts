@@ -107,6 +107,10 @@ export type CloakFeeValidation = {
 export type CloakEnvironmentValidation = {
   solanaRpcUrlStatus: "missing" | "present-redacted";
   rpcUrlRedacted?: string;
+  rpcProvider?: "rpcfast" | "fallback" | "missing";
+  rpcHost?: string;
+  rpcFastTokenStatus?: "present" | "missing";
+  rpcMessage?: string;
   requestedNetwork?: "mainnet-beta" | "devnet";
   networkSupportedForFutureExecution: boolean;
   helperMode: "dry-run-non-executing";
@@ -126,7 +130,62 @@ export type CloakBridgeRequest = {
   mintAddress?: string;
   programId?: string;
   feeQuote?: CloakFeeQuote;
+  scanStateBase64?: string;
+  scanLimit?: number;
+  untilSignature?: string;
   timestamp?: string;
+};
+
+export type CloakScanStatus =
+  | "loaded"
+  | "empty"
+  | "partial"
+  | "unavailable"
+  | "error";
+
+export type CloakScanTransactionSummary = {
+  signature?: string;
+  txType?: string;
+  amountLamports: string;
+  feeLamports: string;
+  netAmountLamports: string;
+  runningBalanceLamports?: string;
+  timestampMillis?: string;
+  recipient?: string;
+  commitmentPrefix?: string;
+  mintAddress?: string;
+  symbol?: string;
+  status: "scanned";
+};
+
+export type CloakComplianceSummary = {
+  transactionCount: number;
+  totalDepositsLamports: string;
+  totalWithdrawalsLamports: string;
+  totalFeesLamports: string;
+  netChangeLamports: string;
+  finalBalanceLamports: string;
+  mintBreakdown: { mintAddress: string; symbol?: string; netLamports: string }[];
+  dateRangeStart?: string;
+  dateRangeEnd?: string;
+  generatedAt: string;
+};
+
+export type CloakScanSummary = {
+  status: CloakScanStatus;
+  transactions: CloakScanTransactionSummary[];
+  totalDepositsLamports: string;
+  totalWithdrawalsLamports: string;
+  totalFeesLamports: string;
+  netChangeLamports: string;
+  finalBalanceLamports: string;
+  transactionCount: number;
+  scannedAt: string;
+  lastSignature?: string;
+  errorMessage?: string;
+  rpcProvider?: "rpcfast" | "fallback" | "missing";
+  rpcHost?: string;
+  complianceSummary?: CloakComplianceSummary;
 };
 
 export type CloakBridgeResponse = {
@@ -142,6 +201,8 @@ export type CloakBridgeResponse = {
   sdkValidation?: CloakSdkValidation;
   feeValidation?: CloakFeeValidation;
   environmentValidation?: CloakEnvironmentValidation;
+  scanSummary?: CloakScanSummary;
+  complianceSummary?: CloakComplianceSummary;
   signerRequestSummary?: CloakSignerRequestSummary;
   nextRequiredGates?: string[];
   txSignature?: string;
@@ -153,6 +214,7 @@ export const ALLOWED_COMMANDS: CloakBridgeCommand[] = [
   "health",
   "env-check",
   "deposit-plan",
+  "scan",
 ];
 
 export const EXECUTION_COMMANDS: CloakBridgeCommand[] = [

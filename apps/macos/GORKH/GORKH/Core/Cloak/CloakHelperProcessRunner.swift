@@ -28,6 +28,18 @@ protocol CloakHelperProcessRunning {
     ) async throws -> CloakHelperProcessResult
 }
 
+enum CloakHelperEnvironment {
+    static func rpcFastMainnetOnly(_ environment: [String: String] = ProcessInfo.processInfo.environment) -> [String: String] {
+        var filtered: [String: String] = [:]
+        for name in ["GORKH_RPCFAST_MAINNET_TOKEN", "RPCFAST_MAINNET_TOKEN"] {
+            if let value = environment[name], !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                filtered[name] = value
+            }
+        }
+        return filtered
+    }
+}
+
 struct CloakHelperDirectProcessRunner: CloakHelperProcessRunning {
     func run(
         resolvedPath: CloakHelperResolvedPath,
@@ -44,7 +56,7 @@ struct CloakHelperDirectProcessRunner: CloakHelperProcessRunning {
         process.standardInput = input
         process.standardOutput = stdout
         process.standardError = stderr
-        process.environment = [:]
+        process.environment = CloakHelperEnvironment.rpcFastMainnetOnly()
 
         try process.run()
         try input.fileHandleForWriting.write(contentsOf: stdin)

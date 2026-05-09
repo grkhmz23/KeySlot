@@ -23,7 +23,7 @@ struct CloakApprovalRequirementsView: View {
                     }
                 }
 
-                Text("Phase 2.5 enables scoped Cloak deposit/full-withdraw signing only after review, mainnet phrase, LocalAuthentication, and audit. Other private actions remain locked.")
+                Text("Phase 2.6 keeps scoped Cloak deposit/full-withdraw signing gated by review, mainnet phrase, LocalAuthentication, and audit. Private history scan is read-only; other private actions remain locked.")
                     .font(.caption)
                     .foregroundStyle(GorkhColors.warning)
             }

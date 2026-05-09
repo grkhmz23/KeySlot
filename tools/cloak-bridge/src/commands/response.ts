@@ -13,6 +13,8 @@ export function response(
     sdkValidation?: CloakBridgeResponse["sdkValidation"];
     feeValidation?: CloakBridgeResponse["feeValidation"];
     environmentValidation?: CloakBridgeResponse["environmentValidation"];
+    scanSummary?: CloakBridgeResponse["scanSummary"];
+    complianceSummary?: CloakBridgeResponse["complianceSummary"];
     signerRequestSummary?: CloakBridgeResponse["signerRequestSummary"];
     nextRequiredGates?: CloakBridgeResponse["nextRequiredGates"];
   },
@@ -34,6 +36,8 @@ export function response(
     sdkValidation: options.sdkValidation,
     feeValidation: options.feeValidation,
     environmentValidation: options.environmentValidation,
+    scanSummary: options.scanSummary,
+    complianceSummary: options.complianceSummary,
     signerRequestSummary: options.signerRequestSummary,
     nextRequiredGates: options.nextRequiredGates,
     txSignature: executionIdentifiers?.txSignature,

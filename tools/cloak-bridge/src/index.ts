@@ -12,6 +12,7 @@ import { envCheck } from "./commands/envCheck.ts";
 import { executeCloakCommand } from "./commands/execute.ts";
 import { health } from "./commands/health.ts";
 import { response } from "./commands/response.ts";
+import { scan } from "./commands/scan.ts";
 import { validateNoForbiddenFields } from "./redaction.ts";
 
 export async function handleCommand(command: CloakBridgeCommand, request: unknown = {}): Promise<CloakBridgeResponse> {
@@ -33,6 +34,8 @@ export async function handleCommand(command: CloakBridgeCommand, request: unknow
       return await envCheck(request);
     case "deposit-plan":
       return await depositPlan(request);
+    case "scan":
+      return await scan(request);
     default:
       return response(command, {
         request: request as Record<string, never>,
@@ -79,7 +82,7 @@ async function main(): Promise<void> {
       request: {},
       status: "rejected",
       errorCategory: "invalid-request",
-      message: "Usage: node src/index.ts <health|env-check|deposit-plan>",
+      message: "Usage: node src/index.ts <health|env-check|deposit-plan|scan>",
     }), 2);
     return;
   }

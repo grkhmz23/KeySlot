@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { calculateFeeQuote, EXECUTION_COMMANDS } from "../src/contracts.ts";
 import { SUSPICIOUS_SECRET_ENV_NAMES } from "../src/environment.ts";
 import { handleCommand } from "../src/index.ts";
+import { resolveCloakRPCConfiguration } from "../src/rpc.ts";
 import { hasForbiddenField, validateNoForbiddenFields } from "../src/redaction.ts";
 
 test("health returns safe JSON with SDK validation", async () => {
@@ -20,14 +21,21 @@ test("health returns safe JSON with SDK validation", async () => {
 
 test("env-check returns no secrets and redacts RPC URL", async () => {
   const oldRpc = process.env.SOLANA_RPC_URL;
+  const oldRpcFast = process.env.GORKH_RPCFAST_MAINNET_TOKEN;
   const oldSuspicious = snapshotEnv(SUSPICIOUS_SECRET_ENV_NAMES);
   clearEnv(SUSPICIOUS_SECRET_ENV_NAMES);
   process.env.SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com/path?token=do-not-print";
+  process.env.GORKH_RPCFAST_MAINNET_TOKEN = "rpcfast-token-do-not-print";
   const response = await handleCommand("env-check", { network: "mainnet-beta" });
   if (oldRpc === undefined) {
     delete process.env.SOLANA_RPC_URL;
   } else {
     process.env.SOLANA_RPC_URL = oldRpc;
+  }
+  if (oldRpcFast === undefined) {
+    delete process.env.GORKH_RPCFAST_MAINNET_TOKEN;
+  } else {
+    process.env.GORKH_RPCFAST_MAINNET_TOKEN = oldRpcFast;
   }
   restoreEnv(oldSuspicious);
 
@@ -36,11 +44,42 @@ test("env-check returns no secrets and redacts RPC URL", async () => {
   assert.equal(response.status, "ok");
   assert.equal(response.environmentValidation.solanaRpcUrlStatus, "present-redacted");
   assert.equal(response.environmentValidation.rpcUrlRedacted, "SOLANA_RPC_URL configured (redacted)");
+  assert.equal(response.environmentValidation.rpcProvider, "rpcfast");
+  assert.equal(response.environmentValidation.rpcHost, "solana-rpc.rpcfast.com");
+  assert.equal(response.environmentValidation.rpcFastTokenStatus, "present");
   assert.equal(json.includes("api.mainnet-beta.solana.com"), false);
   assert.equal(json.includes("do-not-print"), false);
+  assert.equal(json.includes("rpcfast-token-do-not-print"), false);
   assert.equal(json.includes("privatekey"), false);
   assert.equal(json.includes("mnemonic"), false);
   assert.equal(json.includes("serializedtransaction"), false);
+});
+
+test("RPC Fast configuration uses X-Token header without exposing token", () => {
+  const config = resolveCloakRPCConfiguration(undefined, {
+    GORKH_RPCFAST_MAINNET_TOKEN: "rpcfast-token-do-not-print",
+  });
+
+  assert.equal(config.provider, "rpcfast");
+  assert.equal(config.endpoint, "https://solana-rpc.rpcfast.com/");
+  assert.equal(config.httpHeaders["X-Token"], "rpcfast-token-do-not-print");
+  assert.equal(JSON.stringify({
+    provider: config.provider,
+    host: config.host,
+    tokenStatus: config.tokenStatus,
+    message: config.message,
+  }).includes("rpcfast-token-do-not-print"), false);
+  assert.equal(config.endpoint.includes("api_key="), false);
+});
+
+test("RPC Fast missing token fallback is explicit and redacted", () => {
+  const config = resolveCloakRPCConfiguration(undefined, {});
+
+  assert.equal(config.provider, "fallback");
+  assert.equal(config.tokenStatus, "missing");
+  assert.equal(config.host, "api.mainnet-beta.solana.com");
+  assert.equal(config.message.includes("RPC Fast token missing"), true);
+  assert.equal(JSON.stringify(config).includes("api_key="), false);
 });
 
 test("env-check rejects suspicious wallet secret env names without printing values", async () => {
@@ -119,6 +158,24 @@ test("forbidden fields are rejected", async () => {
   }));
 });
 
+test("scan command rejects missing local scan state safely", async () => {
+  const response = await handleCommand("scan", {
+    requestId: "req-scan-1",
+    network: "mainnet-beta",
+    walletPublicAddress: "11111111111111111111111111111111",
+  });
+  const json = JSON.stringify(response).toLowerCase();
+
+  assert.equal(response.status, "rejected");
+  assert.equal(response.errorCategory, "invalid-request");
+  assert.equal(response.scanSummary.status, "error");
+  assert.equal(response.scanSummary.transactionCount, 0);
+  assert.equal(json.includes("viewingkey"), false);
+  assert.equal(json.includes("utxoprivatekey"), false);
+  assert.equal(json.includes("nullifier"), false);
+  assert.equal(json.includes("proofinput"), false);
+});
+
 test("deposit-plan signer placeholder is locked and contains no executable payload", async () => {
   const response = await handleCommand("deposit-plan", {
     requestId: "req-2",
@@ -190,10 +247,30 @@ test("helper source does not call SDK transaction methods", async () => {
     "transfer(",
     "swapWithChange(",
     "swapUtxo(",
-    "scanTransactions(",
-    "toComplianceReport(",
   ]) {
     assert.equal(combined.includes(forbiddenCall), false);
+  }
+});
+
+test("scan helper source only calls approved read-only scan methods", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(new URL("../src/commands/scan.ts", import.meta.url), "utf8");
+
+  assert.equal(source.includes("scanTransactions("), true);
+  assert.equal(source.includes("toComplianceReport("), true);
+  for (const forbiddenCall of [
+    "transact(",
+    "fullWithdraw(",
+    "partialWithdraw(",
+    "transfer(",
+    "swapWithChange(",
+    "swapUtxo(",
+    "console.log",
+    "child_process",
+    "exec(",
+    "spawn(",
+  ]) {
+    assert.equal(source.includes(forbiddenCall), false);
   }
 });
 

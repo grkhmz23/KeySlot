@@ -1,4 +1,5 @@
 import type { CloakBridgeRequest, CloakEnvironmentValidation } from "./contracts.ts";
+import { resolveCloakRPCConfiguration } from "./rpc.ts";
 
 export const SUSPICIOUS_SECRET_ENV_NAMES = [
   "PRIVATE_KEY",
@@ -20,10 +21,15 @@ export function validateEnvironment(
   });
   const hasRpcUrl = Boolean(env.SOLANA_RPC_URL && env.SOLANA_RPC_URL.length > 0);
   const requestedNetwork = request.network;
+  const rpc = resolveCloakRPCConfiguration(undefined, env);
 
   return {
     solanaRpcUrlStatus: hasRpcUrl ? "present-redacted" : "missing",
     rpcUrlRedacted: hasRpcUrl ? "SOLANA_RPC_URL configured (redacted)" : undefined,
+    rpcProvider: rpc.provider,
+    rpcHost: rpc.host,
+    rpcFastTokenStatus: rpc.tokenStatus,
+    rpcMessage: rpc.message,
     requestedNetwork,
     networkSupportedForFutureExecution: requestedNetwork === "mainnet-beta",
     helperMode: "dry-run-non-executing",

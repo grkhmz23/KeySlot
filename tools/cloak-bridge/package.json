@@ -11,6 +11,7 @@
     "health": "node src/index.ts health",
     "env-check": "node src/index.ts env-check",
     "deposit-plan": "node src/index.ts deposit-plan",
+    "scan": "node src/index.ts scan",
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {

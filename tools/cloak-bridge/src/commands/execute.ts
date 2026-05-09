@@ -11,6 +11,7 @@ import {
   type CloakSigningResponseFrame,
 } from "../contracts.ts";
 import { loadSdkValidation } from "../sdk.ts";
+import { resolveCloakRPCConfiguration } from "../rpc.ts";
 import { response } from "./response.ts";
 
 type SignerRoundTrip = (frame: CloakSigningRequestFrame) => Promise<CloakSigningResponseFrame>;
@@ -104,7 +105,8 @@ async function executeDeposit(
   const amount = parsePositiveLamports(request.amountLamports, "amountLamports");
   const feeQuote = calculateFeeQuote(amount.toString());
   const walletPublicKey = new web3.PublicKey(requiredString(request.walletPublicAddress, "walletPublicAddress"));
-  const connection = new web3.Connection(resolveRPCURL(request.rpcUrl), { commitment: "confirmed" });
+  const rpc = resolveCloakRPCConfiguration(request.rpcUrl);
+  const connection = new web3.Connection(rpc.endpoint, { commitment: "confirmed", httpHeaders: rpc.httpHeaders });
   const programId = sdk.CLOAK_PROGRAM_ID;
   const outputKeypair = await sdk.generateUtxoKeypair();
   const privateOutputAmount = amount;
@@ -174,7 +176,8 @@ async function executeFullWithdraw(
   const spendState = requiredString(request.spendStateBase64, "spendStateBase64");
   const walletPublicKey = new web3.PublicKey(requiredString(request.walletPublicAddress, "walletPublicAddress"));
   const recipient = new web3.PublicKey(requiredString(request.recipientAddress, "recipientAddress"));
-  const connection = new web3.Connection(resolveRPCURL(request.rpcUrl), { commitment: "confirmed" });
+  const rpc = resolveCloakRPCConfiguration(request.rpcUrl);
+  const connection = new web3.Connection(rpc.endpoint, { commitment: "confirmed", httpHeaders: rpc.httpHeaders });
   const inputUtxo = await sdk.deserializeUtxo(Uint8Array.from(Buffer.from(spendState, "base64")));
 
   const runtimeOptions = {
@@ -276,16 +279,6 @@ function deserializeSignedTransaction(signedBase64: string, original: unknown, w
     return web3.VersionedTransaction.deserialize(Uint8Array.from(bytes));
   }
   return web3.Transaction.from(bytes);
-}
-
-function resolveRPCURL(value: string | undefined): string {
-  if (value && /^https:\/\/.+/.test(value)) {
-    return value;
-  }
-  if (process.env.SOLANA_RPC_URL && /^https:\/\/.+/.test(process.env.SOLANA_RPC_URL)) {
-    return process.env.SOLANA_RPC_URL;
-  }
-  return "https://api.mainnet-beta.solana.com";
 }
 
 function requiredString(value: string | undefined, field: string): string {

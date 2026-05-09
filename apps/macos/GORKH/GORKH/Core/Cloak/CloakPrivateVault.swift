@@ -30,6 +30,7 @@ protocol CloakPrivateVault {
         metadata: CloakPrivateRecordMetadata
     ) throws
     func loadSpendState(recordID: UUID, walletID: UUID) throws -> Data
+    func loadScanState(walletID: UUID) throws -> Data
     func records(for walletID: UUID?) -> [CloakPrivateRecordMetadata]
     func unspentRecords(for walletID: UUID?) -> [CloakPrivateRecordMetadata]
     func markSpent(recordID: UUID, walletID: UUID, signature: String?) throws -> CloakPrivateRecordMetadata
@@ -54,6 +55,10 @@ struct CloakPrivateVaultStatusOnly: CloakPrivateVault {
     }
 
     func loadSpendState(recordID: UUID, walletID: UUID) throws -> Data {
+        throw CloakPrivateVaultError.storageLockedInPhase20
+    }
+
+    func loadScanState(walletID: UUID) throws -> Data {
         throw CloakPrivateVaultError.storageLockedInPhase20
     }
 
@@ -84,7 +89,10 @@ final class KeychainCloakPrivateVault: CloakPrivateVault {
 
     func status(for walletID: UUID?) -> CloakVaultStatus {
         let records = records(for: walletID)
-        let kinds: [CloakSecretKind] = records.isEmpty ? [] : [.encryptedUtxoReference, .viewingKeyReference]
+        var kinds: [CloakSecretKind] = records.isEmpty ? [] : [.encryptedUtxoReference]
+        if let walletID, records.contains(where: { (try? load(account: account(walletID: walletID, recordID: $0.id, suffix: "view"))) != nil }) {
+            kinds.append(.viewingKeyReference)
+        }
         return CloakVaultStatus(
             walletID: walletID,
             privateWalletStatus: records.isEmpty ? .readyForFutureStorage : .ready,
@@ -119,6 +127,15 @@ final class KeychainCloakPrivateVault: CloakPrivateVault {
 
     func loadSpendState(recordID: UUID, walletID: UUID) throws -> Data {
         try load(account: account(walletID: walletID, recordID: recordID, suffix: "spend"))
+    }
+
+    func loadScanState(walletID: UUID) throws -> Data {
+        for record in records(for: walletID) {
+            if let state = try? load(account: account(walletID: walletID, recordID: record.id, suffix: "view")) {
+                return state
+            }
+        }
+        throw CloakPrivateVaultError.missingPrivateState
     }
 
     func records(for walletID: UUID?) -> [CloakPrivateRecordMetadata] {

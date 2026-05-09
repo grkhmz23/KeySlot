@@ -43,6 +43,7 @@ enum CloakActionKind: String, Codable, CaseIterable, Identifiable, Equatable {
     case fullWithdraw = "full_withdraw"
     case partialWithdraw = "partial_withdraw"
     case privateSwap = "private_swap"
+    case scan = "scan"
     case complianceScan = "compliance_scan"
 
     var id: String { rawValue }
@@ -59,6 +60,8 @@ enum CloakActionKind: String, Codable, CaseIterable, Identifiable, Equatable {
             return "Partial Withdraw"
         case .privateSwap:
             return "Private Swap"
+        case .scan:
+            return "History Scan"
         case .complianceScan:
             return "Compliance Scan"
         }

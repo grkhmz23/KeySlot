@@ -247,7 +247,7 @@ struct CloakInteractiveProcessRunner: CloakInteractiveProcessRunning {
         process.standardInput = input
         process.standardOutput = stdout
         process.standardError = stderr
-        process.environment = [:]
+        process.environment = CloakHelperEnvironment.rpcFastMainnetOnly()
 
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -351,7 +351,7 @@ struct CloakExecutionBridge {
 
     static func liveDefault() -> CloakExecutionBridge {
         CloakExecutionBridge(
-            policy: .phase25Enabled(),
+            policy: .phase26Enabled(),
             projectRoot: CloakProjectRootResolver.resolve(),
             pathResolver: CloakHelperPathResolver(),
             processRunner: CloakInteractiveProcessRunner()

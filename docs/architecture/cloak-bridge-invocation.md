@@ -1,6 +1,6 @@
 # Cloak Bridge Invocation
 
-Phase 2.5 keeps the helper behind the fixed native bridge and enables only reviewed Cloak SOL deposit/full-withdraw execution. All other Cloak execution paths remain locked.
+Phase 2.6 keeps the helper behind the fixed native bridge, preserves reviewed Cloak SOL deposit/full-withdraw execution, and adds one read-only scan command for private history reconciliation. No new transaction execution path is added in Phase 2.6.
 
 ## Allowed Commands
 
@@ -15,12 +15,15 @@ Execution commands allowed only through the interactive native signer bridge:
 - `execute-deposit`
 - `full-withdraw`
 
-All other transaction or history commands remain locked:
+Read-only commands allowed through the non-interactive helper bridge:
+
+- `scan`
+
+All other transaction commands remain locked:
 
 - `partial-withdraw`
 - `private-transfer`
 - `swap`
-- `scan`
 - `compliance-export`
 
 ## Process Boundary
@@ -54,7 +57,7 @@ The helper may import `@cloak.dev/sdk` for validation:
 - `NATIVE_SOL_MINT`
 - SDK SOL fee helpers, if exported
 
-For Phase 2.5 execution, the helper may call only:
+For Phase 2.5/2.6 execution, the helper may call only:
 
 - `generateUtxoKeypair`
 - `createUtxo`
@@ -66,7 +69,12 @@ For Phase 2.5 execution, the helper may call only:
 - `getNkFromUtxoPrivateKey`
 - SDK parsing helpers for safe errors
 
-The helper must not call private transfer, swap, partial withdraw, scan, compliance export, relay submit, or any method that signs directly in TypeScript.
+For Phase 2.6 read-only scan, the helper may call only:
+
+- `scanTransactions`
+- `toComplianceReport` for aggregate summary generation only
+
+The helper must not call private transfer, swap, partial withdraw, relay submit, or any method that signs directly in TypeScript. `compliance-export` remains locked as a standalone command.
 
 ## Signer Bridge Summary
 
@@ -80,4 +88,15 @@ The helper must not return transaction bytes, message bytes, serialized transact
 
 `execute-deposit` and `full-withdraw` are line-framed interactive commands. They may emit signing requests with payload bytes only over stdin/stdout during the approved operation. Final responses include safe summaries plus secure state blobs for Swift Keychain storage. Those secure state blobs must not be logged, audited, stored in UserDefaults, or sent to Agent/Assistant context.
 
-The helper process receives no secret environment. Until a header-safe RPC proxy is added for RPC Fast authentication, the Cloak helper uses a public mainnet RPC URL for SDK execution rather than receiving RPC provider tokens.
+`scan` is a read-only stdin/stdout command. Swift loads the scan credential from Keychain only after wallet unlock and local authentication, passes it transiently as `scanStateBase64`, and accepts only safe scan summaries in response. The helper must not return decrypted raw payloads, full UTXOs, note contents, nullifiers, proof inputs, or the scan credential.
+
+## RPC Routing
+
+The helper process receives only scoped RPC Fast mainnet token environment variables:
+
+- `GORKH_RPCFAST_MAINNET_TOKEN`
+- `RPCFAST_MAINNET_TOKEN`
+
+When one is present, the helper constructs an `@solana/web3.js` `Connection` to `https://solana-rpc.rpcfast.com/` with an `X-Token` HTTP header. It must not put tokens in query strings, stdout, stderr, audit, UI, docs, or persisted state.
+
+If no RPC Fast token is present, env-check reports `rpcProvider: fallback`, `rpcFastTokenStatus: missing`, and the helper uses the explicit fallback RPC policy. The fallback state is visible so missing infrastructure is not silent.

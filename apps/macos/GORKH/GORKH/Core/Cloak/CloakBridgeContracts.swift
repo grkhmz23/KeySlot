@@ -31,6 +31,15 @@ enum CloakBridgeCommand: String, Codable, CaseIterable, Identifiable, Equatable 
             return false
         }
     }
+
+    var isHelperCommandAllowedInPhase26: Bool {
+        switch self {
+        case .health, .environmentCheck, .depositPlan, .executeDeposit, .fullWithdraw, .scan:
+            return true
+        case .partialWithdraw, .privateTransfer, .swap, .complianceExport:
+            return false
+        }
+    }
 }
 
 enum CloakBridgeStatus: String, Codable, Equatable {
@@ -60,6 +69,9 @@ struct CloakBridgeRequest: Codable, Equatable, Identifiable {
     let mintAddress: String?
     let programID: String
     let feeQuote: CloakFeeQuote?
+    let scanStateBase64: String?
+    let scanLimit: Int?
+    let untilSignature: String?
     let createdAt: Date
 
     enum CodingKeys: String, CodingKey {
@@ -72,6 +84,9 @@ struct CloakBridgeRequest: Codable, Equatable, Identifiable {
         case mintAddress
         case programID = "programId"
         case feeQuote
+        case scanStateBase64
+        case scanLimit
+        case untilSignature
         case createdAt = "timestamp"
     }
 
@@ -85,6 +100,9 @@ struct CloakBridgeRequest: Codable, Equatable, Identifiable {
         mintAddress: String? = nil,
         programID: String = CloakConstants.programID,
         feeQuote: CloakFeeQuote? = nil,
+        scanStateBase64: String? = nil,
+        scanLimit: Int? = nil,
+        untilSignature: String? = nil,
         createdAt: Date = Date()
     ) {
         self.id = id
@@ -96,6 +114,9 @@ struct CloakBridgeRequest: Codable, Equatable, Identifiable {
         self.mintAddress = mintAddress
         self.programID = programID
         self.feeQuote = feeQuote
+        self.scanStateBase64 = scanStateBase64
+        self.scanLimit = scanLimit
+        self.untilSignature = untilSignature
         self.createdAt = createdAt
     }
 }
@@ -161,6 +182,10 @@ enum CloakHelperMode: String, Codable, Equatable {
 struct CloakEnvironmentValidation: Codable, Equatable {
     let solanaRPCURLStatus: CloakRPCURLStatus
     let rpcURLRedacted: String?
+    let rpcProvider: String?
+    let rpcHost: String?
+    let rpcFastTokenStatus: String?
+    let rpcMessage: String?
     let requestedNetwork: WalletNetwork?
     let networkSupportedForFutureExecution: Bool
     let helperMode: CloakHelperMode
@@ -172,6 +197,10 @@ struct CloakEnvironmentValidation: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case solanaRPCURLStatus = "solanaRpcUrlStatus"
         case rpcURLRedacted = "rpcUrlRedacted"
+        case rpcProvider
+        case rpcHost
+        case rpcFastTokenStatus
+        case rpcMessage
         case requestedNetwork
         case networkSupportedForFutureExecution
         case helperMode
@@ -195,6 +224,8 @@ struct CloakBridgeResponse: Codable, Equatable, Identifiable {
     let sdkValidation: CloakSDKValidation?
     let feeValidation: CloakFeeValidation?
     let environmentValidation: CloakEnvironmentValidation?
+    let scanSummary: CloakScanSummary?
+    let complianceSummary: CloakComplianceSummary?
     let signerRequestSummary: CloakSignerRequestSummary?
     let nextRequiredGates: [String]?
     let transactionSignature: String?
@@ -214,6 +245,8 @@ struct CloakBridgeResponse: Codable, Equatable, Identifiable {
         case sdkValidation
         case feeValidation
         case environmentValidation
+        case scanSummary
+        case complianceSummary
         case signerRequestSummary
         case nextRequiredGates
         case transactionSignature = "txSignature"
@@ -234,6 +267,8 @@ struct CloakBridgeResponse: Codable, Equatable, Identifiable {
         sdkValidation: CloakSDKValidation? = nil,
         feeValidation: CloakFeeValidation? = nil,
         environmentValidation: CloakEnvironmentValidation? = nil,
+        scanSummary: CloakScanSummary? = nil,
+        complianceSummary: CloakComplianceSummary? = nil,
         signerRequestSummary: CloakSignerRequestSummary? = nil,
         nextRequiredGates: [String]? = nil,
         transactionSignature: String? = nil,
@@ -252,6 +287,8 @@ struct CloakBridgeResponse: Codable, Equatable, Identifiable {
         self.sdkValidation = sdkValidation
         self.feeValidation = feeValidation
         self.environmentValidation = environmentValidation
+        self.scanSummary = scanSummary
+        self.complianceSummary = complianceSummary
         self.signerRequestSummary = signerRequestSummary
         self.nextRequiredGates = nextRequiredGates
         self.transactionSignature = transactionSignature
@@ -311,11 +348,22 @@ struct CloakBridgeExecutionPolicy: Equatable {
         )
     }
 
+    static func phase26Enabled(
+        allowedNodeExecutablePaths: [String] = CloakBridgeExecutionPolicy.disabled.allowedNodeExecutablePaths
+    ) -> CloakBridgeExecutionPolicy {
+        CloakBridgeExecutionPolicy(
+            helperExecutionEnabled: true,
+            allowlistedHelperRelativePath: CloakBridgeExecutionPolicy.disabled.allowlistedHelperRelativePath,
+            allowedNodeExecutablePaths: allowedNodeExecutablePaths,
+            allowedCommands: [.health, .environmentCheck, .depositPlan, .executeDeposit, .fullWithdraw, .scan]
+        )
+    }
+
     func canInvokeHelper(command: CloakBridgeCommand, relativePath: String) -> Bool {
         helperExecutionEnabled
             && relativePath == allowlistedHelperRelativePath
             && allowedCommands.contains(command)
-            && command.isHelperCommandAllowedInPhase25
+            && (allowedCommands.contains(.scan) ? command.isHelperCommandAllowedInPhase26 : command.isHelperCommandAllowedInPhase25)
     }
 }
 

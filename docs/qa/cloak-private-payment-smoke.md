@@ -10,13 +10,14 @@ Allowed:
 - Full withdraw / private pay from a locally stored Cloak record
 - Bridge health and environment checks
 - Local vault status checks
+- Read-only private activity rescan after a deposit/withdraw smoke
 
 Not allowed:
 
 - private swap
 - batch payroll
 - partial withdraw unless a later phase explicitly enables it
-- scan/compliance export
+- standalone compliance export
 - Agent-triggered execution
 
 ## Preconditions
@@ -26,6 +27,9 @@ Not allowed:
 - Confirm the Cloak program id is `zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW`.
 - Confirm the app is on `mainnet-beta`.
 - Confirm Wallet -> Private shows the native signer bridge and local vault status.
+- Confirm RPC Fast env vars are set locally if using RPC Fast helper routing:
+  - `GORKH_RPCFAST_MAINNET_TOKEN`
+  - or `RPCFAST_MAINNET_TOKEN`
 - Confirm the wallet is unlocked immediately before execution.
 
 ## Deposit Smoke
@@ -52,6 +56,24 @@ Not allowed:
    - audit log has safe before/after events
 
 Do not paste or export private vault contents.
+
+## Read-Only Scan Smoke
+
+After a successful deposit or full withdraw smoke:
+
+1. Open Wallet -> Private.
+2. Confirm the wallet is unlocked.
+3. Confirm the Private History Scan panel shows scan credential stored locally.
+4. Click Rescan Private Activity.
+5. Complete LocalAuthentication if prompted.
+6. Confirm:
+   - scan status becomes loaded, empty, partial, or unavailable honestly
+   - RPC provider status shows RPC Fast or explicit fallback
+   - activity rows show matched/local-only/chain-only reconciliation
+   - safe compliance summary appears only after successful scan
+   - no scan credential, full UTXO, nullifier, note contents, or proof input appears in UI or audit
+
+Clear Private Scan Cache may be used after scan smoke. It must clear only scan summaries and must not delete the local Cloak spend state or wallet state.
 
 ## Full Withdraw / Private Pay Smoke
 
@@ -89,3 +111,5 @@ GORKH_RUN_CLOAK_MAINNET_SMOKE=1
 ```
 
 and must still require explicit human confirmation before sending a transaction.
+
+Phase 2.6 does not run a live transaction automatically. Scan smoke is read-only and may be run only after a separately approved live payment smoke has created local Cloak state.
