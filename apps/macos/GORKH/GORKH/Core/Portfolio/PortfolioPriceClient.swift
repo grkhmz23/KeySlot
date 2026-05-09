@@ -25,15 +25,18 @@ struct JupiterPriceClient: PortfolioPriceClient {
     private let session: URLSession
     private let baseURL: URL
     private let timeout: TimeInterval
+    private let configuration: JupiterAPIConfiguration
 
     init(
         session: URLSession = .shared,
-        baseURL: URL = URL(string: "https://lite-api.jup.ag/price/v3")!,
-        timeout: TimeInterval = 8
+        baseURL: URL? = nil,
+        timeout: TimeInterval = 8,
+        configuration: JupiterAPIConfiguration = JupiterAPIConfiguration()
     ) {
         self.session = session
-        self.baseURL = baseURL
+        self.baseURL = baseURL ?? configuration.priceBaseURL
         self.timeout = timeout
+        self.configuration = configuration
     }
 
     func fetchPrices(mintAddresses: [String]) async throws -> [String: PortfolioPriceQuote] {
@@ -46,6 +49,7 @@ struct JupiterPriceClient: PortfolioPriceClient {
         request.httpMethod = "GET"
         request.timeoutInterval = timeout
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        configuration.applyAuthentication(to: &request)
 
         let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {

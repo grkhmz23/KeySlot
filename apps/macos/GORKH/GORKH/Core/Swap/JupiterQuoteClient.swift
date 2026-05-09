@@ -4,15 +4,18 @@ struct JupiterQuoteClient {
     private let session: URLSession
     private let baseURL: URL
     private let timeout: TimeInterval
+    private let configuration: JupiterAPIConfiguration
 
     init(
         session: URLSession = .shared,
-        baseURL: URL = URL(string: "https://lite-api.jup.ag/swap/v1")!,
-        timeout: TimeInterval = 10
+        baseURL: URL? = nil,
+        timeout: TimeInterval = 10,
+        configuration: JupiterAPIConfiguration = JupiterAPIConfiguration()
     ) {
         self.session = session
-        self.baseURL = baseURL
+        self.baseURL = baseURL ?? configuration.swapBaseURL
         self.timeout = timeout
+        self.configuration = configuration
     }
 
     func fetchQuote(
@@ -37,6 +40,7 @@ struct JupiterQuoteClient {
         request.httpMethod = "GET"
         request.timeoutInterval = timeout
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        configuration.applyAuthentication(to: &request)
 
         let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {

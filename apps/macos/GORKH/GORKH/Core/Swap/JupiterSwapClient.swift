@@ -5,15 +5,18 @@ struct JupiterSwapClient {
     private let session: URLSession
     private let baseURL: URL
     private let timeout: TimeInterval
+    private let configuration: JupiterAPIConfiguration
 
     init(
         session: URLSession = .shared,
-        baseURL: URL = URL(string: "https://lite-api.jup.ag/swap/v1")!,
-        timeout: TimeInterval = 12
+        baseURL: URL? = nil,
+        timeout: TimeInterval = 12,
+        configuration: JupiterAPIConfiguration = JupiterAPIConfiguration()
     ) {
         self.session = session
-        self.baseURL = baseURL
+        self.baseURL = baseURL ?? configuration.swapBaseURL
         self.timeout = timeout
+        self.configuration = configuration
     }
 
     func buildSwapTransaction(
@@ -45,6 +48,7 @@ struct JupiterSwapClient {
         request.timeoutInterval = timeout
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        configuration.applyAuthentication(to: &request)
         request.httpBody = data
 
         let (responseData, response) = try await session.data(for: request)

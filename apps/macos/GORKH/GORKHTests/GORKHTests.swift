@@ -1428,6 +1428,39 @@ struct GORKHTests {
         }
     }
 
+    @Test func jupiterAPIKeyConfigurationUsesEnvironmentWithoutPuttingKeyInURLsOrAudit() throws {
+        let configuration = JupiterAPIConfiguration(environment: [
+            JupiterAPIConfiguration.appSpecificAPIKeyEnvironmentName: "test-jupiter-key",
+            JupiterAPIConfiguration.fallbackAPIKeyEnvironmentName: "fallback-key"
+        ])
+        var request = URLRequest(url: try #require(URL(string: "https://api.jup.ag/swap/v1/quote")))
+        configuration.applyAuthentication(to: &request)
+
+        #expect(configuration.apiKey == "test-jupiter-key")
+        #expect(configuration.swapBaseURL.absoluteString == "https://api.jup.ag/swap/v1")
+        #expect(configuration.priceBaseURL.absoluteString == "https://api.jup.ag/price/v3")
+        #expect(request.value(forHTTPHeaderField: "x-api-key") == "test-jupiter-key")
+        #expect(!configuration.swapBaseURL.absoluteString.contains("test-jupiter-key"))
+        #expect(!configuration.priceBaseURL.absoluteString.contains("test-jupiter-key"))
+
+        let safeDetails = Redaction.safeDetails([
+            "x-api-key": "test-jupiter-key",
+            "jupiterApiKey": "test-jupiter-key",
+            "inputMint": PortfolioConstants.nativeSolMint
+        ])
+        #expect(safeDetails["inputMint"] == PortfolioConstants.nativeSolMint)
+        #expect(safeDetails["x-api-key"] == nil)
+        #expect(safeDetails["jupiterApiKey"] == nil)
+    }
+
+    @Test func jupiterConfigurationFallsBackToLiteEndpointsWithoutAPIKey() {
+        let configuration = JupiterAPIConfiguration(environment: [:])
+
+        #expect(configuration.apiKey == nil)
+        #expect(configuration.swapBaseURL.absoluteString == "https://lite-api.jup.ag/swap/v1")
+        #expect(configuration.priceBaseURL.absoluteString == "https://lite-api.jup.ag/price/v3")
+    }
+
     @Test func watchOnlyProfileMetadataHasNoSecretsAndCannotSign() throws {
         let profile = WalletProfile(
             label: "DAO Treasury",
