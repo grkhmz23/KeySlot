@@ -2,7 +2,7 @@
 
 This helper is a locked contract scaffold for future `@cloak.dev/sdk` integration.
 
-Phase 2.2 supports only:
+Phase 2.3 supports only:
 
 - `health`
 - `env-check`
@@ -28,4 +28,4 @@ printf '{"network":"mainnet-beta"}' | npm run env-check
 printf '{"amountLamports":"50000000","walletPublicAddress":"11111111111111111111111111111111"}' | npm run deposit-plan
 ```
 
-The bridge returns fee quotes and locked status only. It must not receive real wallet secrets.
+The bridge returns SDK import checks, redacted environment status, fee quotes, and locked status only. It must not receive real wallet secrets.

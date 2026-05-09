@@ -14,7 +14,7 @@ enum CloakBridgeCommand: String, Codable, CaseIterable, Identifiable, Equatable 
 
     var id: String { rawValue }
 
-    var isHelperCommandAllowedInPhase22: Bool {
+    var isHelperCommandAllowedInPhase23: Bool {
         switch self {
         case .health, .environmentCheck, .depositPlan:
             return true
@@ -34,7 +34,7 @@ enum CloakBridgeStatus: String, Codable, Equatable {
 
 enum CloakBridgeErrorCategory: String, Codable, Equatable {
     case none
-    case lockedInPhase22 = "locked-in-phase-2-2"
+    case lockedInPhase23 = "locked-in-phase-2-3"
     case forbiddenField = "forbidden-field"
     case invalidRequest = "invalid-request"
     case unsupportedCommand = "unsupported-command"
@@ -91,6 +91,88 @@ struct CloakBridgeRequest: Codable, Equatable, Identifiable {
     }
 }
 
+struct CloakSDKValidation: Codable, Equatable {
+    let sdkInstalled: Bool
+    let sdkImportOk: Bool
+    let sdkVersion: String?
+    let cloakProgramID: String?
+    let expectedProgramID: String
+    let programIDMatches: Bool
+    let nativeSOLMint: String?
+    let feeHelpersAvailable: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case sdkInstalled
+        case sdkImportOk
+        case sdkVersion
+        case cloakProgramID = "cloakProgramId"
+        case expectedProgramID = "expectedProgramId"
+        case programIDMatches = "programIdMatches"
+        case nativeSOLMint = "nativeSolMint"
+        case feeHelpersAvailable
+    }
+}
+
+struct CloakFeeValidationSample: Codable, Equatable {
+    let grossLamports: String
+    let gorkhFeeLamports: String
+    let gorkhNetLamports: String
+    let sdkFeeLamports: String?
+    let sdkNetLamports: String?
+    let matches: Bool?
+}
+
+enum CloakFeeValidationSource: String, Codable, Equatable {
+    case sdk
+    case gorkhLocal = "gorkh-local"
+    case unavailable
+}
+
+struct CloakFeeValidation: Codable, Equatable {
+    let available: Bool
+    let source: CloakFeeValidationSource
+    let samples: [CloakFeeValidationSample]
+    let message: String
+
+    var allSamplesMatch: Bool? {
+        guard available else { return nil }
+        return samples.allSatisfy { $0.matches == true }
+    }
+}
+
+enum CloakRPCURLStatus: String, Codable, Equatable {
+    case missing
+    case presentRedacted = "present-redacted"
+}
+
+enum CloakHelperMode: String, Codable, Equatable {
+    case dryRunNonExecuting = "dry-run-non-executing"
+}
+
+struct CloakEnvironmentValidation: Codable, Equatable {
+    let solanaRPCURLStatus: CloakRPCURLStatus
+    let rpcURLRedacted: String?
+    let requestedNetwork: WalletNetwork?
+    let networkSupportedForFutureExecution: Bool
+    let helperMode: CloakHelperMode
+    let executionCommandsLocked: Bool
+    let keypairPathRequired: Bool
+    let walletSecretEnvAccepted: Bool
+    let suspiciousEnvVarNames: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case solanaRPCURLStatus = "solanaRpcUrlStatus"
+        case rpcURLRedacted = "rpcUrlRedacted"
+        case requestedNetwork
+        case networkSupportedForFutureExecution
+        case helperMode
+        case executionCommandsLocked
+        case keypairPathRequired
+        case walletSecretEnvAccepted
+        case suspiciousEnvVarNames
+    }
+}
+
 struct CloakBridgeResponse: Codable, Equatable, Identifiable {
     let id: UUID
     let requestID: UUID?
@@ -101,6 +183,10 @@ struct CloakBridgeResponse: Codable, Equatable, Identifiable {
     let message: String
     let programID: String
     let feeQuote: CloakFeeQuote?
+    let sdkValidation: CloakSDKValidation?
+    let feeValidation: CloakFeeValidation?
+    let environmentValidation: CloakEnvironmentValidation?
+    let nextRequiredGates: [String]?
     let transactionSignature: String?
     let commitmentPrefix: String?
     let createdAt: Date
@@ -115,6 +201,10 @@ struct CloakBridgeResponse: Codable, Equatable, Identifiable {
         case message
         case programID = "programId"
         case feeQuote
+        case sdkValidation
+        case feeValidation
+        case environmentValidation
+        case nextRequiredGates
         case transactionSignature = "txSignature"
         case commitmentPrefix
         case createdAt = "timestamp"
@@ -130,6 +220,10 @@ struct CloakBridgeResponse: Codable, Equatable, Identifiable {
         message: String,
         programID: String = CloakConstants.programID,
         feeQuote: CloakFeeQuote? = nil,
+        sdkValidation: CloakSDKValidation? = nil,
+        feeValidation: CloakFeeValidation? = nil,
+        environmentValidation: CloakEnvironmentValidation? = nil,
+        nextRequiredGates: [String]? = nil,
         transactionSignature: String? = nil,
         commitmentPrefix: String? = nil,
         createdAt: Date = Date()
@@ -143,6 +237,10 @@ struct CloakBridgeResponse: Codable, Equatable, Identifiable {
         self.message = message
         self.programID = programID
         self.feeQuote = feeQuote
+        self.sdkValidation = sdkValidation
+        self.feeValidation = feeValidation
+        self.environmentValidation = environmentValidation
+        self.nextRequiredGates = nextRequiredGates
         self.transactionSignature = transactionSignature
         self.commitmentPrefix = commitmentPrefix
         self.createdAt = createdAt
@@ -154,7 +252,7 @@ struct CloakBridgeResponse: Codable, Equatable, Identifiable {
             command: request.command,
             actionKind: request.actionKind,
             status: .locked,
-            errorCategory: .lockedInPhase22,
+            errorCategory: .lockedInPhase23,
             message: message,
             feeQuote: request.feeQuote
         )
@@ -193,7 +291,7 @@ struct CloakBridgeExecutionPolicy: Equatable {
         helperExecutionEnabled
             && relativePath == allowlistedHelperRelativePath
             && allowedCommands.contains(command)
-            && command.isHelperCommandAllowedInPhase22
+            && command.isHelperCommandAllowedInPhase23
     }
 }
 

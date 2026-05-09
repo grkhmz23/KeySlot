@@ -14,7 +14,7 @@ struct CloakBridgeUnavailable: CloakBridgeProtocol {
     private let executionPolicy = CloakBridgeExecutionPolicy.disabled
 
     func checkAvailability() -> CloakAdapterStatus {
-        .lockedInPhase22
+        .lockedInPhase23
     }
 
     func health() -> CloakBridgeResponse {
@@ -23,7 +23,7 @@ struct CloakBridgeUnavailable: CloakBridgeProtocol {
             requestID: request.id,
             command: .health,
             status: .locked,
-            errorCategory: .lockedInPhase22,
+            errorCategory: .lockedInPhase23,
             message: "Cloak helper invocation is disabled by native policy.",
             programID: CloakConstants.programID
         )
@@ -35,7 +35,7 @@ struct CloakBridgeUnavailable: CloakBridgeProtocol {
             requestID: request.id,
             command: .environmentCheck,
             status: .locked,
-            errorCategory: .lockedInPhase22,
+            errorCategory: .lockedInPhase23,
             message: executionPolicy.helperExecutionEnabled
                 ? "Cloak helper execution is allowlisted but still locked for transactions."
                 : "Cloak helper execution is disabled. Contract checks are available only as local models.",
@@ -62,7 +62,7 @@ struct CloakBridgeUnavailable: CloakBridgeProtocol {
             actionKind: nil,
             status: .locked,
             message: network.isMainnet
-                ? "Cloak is mainnet-oriented, but transaction execution is locked in Phase 2.2."
+                ? "Cloak is mainnet-oriented, but transaction execution is locked in Phase 2.3."
                 : "Cloak docs describe mainnet flows. GORKH does not create a fake devnet Cloak mode.",
             programID: CloakConstants.programID,
             createdAt: Date()

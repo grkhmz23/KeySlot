@@ -10,6 +10,10 @@ export function response(
     errorCategory?: CloakBridgeResponse["errorCategory"];
     message: string;
     feeQuote?: CloakBridgeResponse["feeQuote"];
+    sdkValidation?: CloakBridgeResponse["sdkValidation"];
+    feeValidation?: CloakBridgeResponse["feeValidation"];
+    environmentValidation?: CloakBridgeResponse["environmentValidation"];
+    nextRequiredGates?: CloakBridgeResponse["nextRequiredGates"];
   },
 ): CloakBridgeResponse {
   return {
@@ -22,6 +26,10 @@ export function response(
     message: options.message,
     programId: CLOAK_PROGRAM_ID,
     feeQuote: options.feeQuote,
+    sdkValidation: options.sdkValidation,
+    feeValidation: options.feeValidation,
+    environmentValidation: options.environmentValidation,
+    nextRequiredGates: options.nextRequiredGates,
     timestamp: new Date().toISOString(),
   };
 }

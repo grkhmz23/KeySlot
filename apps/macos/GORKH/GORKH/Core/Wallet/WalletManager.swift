@@ -24,7 +24,7 @@ final class WalletManager: ObservableObject {
     @Published private(set) var isBusy = false
     @Published private(set) var securityPolicy: WalletSecurityPolicy
     @Published private(set) var authenticationStatusMessage: String
-    @Published private(set) var cloakAdapterStatus: CloakAdapterStatus = .lockedInPhase22
+    @Published private(set) var cloakAdapterStatus: CloakAdapterStatus = .lockedInPhase23
     @Published private(set) var cloakVaultStatus: CloakVaultStatus = .statusOnly(walletID: nil)
     @Published private(set) var currentCloakDepositDraft: CloakDepositDraft?
     @Published private(set) var cloakBridgeResponse: CloakBridgeResponseSummary?
@@ -382,7 +382,7 @@ final class WalletManager: ObservableObject {
             command: actionKind == .deposit ? .executeDeposit : .environmentCheck,
             actionKind: actionKind,
             status: .locked,
-            errorCategory: .lockedInPhase22,
+            errorCategory: .lockedInPhase23,
             message: response.message
         )
         statusMessage = response.message
@@ -390,7 +390,7 @@ final class WalletManager: ObservableObject {
             kind: .cloakBridgeExecutionRejected,
             walletID: selectedWalletID,
             publicAddress: selectedProfile?.publicAddress,
-            message: "Cloak action blocked by Phase 2.2 execution lock.",
+            message: "Cloak action blocked by Phase 2.3 execution lock.",
             details: [
                 "network": selectedNetwork.rawValue,
                 "cloakAction": actionKind.rawValue,
@@ -417,7 +417,7 @@ final class WalletManager: ObservableObject {
         if response.errorCategory == .forbiddenField || response.message.lowercased().contains("response rejected") {
             return .cloakHelperResponseRejected
         }
-        if response.errorCategory == .lockedInPhase22 || response.status == .locked {
+        if response.errorCategory == .lockedInPhase23 || response.status == .locked {
             return .cloakHelperInvocationBlocked
         }
         return successKind

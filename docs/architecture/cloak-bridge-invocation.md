@@ -1,6 +1,6 @@
 # Cloak Bridge Invocation
 
-Phase 2.2 adds a native invocation adapter for the local Cloak helper, but keeps it disabled by default.
+Phase 2.3 keeps native invocation disabled by default and extends the local Cloak helper to validate SDK import and environment state without executing SDK transaction methods.
 
 ## Allowed Commands
 
@@ -42,8 +42,19 @@ Swift validates requests before invocation and validates responses after invocat
 
 Forbidden fields include private keys, secret keys, seed phrases, mnemonics, wallet JSON, UTXO private keys, notes, viewing keys, nullifiers, proof inputs, serialized transactions, transaction payloads, and raw signer bytes.
 
+## SDK Validation
+
+The helper may import `@cloak.dev/sdk` for non-executing checks only:
+
+- SDK import/package version
+- `CLOAK_PROGRAM_ID`
+- `NATIVE_SOL_MINT`
+- SDK SOL fee helpers, if exported
+
+The helper must not call Cloak transaction, proof, scan, compliance, relay submit, signer, or serialized-transaction APIs in Phase 2.3.
+
 ## Execution State
 
-Even when dry-run invocation is enabled, `deposit-plan` returns a fee quote and locked status only. It does not return a serialized transaction, signer bytes, SDK payload, proof input, note, UTXO, or executable instruction.
+Even when dry-run invocation is enabled, `deposit-plan` returns SDK validation, environment-safe fee validation, a fee quote, and locked status only. It does not return a serialized transaction, signer bytes, SDK payload, proof input, note, UTXO, or executable instruction.
 
 Future live Cloak deposit work must add a separate review, approval, signing, and audit phase.

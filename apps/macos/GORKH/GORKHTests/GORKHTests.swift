@@ -761,7 +761,7 @@ struct GORKHTests {
             grossLamports: 50_000_000
         )
 
-        #expect(bridge.checkAvailability() == .lockedInPhase22)
+        #expect(bridge.checkAvailability() == .lockedInPhase23)
         #expect(bridge.validateEnvironment(network: .devnet).status == .locked)
 
         let response = await bridge.executeDeposit(request: request)
@@ -797,6 +797,7 @@ struct GORKHTests {
 
     @Test func cloakBridgeValidatorRejectsForbiddenFields() throws {
         #expect(CloakBridgeContractValidator.isForbiddenField("privateKey"))
+        #expect(CloakBridgeContractValidator.isForbiddenField("PRIVATE_KEY"))
         #expect(CloakBridgeContractValidator.isForbiddenField("serializedTransaction"))
         #expect(CloakBridgeContractValidator.isForbiddenField("rawSignerBytes"))
         #expect(throws: CloakBridgeValidationError.self) {
@@ -805,6 +806,51 @@ struct GORKHTests {
         #expect(throws: CloakBridgeValidationError.self) {
             try CloakBridgeContractValidator.validate(jsonString: #"{"transactionPayload":"do-not-send"}"#)
         }
+    }
+
+    @Test func cloakBridgeDecodesSDKEnvironmentValidationFields() throws {
+        let raw = """
+        {
+          "id":"33333333-3333-4333-8333-333333333333",
+          "command":"env-check",
+          "status":"ok",
+          "errorCategory":"none",
+          "message":"Environment check passed.",
+          "programId":"zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW",
+          "sdkValidation":{
+            "sdkInstalled":true,
+            "sdkImportOk":true,
+            "sdkVersion":"0.1.6",
+            "cloakProgramId":"zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW",
+            "expectedProgramId":"zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW",
+            "programIdMatches":true,
+            "nativeSolMint":"So11111111111111111111111111111111111111112",
+            "feeHelpersAvailable":true
+          },
+          "environmentValidation":{
+            "solanaRpcUrlStatus":"present-redacted",
+            "rpcUrlRedacted":"SOLANA_RPC_URL configured (redacted)",
+            "requestedNetwork":"mainnet-beta",
+            "networkSupportedForFutureExecution":true,
+            "helperMode":"dry-run-non-executing",
+            "executionCommandsLocked":true,
+            "keypairPathRequired":false,
+            "walletSecretEnvAccepted":false,
+            "suspiciousEnvVarNames":[]
+          },
+          "timestamp":"2026-01-01T00:00:00Z"
+        }
+        """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let response = try decoder.decode(CloakBridgeResponse.self, from: Data(raw.utf8))
+
+        #expect(response.command == .environmentCheck)
+        #expect(response.sdkValidation?.sdkVersion == "0.1.6")
+        #expect(response.sdkValidation?.programIDMatches == true)
+        #expect(response.environmentValidation?.solanaRPCURLStatus == .presentRedacted)
+        #expect(response.environmentValidation?.rpcURLRedacted?.contains("redacted") == true)
+        #expect(response.environmentValidation?.walletSecretEnvAccepted == false)
     }
 
     @Test func cloakBridgeExecutionPolicyDisablesHelperByDefault() {
@@ -816,7 +862,7 @@ struct GORKHTests {
         #expect(policy.allowedCommands.contains(.environmentCheck))
         #expect(policy.allowedCommands.contains(.depositPlan))
         #expect(!policy.allowedCommands.contains(.executeDeposit))
-        #expect(!CloakBridgeCommand.executeDeposit.isHelperCommandAllowedInPhase22)
+        #expect(!CloakBridgeCommand.executeDeposit.isHelperCommandAllowedInPhase23)
     }
 
     @Test func cloakBridgeDepositPlanResponseStaysLocked() throws {
@@ -829,7 +875,7 @@ struct GORKHTests {
 
         #expect(response.command == .depositPlan)
         #expect(response.status == .locked)
-        #expect(response.errorCategory == .lockedInPhase22)
+        #expect(response.errorCategory == .lockedInPhase23)
         #expect(response.feeQuote?.totalFeeLamports == 5_150_000)
         #expect(response.transactionSignature == nil)
         #expect(response.commitmentPrefix == nil)
@@ -846,7 +892,7 @@ struct GORKHTests {
         let response = await adapter.invoke(CloakBridgeRequest(command: .health, network: .mainnetBeta))
 
         #expect(response.status == .locked)
-        #expect(response.errorCategory == .lockedInPhase22)
+        #expect(response.errorCategory == .lockedInPhase23)
         #expect(runner.invocationCount == 0)
     }
 
@@ -871,7 +917,7 @@ struct GORKHTests {
         let runner = MockCloakHelperProcessRunner(response: .success(.okResponse(
             command: .depositPlan,
             status: .locked,
-            errorCategory: .lockedInPhase22,
+            errorCategory: .lockedInPhase23,
             feeQuote: quote
         )))
         let adapter = CloakHelperInvocationAdapter(
@@ -904,8 +950,8 @@ struct GORKHTests {
           "command":"deposit-plan",
           "actionKind":"deposit",
           "status":"locked",
-          "errorCategory":"locked-in-phase-2-2",
-          "message":"Deposit plan created. No transaction payload is returned in Phase 2.2.",
+          "errorCategory":"locked-in-phase-2-3",
+          "message":"Deposit plan created with SDK import validation. No transaction payload is returned in Phase 2.3.",
           "programId":"zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW",
           "feeQuote":{
             "grossLamports":"50000000",
@@ -915,6 +961,32 @@ struct GORKHTests {
             "netLamports":"44850000",
             "minimumDepositLamports":"10000000"
           },
+          "sdkValidation":{
+            "sdkInstalled":true,
+            "sdkImportOk":true,
+            "sdkVersion":"0.1.6",
+            "cloakProgramId":"zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW",
+            "expectedProgramId":"zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW",
+            "programIdMatches":true,
+            "nativeSolMint":"So11111111111111111111111111111111111111112",
+            "feeHelpersAvailable":true
+          },
+          "feeValidation":{
+            "available":true,
+            "source":"sdk",
+            "samples":[
+              {
+                "grossLamports":"50000000",
+                "gorkhFeeLamports":"5150000",
+                "gorkhNetLamports":"44850000",
+                "sdkFeeLamports":"5150000",
+                "sdkNetLamports":"44850000",
+                "matches":true
+              }
+            ],
+            "message":"Cloak SDK SOL fee helpers match the GORKH local model for sample values."
+          },
+          "nextRequiredGates":["signer bridge","wallet unlock","LocalAuthentication","Shield review","explicit approval","audit log","tiny mainnet smoke"],
           "timestamp":"2026-01-01T00:00:00Z"
         }
         """
@@ -935,8 +1007,13 @@ struct GORKHTests {
         ))
 
         #expect(response.command == .depositPlan)
-        #expect(response.errorCategory == .lockedInPhase22)
+        #expect(response.errorCategory == .lockedInPhase23)
         #expect(response.feeQuote?.totalFeeLamports == 5_150_000)
+        #expect(response.sdkValidation?.sdkImportOk == true)
+        #expect(response.sdkValidation?.programIDMatches == true)
+        #expect(response.sdkValidation?.nativeSOLMint == CloakConstants.nativeSolMint)
+        #expect(response.feeValidation?.allSamplesMatch == true)
+        #expect(response.nextRequiredGates?.contains("Shield review") == true)
         #expect(response.transactionSignature == nil)
     }
 
@@ -1633,7 +1710,11 @@ private extension CloakBridgeResponse {
         command: CloakBridgeCommand,
         status: CloakBridgeStatus = .ok,
         errorCategory: CloakBridgeErrorCategory = .none,
-        feeQuote: CloakFeeQuote? = nil
+        feeQuote: CloakFeeQuote? = nil,
+        sdkValidation: CloakSDKValidation? = nil,
+        feeValidation: CloakFeeValidation? = nil,
+        environmentValidation: CloakEnvironmentValidation? = nil,
+        nextRequiredGates: [String]? = nil
     ) -> CloakBridgeResponse {
         CloakBridgeResponse(
             requestID: UUID(),
@@ -1642,7 +1723,11 @@ private extension CloakBridgeResponse {
             status: status,
             errorCategory: errorCategory,
             message: "Mock response",
-            feeQuote: feeQuote
+            feeQuote: feeQuote,
+            sdkValidation: sdkValidation,
+            feeValidation: feeValidation,
+            environmentValidation: environmentValidation,
+            nextRequiredGates: nextRequiredGates
         )
     }
 }

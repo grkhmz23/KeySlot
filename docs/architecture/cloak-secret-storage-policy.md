@@ -31,7 +31,7 @@ UserDefaults may store only public metadata and local security settings. It must
 
 macOS Keychain is the only approved local storage class for wallet signing material. Future Cloak secret storage must use a Keychain-backed private vault or a vault encrypted by a Keychain-protected key.
 
-Current Phase 2.2 private vault behavior is status-only:
+Current Phase 2.3 private vault behavior is status-only:
 
 - no Cloak notes are stored
 - no UTXOs are stored
@@ -120,9 +120,13 @@ Swift must not send:
 - serialized transaction payload
 - raw signer bytes
 
-Phase 2.2 helper invocation is disabled by default and limited to dry-run `health`, `env-check`, and `deposit-plan` when explicitly enabled by internal development policy. Transaction execution commands are locked.
+Phase 2.3 helper invocation is disabled by default and limited to dry-run `health`, `env-check`, and `deposit-plan` when explicitly enabled by internal development policy. Transaction execution commands are locked.
 
 The native adapter may invoke only the fixed local helper path and fixed allowlisted Node executable paths. It must not use shell command strings, user-provided executable paths, arbitrary arguments, secret environment variables, or wallet/Cloak secret stdin payloads.
+
+Phase 2.3 permits the helper to import `@cloak.dev/sdk` for package, program id, native SOL mint, and fee-helper validation only. It must not call transaction, proof, scan, compliance, relay submit, signer, or serialized-transaction SDK APIs.
+
+The helper must reject or warn on wallet secret-like environment variable names including `PRIVATE_KEY`, `SECRET_KEY`, `SEED_PHRASE`, `MNEMONIC`, `WALLET_JSON`, `CLOAK_VIEWING_KEY`, and `ZERION_TOKEN`. Environment values must not be printed. `SOLANA_RPC_URL` may be checked only as present/missing with a redacted status.
 
 ## Scan Cache Strategy
 

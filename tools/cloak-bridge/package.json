@@ -12,5 +12,8 @@
     "env-check": "node src/index.ts env-check",
     "deposit-plan": "node src/index.ts deposit-plan",
     "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@cloak.dev/sdk": "^0.1.6"
   }
 }

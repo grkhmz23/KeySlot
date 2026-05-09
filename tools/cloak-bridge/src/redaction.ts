@@ -24,7 +24,7 @@ export function validateNoForbiddenFields(payload: unknown): void {
 }
 
 export function hasForbiddenField(name: string): boolean {
-  const normalized = name.toLowerCase().replace(/[\s-]/g, "");
+  const normalized = name.toLowerCase().replace(/[\s_-]/g, "");
   return FORBIDDEN_FIELD_TOKENS.some((token) => normalized.includes(token));
 }
 

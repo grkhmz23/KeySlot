@@ -10,25 +10,25 @@ import { health } from "./commands/health.ts";
 import { response } from "./commands/response.ts";
 import { validateNoForbiddenFields } from "./redaction.ts";
 
-export function handleCommand(command: CloakBridgeCommand, request: unknown = {}): CloakBridgeResponse {
+export async function handleCommand(command: CloakBridgeCommand, request: unknown = {}): Promise<CloakBridgeResponse> {
   validateNoForbiddenFields(request);
 
   if (!ALLOWED_COMMANDS.includes(command)) {
     return response(command, {
       request: request as Record<string, never>,
       status: "locked",
-      errorCategory: "locked-in-phase-2-2",
-      message: "Cloak transaction execution commands are locked in Phase 2.2.",
+      errorCategory: "locked-in-phase-2-3",
+      message: "Cloak transaction execution commands are locked in Phase 2.3.",
     });
   }
 
   switch (command) {
     case "health":
-      return health(request);
+      return await health(request);
     case "env-check":
-      return envCheck(request);
+      return await envCheck(request);
     case "deposit-plan":
-      return depositPlan(request);
+      return await depositPlan(request);
     default:
       return response(command, {
         request: request as Record<string, never>,
@@ -61,7 +61,7 @@ async function main(): Promise<void> {
 
   const body = await readStdin();
   const request = body.length > 0 ? JSON.parse(body) : {};
-  const result = handleCommand(command, request);
+  const result = await handleCommand(command, request);
   const exitCode = result.status === "rejected" || result.status === "error" ? 1 : 0;
   writeAndExit(result, exitCode);
 }

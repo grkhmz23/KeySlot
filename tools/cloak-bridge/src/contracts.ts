@@ -33,10 +33,11 @@ export type CloakBridgeStatus =
 
 export type CloakBridgeErrorCategory =
   | "none"
-  | "locked-in-phase-2-2"
+  | "locked-in-phase-2-3"
   | "forbidden-field"
   | "invalid-request"
-  | "unsupported-command";
+  | "unsupported-command"
+  | "helper-unavailable";
 
 export type CloakFeeQuote = {
   grossLamports: string;
@@ -45,6 +46,45 @@ export type CloakFeeQuote = {
   totalFeeLamports: string;
   netLamports: string;
   minimumDepositLamports: string;
+};
+
+export type CloakSdkValidation = {
+  sdkInstalled: boolean;
+  sdkImportOk: boolean;
+  sdkVersion?: string;
+  cloakProgramId?: string;
+  expectedProgramId: string;
+  programIdMatches: boolean;
+  nativeSolMint?: string;
+  feeHelpersAvailable: boolean;
+};
+
+export type CloakFeeValidationSample = {
+  grossLamports: string;
+  gorkhFeeLamports: string;
+  gorkhNetLamports: string;
+  sdkFeeLamports?: string;
+  sdkNetLamports?: string;
+  matches?: boolean;
+};
+
+export type CloakFeeValidation = {
+  available: boolean;
+  source: "sdk" | "gorkh-local" | "unavailable";
+  samples: CloakFeeValidationSample[];
+  message: string;
+};
+
+export type CloakEnvironmentValidation = {
+  solanaRpcUrlStatus: "missing" | "present-redacted";
+  rpcUrlRedacted?: string;
+  requestedNetwork?: "mainnet-beta" | "devnet";
+  networkSupportedForFutureExecution: boolean;
+  helperMode: "dry-run-non-executing";
+  executionCommandsLocked: boolean;
+  keypairPathRequired: false;
+  walletSecretEnvAccepted: false;
+  suspiciousEnvVarNames: string[];
 };
 
 export type CloakBridgeRequest = {
@@ -70,6 +110,10 @@ export type CloakBridgeResponse = {
   message: string;
   programId: string;
   feeQuote?: CloakFeeQuote;
+  sdkValidation?: CloakSdkValidation;
+  feeValidation?: CloakFeeValidation;
+  environmentValidation?: CloakEnvironmentValidation;
+  nextRequiredGates?: string[];
   txSignature?: string;
   commitmentPrefix?: string;
   timestamp: string;
@@ -102,6 +146,16 @@ export function calculateFeeQuote(amountLamports: string | number): CloakFeeQuot
     minimumDepositLamports: MINIMUM_DEPOSIT_LAMPORTS.toString(),
   };
 }
+
+export const NEXT_EXECUTION_GATES = [
+  "signer bridge",
+  "wallet unlock",
+  "LocalAuthentication",
+  "Shield review",
+  "explicit approval",
+  "audit log",
+  "tiny mainnet smoke",
+] as const;
 
 export function parseLamports(value: string | number): bigint {
   if (typeof value === "number") {

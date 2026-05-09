@@ -1,7 +1,8 @@
 import { calculateFeeQuote, type CloakBridgeRequest, type CloakBridgeResponse } from "../contracts.ts";
+import { loadFeeValidation, loadSdkValidation, nextRequiredGates } from "../sdk.ts";
 import { response } from "./response.ts";
 
-export function depositPlan(request: unknown): CloakBridgeResponse {
+export async function depositPlan(request: unknown): Promise<CloakBridgeResponse> {
   const parsed = request as CloakBridgeRequest;
   if (parsed.amountLamports === undefined) {
     return response("deposit-plan", {
@@ -14,13 +15,18 @@ export function depositPlan(request: unknown): CloakBridgeResponse {
 
   try {
     const feeQuote = calculateFeeQuote(parsed.amountLamports);
+    const sdkValidation = await loadSdkValidation();
+    const feeValidation = await loadFeeValidation();
     return response("deposit-plan", {
       request: parsed,
       actionKind: "deposit",
       status: "locked",
-      errorCategory: "locked-in-phase-2-2",
-      message: "Deposit plan created. No transaction payload is returned in Phase 2.2.",
+      errorCategory: "locked-in-phase-2-3",
+      message: "Deposit plan created with SDK import validation. No transaction payload is returned in Phase 2.3.",
       feeQuote,
+      sdkValidation,
+      feeValidation,
+      nextRequiredGates: nextRequiredGates(),
     });
   } catch (error) {
     return response("deposit-plan", {

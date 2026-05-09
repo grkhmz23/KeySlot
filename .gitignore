@@ -4,6 +4,7 @@ DerivedData/
 .derivedData/
 .DS_Store
 build/
+node_modules/
 *.xcresult
 *.dSYM
 .gorkh-devnet-smoke/

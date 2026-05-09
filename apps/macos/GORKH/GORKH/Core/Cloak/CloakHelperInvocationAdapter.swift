@@ -83,7 +83,7 @@ struct CloakHelperInvocationAdapter {
             throw CloakHelperInvocationError.invalidProgramID
         }
         guard policy.allowedCommands.contains(request.command),
-              request.command.isHelperCommandAllowedInPhase22 else {
+              request.command.isHelperCommandAllowedInPhase23 else {
             throw CloakHelperInvocationError.commandNotAllowlisted(request.command)
         }
         if request.command == .depositPlan {
@@ -105,6 +105,11 @@ struct CloakHelperInvocationAdapter {
         guard response.transactionSignature == nil, response.commitmentPrefix == nil else {
             throw CloakHelperInvocationError.responseRejected("future execution identifiers are not accepted in dry-run mode")
         }
+        if let sdkValidation = response.sdkValidation {
+            guard sdkValidation.expectedProgramID == CloakConstants.programID else {
+                throw CloakHelperInvocationError.responseRejected("SDK expected program id mismatch")
+            }
+        }
     }
 
     private func lockedResponse(for request: CloakBridgeRequest, error: Error) -> CloakBridgeResponse {
@@ -112,7 +117,7 @@ struct CloakHelperInvocationAdapter {
         switch error {
         case CloakHelperInvocationError.disabled,
              CloakHelperPathError.helperExecutionDisabled:
-            category = .lockedInPhase22
+            category = .lockedInPhase23
         case CloakHelperInvocationError.commandNotAllowlisted:
             category = .unsupportedCommand
         case CloakBridgeValidationError.forbiddenField:

@@ -76,6 +76,7 @@ enum CloakBridgeContractValidator {
             .lowercased()
             .replacingOccurrences(of: " ", with: "")
             .replacingOccurrences(of: "-", with: "")
+            .replacingOccurrences(of: "_", with: "")
 
         return forbiddenFieldTokens.contains { normalized.contains($0) }
     }

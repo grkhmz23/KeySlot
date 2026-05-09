@@ -1,13 +1,13 @@
 import Foundation
 
 enum CloakAdapterStatus: String, Codable, CaseIterable, Equatable {
-    case lockedInPhase22 = "locked_in_phase_2_2"
+    case lockedInPhase23 = "locked_in_phase_2_3"
     case sdkUnavailable = "sdk_unavailable"
     case environmentUnsupported = "environment_unsupported"
 
     var title: String {
         switch self {
-        case .lockedInPhase22:
+        case .lockedInPhase23:
             return "Execution Locked"
         case .sdkUnavailable:
             return "SDK Bridge Unavailable"
@@ -191,7 +191,7 @@ struct CloakDepositDraft: Codable, Equatable, Identifiable {
     }
 
     var networkWarning: String? {
-        network.isMainnet ? "Future Cloak deposits would use real mainnet SOL." : "Cloak is mainnet-oriented. Phase 2.2 does not create a fake devnet Cloak mode."
+        network.isMainnet ? "Future Cloak deposits would use real mainnet SOL." : "Cloak is mainnet-oriented. Phase 2.3 does not create a fake devnet Cloak mode."
     }
 }
 
@@ -294,7 +294,7 @@ struct CloakVaultStatus: Codable, Equatable {
             walletID: walletID,
             privateWalletStatus: .statusOnly,
             availableReferenceKinds: [],
-            storageDescription: "Phase 2.2 stores no Cloak notes, UTXOs, viewing keys, nullifiers, proof inputs, or scan cache in UserDefaults.",
+            storageDescription: "Phase 2.3 stores no Cloak notes, UTXOs, viewing keys, nullifiers, proof inputs, or scan cache in UserDefaults.",
             canClearPrivateData: false
         )
     }
