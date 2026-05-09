@@ -3,6 +3,7 @@ import SwiftUI
 
 struct WalletView: View {
     @EnvironmentObject private var walletManager: WalletManager
+    @State private var selectedSection: WalletSection = .assets
     private let autoLockTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -15,13 +16,11 @@ struct WalletView: View {
                     WalletImportView()
 
                     if walletManager.selectedProfile != nil {
-                        WalletSecurityView()
-                        WalletBalanceView()
-                        TokenBalancesView()
-                        SendSolView()
+                        sectionPicker
+                        selectedSectionView
+                    } else {
+                        AuditLogView()
                     }
-
-                    AuditLogView()
                 }
                 .padding(24)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -36,6 +35,33 @@ struct WalletView: View {
         .onReceive(autoLockTimer) { now in
             walletManager.enforceAutoLockIfNeeded(now: now)
         }
+    }
+
+    @ViewBuilder
+    private var selectedSectionView: some View {
+        switch selectedSection {
+        case .assets:
+            WalletBalanceView()
+            TokenBalancesView()
+        case .send:
+            SendSolView()
+            TokenBalancesView()
+        case .privateWallet:
+            WalletPrivateView()
+        case .security:
+            WalletSecurityView()
+        case .audit:
+            AuditLogView()
+        }
+    }
+
+    private var sectionPicker: some View {
+        Picker("Wallet section", selection: $selectedSection) {
+            ForEach(WalletSection.allCases) { section in
+                Text(section.title).tag(section)
+            }
+        }
+        .pickerStyle(.segmented)
     }
 
     private var header: some View {
@@ -156,5 +182,30 @@ struct WalletView: View {
         }()
 
         return GorkhStatusChip(title: state.title, systemImage: state == .unlocked ? "checkmark.seal" : "lock", color: color)
+    }
+}
+
+private enum WalletSection: String, CaseIterable, Identifiable {
+    case assets
+    case send
+    case privateWallet
+    case security
+    case audit
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .assets:
+            return "Assets"
+        case .send:
+            return "Send"
+        case .privateWallet:
+            return "Private"
+        case .security:
+            return "Security"
+        case .audit:
+            return "Audit"
+        }
     }
 }

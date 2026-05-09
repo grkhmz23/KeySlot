@@ -714,6 +714,108 @@ struct GORKHTests {
         #expect(!json.contains("seedPhrase"))
     }
 
+    @Test func cloakFeeModelUsesIntegerMathAndKnownConstants() throws {
+        #expect(CloakConstants.programID == "zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW")
+        #expect(CloakConstants.minimumDepositLamports == 10_000_000)
+        #expect(CloakConstants.fixedFeeLamports == 5_000_000)
+
+        let quote = try CloakFeeModel.quote(grossLamports: 50_000_000)
+
+        #expect(quote.variableFeeLamports == 150_000)
+        #expect(quote.totalFeeLamports == 5_150_000)
+        #expect(quote.netLamports == 44_850_000)
+        #expect(try CloakFeeModel.calculateCloakSolFeeLamports(gross: 10_000_000) == 5_030_000)
+        #expect(throws: CloakFeeError.self) {
+            try CloakFeeModel.validateMinimumDeposit(9_999_999)
+        }
+    }
+
+    @Test func cloakDepositDraftIsDraftOnlyAndSafeToSerialize() throws {
+        let draft = try CloakDepositDraft(
+            network: .mainnetBeta,
+            sourceWalletAddress: SolanaConstants.systemProgramID,
+            grossLamports: 50_000_000
+        )
+
+        #expect(draft.actionState == .draftOnly)
+        #expect(draft.mintAddress == CloakConstants.nativeSolMint)
+        #expect(draft.feeQuote.totalFeeLamports == 5_150_000)
+        #expect(draft.networkWarning?.lowercased().contains("mainnet") == true)
+
+        let data = try JSONEncoder().encode(draft)
+        let json = try #require(String(data: data, encoding: .utf8)).lowercased()
+
+        #expect(!json.contains("privatekey"))
+        #expect(!json.contains("seedphrase"))
+        #expect(!json.contains("mnemonic"))
+        #expect(!json.contains("nullifier"))
+        #expect(!json.contains("proofinput"))
+    }
+
+    @Test func cloakBridgeUnavailableCannotExecute() async {
+        let bridge = CloakBridgeUnavailable()
+        let request = CloakBridgeRequestSummary(
+            actionKind: .deposit,
+            network: .mainnetBeta,
+            walletPublicAddress: SolanaConstants.systemProgramID,
+            grossLamports: 50_000_000
+        )
+
+        #expect(bridge.checkAvailability() == .lockedInPhase20)
+        #expect(bridge.validateEnvironment(network: .devnet).status == .locked)
+
+        let response = await bridge.executeDeposit(request: request)
+        #expect(response.status == .locked)
+        #expect(response.requestID == request.id)
+        #expect(response.message.contains("No SDK transaction"))
+    }
+
+    @Test func cloakPrivateVaultStatusOnlyStoresNoPrivateReferences() {
+        let walletID = UUID()
+        let vault = CloakPrivateVaultStatusOnly()
+        let status = vault.status(for: walletID)
+
+        #expect(status.walletID == walletID)
+        #expect(status.privateWalletStatus == .statusOnly)
+        #expect(status.availableReferenceKinds.isEmpty)
+        #expect(!status.hasViewingKeyReference)
+        #expect(!status.hasUtxoReference)
+        #expect(!status.hasScanCacheReference)
+        #expect(!status.canClearPrivateData)
+        #expect(throws: CloakPrivateVaultError.self) {
+            try vault.storeReference(kind: .viewingKeyReference, referenceID: "reference-only", for: walletID)
+        }
+    }
+
+    @Test func cloakAuditEventsDropPrivateMaterialKeys() throws {
+        let event = AuditEvent(
+            kind: .cloakDepositDraftCreated,
+            walletID: UUID(),
+            network: .mainnetBeta,
+            publicAddress: SolanaConstants.systemProgramID,
+            message: "Cloak draft",
+            details: [
+                "grossLamports": "50000000",
+                "cloakNote": "do-not-store",
+                "utxoPrivateKey": "do-not-store",
+                "viewingKey": "do-not-store",
+                "nullifierSecret": "do-not-store",
+                "proofInput": "do-not-store"
+            ]
+        )
+
+        let data = try JSONEncoder().encode(event)
+        let json = try #require(String(data: data, encoding: .utf8))
+
+        #expect(json.contains("50000000"))
+        #expect(!json.contains("do-not-store"))
+        #expect(!json.contains("cloakNote"))
+        #expect(!json.contains("utxoPrivateKey"))
+        #expect(!json.contains("viewingKey"))
+        #expect(!json.contains("nullifierSecret"))
+        #expect(!json.contains("proofInput"))
+    }
+
     @Test func devnetAirdropRejectsMainnet() async {
         var rejectedMainnet = false
         do {
@@ -1025,7 +1127,9 @@ struct GORKHTests {
             metadataStore: WalletMetadataStore(defaults: defaults),
             securitySettingsStore: WalletSecuritySettingsStore(defaults: defaults),
             localAuthenticationService: MockLocalAuthenticationService(result: .success),
-            mnemonicService: Bip39MnemonicService.shared
+            mnemonicService: Bip39MnemonicService.shared,
+            cloakBridge: CloakBridgeUnavailable(),
+            cloakPrivateVault: CloakPrivateVaultStatusOnly()
         )
 
         manager.createWallet(label: "Delete Me")
@@ -1056,7 +1160,9 @@ struct GORKHTests {
             metadataStore: WalletMetadataStore(defaults: defaults),
             securitySettingsStore: WalletSecuritySettingsStore(defaults: defaults),
             localAuthenticationService: MockLocalAuthenticationService(result: .failed("Denied")),
-            mnemonicService: Bip39MnemonicService.shared
+            mnemonicService: Bip39MnemonicService.shared,
+            cloakBridge: CloakBridgeUnavailable(),
+            cloakPrivateVault: CloakPrivateVaultStatusOnly()
         )
 
         manager.createWallet(label: "Auth")

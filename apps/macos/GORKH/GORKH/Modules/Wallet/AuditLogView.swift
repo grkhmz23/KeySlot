@@ -88,6 +88,7 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
     case wallet
     case sol
     case spl
+    case privateWallet
     case security
     case failed
 
@@ -103,6 +104,8 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
             return "SOL"
         case .spl:
             return "SPL"
+        case .privateWallet:
+            return "Private"
         case .security:
             return "Security"
         case .failed:
@@ -128,10 +131,18 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
                 .ataCreationPlanned,
                 .ataCreationIncluded
             ].contains(event.kind)
+        case .privateWallet:
+            return [
+                .privateTabViewed,
+                .cloakDepositDraftCreated,
+                .cloakDepositExecutionBlocked,
+                .cloakVaultStatusChecked,
+                .cloakPrivateDataCleared
+            ].contains(event.kind)
         case .security:
             return [.walletAutoLocked, .securityPolicyUpdated, .localAuthenticationFailed].contains(event.kind)
         case .failed:
-            return [.transactionFailed, .tokenTransferFailed, .localAuthenticationFailed].contains(event.kind)
+            return [.transactionFailed, .tokenTransferFailed, .localAuthenticationFailed, .cloakDepositExecutionBlocked].contains(event.kind)
         }
     }
 }
@@ -147,6 +158,13 @@ private extension AuditEvent {
             "to",
             "recipientOwner",
             "createsAssociatedTokenAccount",
+            "cloakAction",
+            "grossLamports",
+            "feeLamports",
+            "netLamports",
+            "bridgeStatus",
+            "vaultStatus",
+            "requestID",
             "status",
             "warningsCount"
         ]

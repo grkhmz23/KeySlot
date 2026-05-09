@@ -212,6 +212,11 @@ struct AuditEvent: Codable, Equatable, Identifiable {
         case tokenTransferFailed = "token_transfer_failed"
         case ataCreationPlanned = "ata_creation_planned"
         case ataCreationIncluded = "ata_creation_included"
+        case privateTabViewed = "private_tab_viewed"
+        case cloakDepositDraftCreated = "cloak_deposit_draft_created"
+        case cloakDepositExecutionBlocked = "cloak_deposit_execution_blocked"
+        case cloakVaultStatusChecked = "cloak_vault_status_checked"
+        case cloakPrivateDataCleared = "cloak_private_data_cleared"
     }
 
     let id: UUID

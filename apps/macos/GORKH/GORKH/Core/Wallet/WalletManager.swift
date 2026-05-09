@@ -24,6 +24,10 @@ final class WalletManager: ObservableObject {
     @Published private(set) var isBusy = false
     @Published private(set) var securityPolicy: WalletSecurityPolicy
     @Published private(set) var authenticationStatusMessage: String
+    @Published private(set) var cloakAdapterStatus: CloakAdapterStatus = .lockedInPhase20
+    @Published private(set) var cloakVaultStatus: CloakVaultStatus = .statusOnly(walletID: nil)
+    @Published private(set) var currentCloakDepositDraft: CloakDepositDraft?
+    @Published private(set) var cloakBridgeResponse: CloakBridgeResponseSummary?
 
     private let vault: WalletVault
     private let rpcClient: SolanaRPCClient
@@ -32,6 +36,8 @@ final class WalletManager: ObservableObject {
     private let securitySettingsStore: WalletSecuritySettingsStore
     private let localAuthenticationService: any LocalAuthenticationService
     private let mnemonicService: any MnemonicService
+    private let cloakBridge: any CloakBridgeProtocol
+    private let cloakPrivateVault: any CloakPrivateVault
     private let derivationService: SolanaDerivationService
     private var lockController: WalletLockController
     private var unlockedSecrets: [UUID: WalletSecret] = [:]
@@ -77,7 +83,9 @@ final class WalletManager: ObservableObject {
             metadataStore: metadataStore,
             securitySettingsStore: WalletSecuritySettingsStore(),
             localAuthenticationService: SystemLocalAuthenticationService(),
-            mnemonicService: Bip39MnemonicService.shared
+            mnemonicService: Bip39MnemonicService.shared,
+            cloakBridge: CloakBridgeUnavailable(),
+            cloakPrivateVault: CloakPrivateVaultStatusOnly()
         )
     }
 
@@ -88,7 +96,9 @@ final class WalletManager: ObservableObject {
         metadataStore: WalletMetadataStore,
         securitySettingsStore: WalletSecuritySettingsStore,
         localAuthenticationService: any LocalAuthenticationService,
-        mnemonicService: any MnemonicService
+        mnemonicService: any MnemonicService,
+        cloakBridge: any CloakBridgeProtocol,
+        cloakPrivateVault: any CloakPrivateVault
     ) {
         self.vault = vault
         self.rpcClient = rpcClient
@@ -97,6 +107,8 @@ final class WalletManager: ObservableObject {
         self.securitySettingsStore = securitySettingsStore
         self.localAuthenticationService = localAuthenticationService
         self.mnemonicService = mnemonicService
+        self.cloakBridge = cloakBridge
+        self.cloakPrivateVault = cloakPrivateVault
         self.derivationService = SolanaDerivationService(mnemonicService: mnemonicService)
         let policy = securitySettingsStore.loadPolicy()
         self.securityPolicy = policy
@@ -105,6 +117,7 @@ final class WalletManager: ObservableObject {
         loadMetadata()
         auditEvents = auditLog.loadRecent()
         refreshVaultState()
+        refreshCloakVaultStatus(recordAudit: false)
     }
 
     func selectProfile(_ profileID: UUID?) {
@@ -127,7 +140,10 @@ final class WalletManager: ObservableObject {
         tokenApprovalState = .idle
         preparedTokenMessage = nil
         preparedTokenDraftFingerprint = nil
+        currentCloakDepositDraft = nil
+        cloakBridgeResponse = nil
         refreshVaultState()
+        refreshCloakVaultStatus(recordAudit: false)
     }
 
     func setNetwork(_ network: WalletNetwork) {
@@ -154,6 +170,131 @@ final class WalletManager: ObservableObject {
         tokenApprovalState = .idle
         preparedTokenMessage = nil
         preparedTokenDraftFingerprint = nil
+        currentCloakDepositDraft = nil
+        cloakBridgeResponse = cloakBridge.validateEnvironment(network: network)
+    }
+
+    func recordPrivateTabViewed() {
+        noteUserActivity()
+        refreshCloakVaultStatus()
+        record(
+            kind: .privateTabViewed,
+            walletID: selectedWalletID,
+            publicAddress: selectedProfile?.publicAddress,
+            message: "Private wallet section viewed.",
+            details: [
+                "cloakProgramID": CloakConstants.programID,
+                "bridgeStatus": cloakAdapterStatus.rawValue,
+                "phase": "2.0"
+            ]
+        )
+    }
+
+    func refreshCloakVaultStatus(recordAudit: Bool = true) {
+        cloakAdapterStatus = cloakBridge.checkAvailability()
+        cloakVaultStatus = cloakPrivateVault.status(for: selectedWalletID)
+        cloakBridgeResponse = cloakBridge.validateEnvironment(network: selectedNetwork)
+
+        guard recordAudit else {
+            return
+        }
+
+        record(
+            kind: .cloakVaultStatusChecked,
+            walletID: selectedWalletID,
+            publicAddress: selectedProfile?.publicAddress,
+            message: "Cloak private vault status checked.",
+            details: [
+                "bridgeStatus": cloakAdapterStatus.rawValue,
+                "vaultStatus": cloakVaultStatus.privateWalletStatus.rawValue,
+                "referenceCount": "\(cloakVaultStatus.availableReferenceKinds.count)"
+            ]
+        )
+    }
+
+    func draftCloakSolDeposit(amountSOLText: String) {
+        noteUserActivity()
+        guard let profile = selectedProfile else {
+            vaultState = .missing
+            return
+        }
+
+        do {
+            let lamports = try SolanaAmountValidator.lamports(fromSOLText: amountSOLText)
+            let draft = try CloakDepositDraft(
+                network: selectedNetwork,
+                sourceWalletAddress: profile.publicAddress,
+                grossLamports: lamports
+            )
+            let response = cloakBridge.buildDepositPlanSummary(draft: draft)
+
+            currentCloakDepositDraft = draft
+            cloakBridgeResponse = response
+            statusMessage = "Cloak deposit draft prepared. Execution remains locked."
+
+            record(
+                kind: .cloakDepositDraftCreated,
+                walletID: profile.id,
+                publicAddress: profile.publicAddress,
+                message: "Cloak SOL deposit draft created.",
+                details: [
+                    "network": selectedNetwork.rawValue,
+                    "cloakAction": CloakActionKind.deposit.rawValue,
+                    "mint": draft.mintAddress,
+                    "grossLamports": "\(draft.grossLamports)",
+                    "feeLamports": "\(draft.feeQuote.totalFeeLamports)",
+                    "netLamports": "\(draft.feeQuote.netLamports)",
+                    "bridgeStatus": response.status.rawValue
+                ]
+            )
+        } catch {
+            currentCloakDepositDraft = nil
+            cloakBridgeResponse = CloakBridgeResponseSummary(
+                requestID: nil,
+                actionKind: .deposit,
+                status: .blocked,
+                message: error.localizedDescription,
+                programID: CloakConstants.programID,
+                createdAt: Date()
+            )
+            statusMessage = error.localizedDescription
+            record(
+                kind: .cloakDepositExecutionBlocked,
+                walletID: profile.id,
+                publicAddress: profile.publicAddress,
+                message: "Cloak deposit draft rejected.",
+                details: [
+                    "network": selectedNetwork.rawValue,
+                    "cloakAction": CloakActionKind.deposit.rawValue,
+                    "reason": error.localizedDescription
+                ]
+            )
+        }
+    }
+
+    func blockCloakAction(_ actionKind: CloakActionKind) {
+        noteUserActivity()
+        let request = CloakBridgeRequestSummary(
+            actionKind: actionKind,
+            network: selectedNetwork,
+            walletPublicAddress: selectedProfile?.publicAddress ?? "",
+            grossLamports: actionKind == .deposit ? currentCloakDepositDraft?.grossLamports : nil
+        )
+        let response = CloakBridgeResponseSummary.locked(request: request)
+        cloakBridgeResponse = response
+        statusMessage = response.message
+        record(
+            kind: .cloakDepositExecutionBlocked,
+            walletID: selectedWalletID,
+            publicAddress: selectedProfile?.publicAddress,
+            message: "Cloak action blocked by Phase 2.0 execution lock.",
+            details: [
+                "network": selectedNetwork.rawValue,
+                "cloakAction": actionKind.rawValue,
+                "requestID": request.id.uuidString,
+                "bridgeStatus": response.status.rawValue
+            ]
+        )
     }
 
     func createWallet(label: String) {

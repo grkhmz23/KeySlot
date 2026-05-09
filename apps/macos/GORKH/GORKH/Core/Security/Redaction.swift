@@ -9,7 +9,14 @@ enum Redaction {
         "private",
         "walletjson",
         "wallet_json",
-        "keypair"
+        "keypair",
+        "utxo",
+        "note",
+        "viewing",
+        "nullifier",
+        "proof",
+        "rawscan",
+        "chainnote"
     ]
 
     static func isSensitiveKey(_ key: String) -> Bool {
