@@ -92,7 +92,7 @@ enum LPLockedAction: String, Codable, CaseIterable, Identifiable, Equatable {
         case .removeLiquidity:
             return "Remove liquidity locked"
         case .claimFees:
-            return "Claim fees locked"
+            return "Manual claim locked"
         case .closePosition:
             return "Close position locked"
         }
@@ -167,6 +167,7 @@ struct LPPositionSummary: Codable, Equatable, Identifiable {
     let protocolKind: LPProtocolKind
     let poolAddress: String
     let positionAddress: String
+    let positionMintAddress: String?
     let tokenA: LPPositionAssetAmount?
     let tokenB: LPPositionAssetAmount?
     let estimatedValueUSD: Decimal?

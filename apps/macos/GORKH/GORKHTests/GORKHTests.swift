@@ -3366,6 +3366,132 @@ struct GORKHTests {
         #expect(summary.protocols.first { $0.protocolKind == .orca }?.status == .partial)
     }
 
+    @Test func orcaHarvestReviewAllowsOnlyExpectedSignerAndWhirlpoolProgram() throws {
+        let wallet = SolanaConstants.systemProgramID
+        let plan = sampleOrcaHarvestPlan(wallet: wallet)
+        let draft = sampleOrcaHarvestDraft(wallet: wallet, plan: plan)
+        let message = try SolanaTransactionBuilder.makeInstructionProposalMessage(
+            feePayer: wallet,
+            recentBlockhash: SolanaConstants.systemProgramID,
+            instructions: try sampleOrcaInstructionProposals(plan.instructions)
+        )
+        let unsigned = SolanaTransactionBuilder.makeUnsignedTransactionBase64(message: message)
+        let review = try OrcaHarvestReviewer.review(
+            draft: draft,
+            serializedTransactionBase64: unsigned,
+            expectedWallet: wallet
+        )
+        let json = try #require(String(data: JSONEncoder().encode(draft), encoding: .utf8)).lowercased()
+
+        #expect(review.canApprove)
+        #expect(review.baseReview.requiredSignatureCount == 1)
+        #expect(review.baseReview.signerAccounts == [wallet])
+        #expect(review.baseReview.programSummaries.contains { $0.programID == OrcaHarvestConstants.whirlpoolProgramID })
+        for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "serializedtransaction", "transactionpayload"] {
+            #expect(!json.contains(forbidden))
+        }
+    }
+
+    @Test func orcaHarvestReviewBlocksUnexpectedSigner() throws {
+        let wallet = SolanaConstants.systemProgramID
+        let unexpectedSigner = "4N9T5NZ7nVgT5WV5mgWbHcCxgVhM7kUWvQmr6YQb7wNo"
+        let instructions = [
+            OrcaHarvestInstruction(
+                programID: OrcaHarvestConstants.whirlpoolProgramID,
+                accounts: [
+                    OrcaHarvestInstructionAccount(address: wallet, isSigner: true, isWritable: true),
+                    OrcaHarvestInstructionAccount(address: unexpectedSigner, isSigner: true, isWritable: false)
+                ],
+                dataBase64: Data([1, 2, 3]).base64EncodedString()
+            )
+        ]
+        let plan = sampleOrcaHarvestPlan(wallet: wallet, instructions: instructions, signerAccounts: [wallet, unexpectedSigner])
+        let draft = sampleOrcaHarvestDraft(wallet: wallet, plan: plan)
+        let message = try SolanaTransactionBuilder.makeInstructionProposalMessage(
+            feePayer: wallet,
+            recentBlockhash: SolanaConstants.systemProgramID,
+            instructions: try sampleOrcaInstructionProposals(plan.instructions)
+        )
+        let review = try OrcaHarvestReviewer.review(
+            draft: draft,
+            serializedTransactionBase64: SolanaTransactionBuilder.makeUnsignedTransactionBase64(message: message),
+            expectedWallet: wallet
+        )
+
+        #expect(!review.canApprove)
+        #expect(review.blockingReasons.contains { $0.contains("unexpected signer") })
+    }
+
+    @Test func orcaHarvestApprovalGuardRequiresSimulationMainnetPhraseAndFreshFingerprint() throws {
+        let wallet = SolanaConstants.systemProgramID
+        let plan = sampleOrcaHarvestPlan(wallet: wallet)
+        let draft = sampleOrcaHarvestDraft(wallet: wallet, plan: plan)
+        let message = try SolanaTransactionBuilder.makeInstructionProposalMessage(
+            feePayer: wallet,
+            recentBlockhash: SolanaConstants.systemProgramID,
+            instructions: try sampleOrcaInstructionProposals(plan.instructions)
+        )
+        let unsigned = SolanaTransactionBuilder.makeUnsignedTransactionBase64(message: message)
+        let review = try OrcaHarvestReviewer.review(draft: draft, serializedTransactionBase64: unsigned, expectedWallet: wallet)
+        let fingerprint = OrcaHarvestApprovalGuard.fingerprint(draft: draft)
+        let simulation = SimulationResult(
+            status: .success,
+            logs: [],
+            estimatedFeeLamports: 5_000,
+            errorMessage: nil,
+            simulatedAt: Date(timeIntervalSince1970: 0)
+        )
+
+        #expect(throws: OrcaHarvestError.self) {
+            try OrcaHarvestApprovalGuard.validate(OrcaHarvestApprovalContext(
+                draft: draft,
+                review: review,
+                simulation: nil,
+                network: .mainnetBeta,
+                walletPublicKey: wallet,
+                mainnetConfirmation: TransactionApprovalPolicy.requiredMainnetConfirmation,
+                hasCompletedDevnetSmoke: true,
+                vaultState: .unlocked,
+                hasUnlockedSecret: true,
+                hasPreparedMessage: true,
+                currentFingerprint: fingerprint,
+                preparedFingerprint: fingerprint
+            ))
+        }
+
+        #expect(throws: OrcaHarvestError.self) {
+            try OrcaHarvestApprovalGuard.validate(OrcaHarvestApprovalContext(
+                draft: draft,
+                review: review,
+                simulation: simulation,
+                network: .mainnetBeta,
+                walletPublicKey: wallet,
+                mainnetConfirmation: "wrong",
+                hasCompletedDevnetSmoke: true,
+                vaultState: .unlocked,
+                hasUnlockedSecret: true,
+                hasPreparedMessage: true,
+                currentFingerprint: fingerprint,
+                preparedFingerprint: fingerprint
+            ))
+        }
+
+        try OrcaHarvestApprovalGuard.validate(OrcaHarvestApprovalContext(
+            draft: draft,
+            review: review,
+            simulation: simulation,
+            network: .mainnetBeta,
+            walletPublicKey: wallet,
+            mainnetConfirmation: TransactionApprovalPolicy.requiredMainnetConfirmation,
+            hasCompletedDevnetSmoke: true,
+            vaultState: .unlocked,
+            hasUnlockedSecret: true,
+            hasPreparedMessage: true,
+            currentFingerprint: fingerprint,
+            preparedFingerprint: fingerprint
+        ))
+    }
+
     @Test func swapQuoteRequestValidationAndEndpointGuard() throws {
         let usdcMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
         let url = try JupiterQuoteClient.quoteURL(
@@ -4233,6 +4359,10 @@ private struct MockOrcaHelperBridge: OrcaHelperBridging {
     ) async -> LPAdapterResult? {
         result
     }
+
+    func buildHarvestPlan(position: LPPositionSummary, network: WalletNetwork) async throws -> OrcaHarvestPlan {
+        throw OrcaHelperError.disabled
+    }
 }
 
 private struct MockMarginFiHelperPathResolver: MarginFiHelperPathResolving {
@@ -4641,6 +4771,7 @@ private func sampleLPPosition(
         protocolKind: protocolKind,
         poolAddress: "3oS3RJ8UYrYw7TAQEVh6u6ifrHi35o3DnvqyqGti4Gwa",
         positionAddress: "4N9T5NZ7nVgT5WV5mgWbHcCxgVhM7kUWvQmr6YQb7wNo",
+        positionMintAddress: protocolKind == .orca ? "4N9T5NZ7nVgT5WV5mgWbHcCxgVhM7kUWvQmr6YQb7wNo" : nil,
         tokenA: tokenA,
         tokenB: tokenB,
         estimatedValueUSD: estimatedValueUSD,
@@ -4659,6 +4790,67 @@ private func sampleLPPosition(
         metadataStatus: "Sample read-only LP position.",
         errorMessage: status == .partial ? "Partial sample." : nil
     )
+}
+
+private func sampleOrcaHarvestPlan(
+    wallet: String,
+    instructions: [OrcaHarvestInstruction]? = nil,
+    signerAccounts: [String]? = nil
+) -> OrcaHarvestPlan {
+    let planInstructions = instructions ?? [
+        OrcaHarvestInstruction(
+            programID: OrcaHarvestConstants.whirlpoolProgramID,
+            accounts: [
+                OrcaHarvestInstructionAccount(address: wallet, isSigner: true, isWritable: true),
+                OrcaHarvestInstructionAccount(address: "4N9T5NZ7nVgT5WV5mgWbHcCxgVhM7kUWvQmr6YQb7wNo", isSigner: false, isWritable: true)
+            ],
+            dataBase64: Data([1, 2, 3]).base64EncodedString()
+        )
+    ]
+    return OrcaHarvestPlan(
+        walletPublicAddress: wallet,
+        positionMint: "4N9T5NZ7nVgT5WV5mgWbHcCxgVhM7kUWvQmr6YQb7wNo",
+        positionAddress: "6uYdU3sP7iXaWmFkYzHqH2WH2x3EGa3NGeFk1mXQ7j9p",
+        poolAddress: "3oS3RJ8UYrYw7TAQEVh6u6ifrHi35o3DnvqyqGti4Gwa",
+        tokenAMint: PortfolioConstants.nativeSolMint,
+        tokenBMint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        feeOwedA: OrcaHarvestTokenAmount(mintAddress: PortfolioConstants.nativeSolMint, amountRaw: "1", amountUI: nil),
+        feeOwedB: nil,
+        rewardOwed: [],
+        instructionCount: planInstructions.count,
+        writableAccountCount: 2,
+        signerAccounts: signerAccounts ?? [wallet],
+        programIDs: [OrcaHarvestConstants.whirlpoolProgramID],
+        instructions: planInstructions,
+        source: OrcaHarvestConstants.source,
+        expiresAt: Date(timeIntervalSinceNow: 60),
+        warning: "test"
+    )
+}
+
+private func sampleOrcaHarvestDraft(wallet: String, plan: OrcaHarvestPlan) -> OrcaHarvestDraft {
+    OrcaHarvestDraft(
+        walletID: UUID(uuidString: "00000000-0000-0000-0000-000000000111")!,
+        walletPublicAddress: wallet,
+        network: .mainnetBeta,
+        positionMint: plan.positionMint,
+        positionAddress: plan.positionAddress ?? plan.positionMint,
+        poolAddress: plan.poolAddress ?? "pool",
+        plan: plan,
+        createdAt: Date()
+    )
+}
+
+private func sampleOrcaInstructionProposals(_ instructions: [OrcaHarvestInstruction]) throws -> [SolanaInstructionProposal] {
+    try instructions.map { instruction in
+        SolanaInstructionProposal(
+            programID: instruction.programID,
+            accounts: instruction.accounts.map {
+                SolanaInstructionAccountMeta(address: $0.address, isSigner: $0.isSigner, isWritable: $0.isWritable)
+            },
+            data: try #require(Data(base64Encoded: instruction.dataBase64))
+        )
+    }
 }
 
 private struct SampleSwapTransactionFixture {

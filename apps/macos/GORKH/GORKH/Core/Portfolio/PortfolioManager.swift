@@ -16,7 +16,7 @@ struct PortfolioManager {
         rpcClient: SolanaRPCClient,
         priceClient: any PortfolioPriceClient,
         lendingAdapters: [any LendingPositionAdapter] = [KaminoReadOnlyAdapter(), MarginFiReadOnlyAdapter()],
-        lpAdapters: [any LPPositionAdapter] = [MeteoraReadOnlyAdapter(), OrcaReadOnlyAdapter(), RaydiumReadOnlyAdapter()]
+        lpAdapters: [any LPPositionAdapter] = [MeteoraReadOnlyAdapter(), OrcaReadOnlyAdapter(helperBridge: OrcaHelperBridge.liveDefault()), RaydiumReadOnlyAdapter()]
     ) {
         self.rpcClient = rpcClient
         self.priceClient = priceClient

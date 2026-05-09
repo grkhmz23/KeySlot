@@ -1,5 +1,6 @@
 export const ALLOWED_SDK_METHODS = [
   "fetchPositionsForOwner",
+  "harvestPositionInstructions",
   "setWhirlpoolsConfig",
 ] as const;
 
@@ -17,7 +18,6 @@ export const FORBIDDEN_SDK_METHODS = [
   "openConcentratedPosition",
   "harvestAllPositionFees",
   "harvestPosition",
-  "harvestPositionInstructions",
   "updateFeesAndRewards",
   "increaseLiquidityInstructions",
   "openFullRangePositionInstructions",

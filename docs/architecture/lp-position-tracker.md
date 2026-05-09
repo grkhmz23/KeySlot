@@ -4,9 +4,15 @@ Phase 3.5 adds read-only LP position intelligence inside Wallet -> Portfolio. Me
 
 - `DLMM.getAllLbPairPositionsByUser(connection, userPublicKey)`
 
-Phase 3.5B adds Orca Whirlpools through the official TypeScript SDK read-only owner lookup:
+Phase 3.5B first added Orca Whirlpools through the official TypeScript SDK read-only owner lookup:
 
 - `fetchPositionsForOwner(rpc, owner)`
+
+Orca LP Manager v1 extends the same helper boundary with one approved execution path:
+
+- `harvestPositionInstructions(rpc, positionMint, authority)`
+
+The helper builds unsigned harvest instruction proposals only. It does not sign, send, use tx-sender, use Jito tips, read wallet files, call SDK callback send paths, or receive wallet secret material.
 
 Official docs reviewed:
 
@@ -21,12 +27,28 @@ Official docs reviewed:
 - Meteora helper boundary under `tools/meteora-readonly/`.
 - Orca helper boundary under `tools/orca-readonly/`.
 - Safe LP models for pool address, position address, token mints, optional amounts, optional fees, bin/range state, value state, source, timestamp, and adapter status.
+- Orca harvest plan/review/simulation/approval/sign/send flow for existing Orca positions only.
 - Portfolio snapshots store LP counts, protocol statuses, partial/unavailable counts, and optional estimated value only.
 - LP values are shown separately from wallet token balances to avoid double-counting.
 
 ## Execution Boundary
 
-The LP tracker does not request signing, does not build transactions, and does not call transaction builders. Add liquidity, remove liquidity, fee claim, and close position actions are locked in UI.
+Meteora and Raydium remain read-only. Orca supports one execution action: harvest fees/rewards for an already owned LP position.
+
+Orca harvest follows the same wallet safety pipeline as other real wallet actions:
+
+1. position discovered for selected wallet,
+2. harvest plan built by helper as unsigned instruction metadata,
+3. Swift message construction and local review,
+4. simulation,
+5. explicit approval,
+6. wallet unlock and LocalAuthentication,
+7. native signing,
+8. send through GORKH RPC,
+9. confirmation,
+10. audit.
+
+Add liquidity, remove liquidity, open position, close position, and swap actions are locked in UI.
 
 No private keys, seed phrases, mnemonics, signing seeds, wallet JSON, serialized transactions, instruction payloads, or raw signer data are accepted by the helper, stored in snapshots, logged, or audited.
 
@@ -41,12 +63,22 @@ Commands:
 - `health`
 - `env-check`
 - `positions`
+- `harvest-plan`
 
-Inputs:
+Read-only position inputs:
 
 - public wallet address
 - mainnet-beta network
 - optional RPC URL
+- request ID
+
+Harvest plan inputs:
+
+- public wallet address
+- position mint
+- optional position address
+- mainnet-beta network
+- RPC URL
 - request ID
 
 Dependency pins:
@@ -112,9 +144,12 @@ Reviewed public constants:
 - Devnet WhirlpoolConfig: `FcrweFY1G9HJAHG5inkGB6pKg1HZ6x9UC2WioAfWrGkR`
 - Public API base: `https://api.orca.so/v2/solana`
 
-The helper imports the official Orca Whirlpools SDK and Solana Kit, sets the mainnet Whirlpools config, creates a read-only RPC client, and calls only:
+The helper imports the official Orca Whirlpools SDK and Solana Kit, sets the mainnet Whirlpools config, creates an RPC client, and calls only:
 
 - `fetchPositionsForOwner`
+- `harvestPositionInstructions`
+
+The harvest authority is a public-key-only object. Its signing method throws, and helper tests verify it cannot sign. Swift native signing remains the only signing path.
 
 The public API is no-auth read access and may be used later only for metadata or pool enrichment through read-only endpoints such as `/pools`, `/pools/search`, `/pools/{address}`, `/protocol`, and `/tokens/{mint_address}`. It must not replace on-chain ownership discovery.
 
@@ -141,8 +176,14 @@ Forbidden SDK/action methods are denylisted and tested:
 - `tx-sender`
 - `setDefaultFunder`
 - `setPayerFromBytes`
+- `wallet.json`
+- `ANCHOR_WALLET`
+- `tx-sender`
+- `buildAndSendTransaction`
+- `callback(`
+- `sendTx(`
 
-The native Swift bridge follows the same fixed-path policy as Meteora. It is disabled by default in normal app construction and can be injected for development/testing. It accepts only safe JSON summaries and rejects helper output containing sensitive or transaction payload fields.
+The native Swift bridge follows the same fixed-path policy as Meteora. It accepts only safe JSON summaries and harvest instruction proposals from the allowlisted helper command. It rejects helper output containing sensitive fields or user-supplied transaction payload fields.
 
 ## Adapter Status
 
@@ -161,6 +202,7 @@ Orca:
 - `partial` when positions are found but token amounts, fees, value, or tick/range metadata are incomplete.
 - `unavailable` when the helper is disabled, missing, unsupported, lacks an RPC URL, or SDK import/method availability fails.
 - `error` when the read-only lookup fails.
+- Harvest action is available only for Orca positions with a position mint and only after a plan can be built for the selected wallet.
 
 Raydium:
 

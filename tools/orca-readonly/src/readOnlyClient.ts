@@ -14,6 +14,7 @@ import {
   ORCA_WHIRLPOOL_PROGRAM_ID,
   response,
 } from "./contracts.ts";
+import { createRpcWithOptionalHeaders } from "./rpc.ts";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -28,6 +29,7 @@ export async function sdkValidation(): Promise<OrcaSdkValidation> {
     kitImportOk: kit.importOk,
     kitVersion: kit.version,
     readOnlyMethodAvailable: Boolean(sdk.module?.fetchPositionsForOwner && kit.module?.createSolanaRpc && kit.module?.address),
+    harvestInstructionMethodAvailable: Boolean(sdk.module?.harvestPositionInstructions && kit.module?.createSolanaRpc && kit.module?.address),
     whirlpoolProgramId: ORCA_WHIRLPOOL_PROGRAM_ID,
     mainnetWhirlpoolConfig: ORCA_MAINNET_WHIRLPOOL_CONFIG,
     devnetWhirlpoolConfig: ORCA_DEVNET_WHIRLPOOL_CONFIG,
@@ -87,7 +89,7 @@ export async function fetchPositionsReadOnly(request: OrcaReadOnlyRequest): Prom
     }
 
     await sdk.module.setWhirlpoolsConfig("solanaMainnet");
-    const rpc = kit.module.createSolanaRpc(request.rpcUrl);
+    const rpc = createRpcWithOptionalHeaders(kit.module, request);
     const owner = kit.module.address(request.walletPublicAddress);
     const rawPositions = await sdk.module.fetchPositionsForOwner(rpc, owner);
     const positions = await normalizePositions(rawPositions, request.walletPublicAddress);
@@ -135,6 +137,8 @@ async function normalizePositions(rawPositions: unknown, walletPublicAddress: st
     const data = readObject(raw, ["data", "position", "account", "positionData"]) ?? (typeof raw === "object" ? raw : undefined);
     const poolAddress = readPublicKey(data, ["whirlpool", "whirlpoolAddress", "poolAddress"])
       ?? readPublicKey(raw, ["whirlpool", "whirlpoolAddress", "poolAddress"]);
+    const positionMint = readPublicKey(data, ["positionMint", "positionMintAddress", "mint"])
+      ?? readPublicKey(raw, ["positionMint", "positionMintAddress", "mint"]);
     const positionAddress = readPublicKey(raw, ["address", "publicKey", "positionAddress", "position"])
       ?? readPublicKey(data, ["address", "publicKey", "positionAddress", "positionMint"])
       ?? `${poolAddress ?? "unknown-pool"}:position`;
@@ -161,6 +165,7 @@ async function normalizePositions(rawPositions: unknown, walletPublicAddress: st
       walletPublicAddress,
       poolAddress: poolAddress ?? "pool-unavailable",
       positionAddress,
+      positionMint,
       tokenAMint,
       tokenBMint,
       tokenAAmountUi,
@@ -187,6 +192,7 @@ async function importSdk(): Promise<{
   version?: string;
   module?: {
     fetchPositionsForOwner?: (rpc: unknown, owner: unknown) => Promise<unknown>;
+    harvestPositionInstructions?: (rpc: unknown, positionMintAddress: unknown, authority?: unknown) => Promise<unknown>;
     setWhirlpoolsConfig?: (config: string) => Promise<void> | void;
   };
 }> {
@@ -198,6 +204,7 @@ async function importSdk(): Promise<{
       version: packageVersion("@orca-so/whirlpools"),
       module: module as {
         fetchPositionsForOwner?: (rpc: unknown, owner: unknown) => Promise<unknown>;
+        harvestPositionInstructions?: (rpc: unknown, positionMintAddress: unknown, authority?: unknown) => Promise<unknown>;
         setWhirlpoolsConfig?: (config: string) => Promise<void> | void;
       },
     };
@@ -214,7 +221,7 @@ async function importKit(): Promise<{
   importOk: boolean;
   version?: string;
   module?: {
-    createSolanaRpc?: (url: string) => unknown;
+    createSolanaRpc?: (url: string, config?: { headers?: Record<string, string> }) => unknown;
     address?: (value: string) => unknown;
   };
 }> {
@@ -225,7 +232,7 @@ async function importKit(): Promise<{
       importOk: true,
       version: packageVersion("@solana/kit"),
       module: module as {
-        createSolanaRpc?: (url: string) => unknown;
+        createSolanaRpc?: (url: string, config?: { headers?: Record<string, string> }) => unknown;
         address?: (value: string) => unknown;
       },
     };

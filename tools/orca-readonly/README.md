@@ -1,14 +1,19 @@
-# GORKH Orca Read-Only Helper
+# GORKH Orca Whirlpools Helper
 
-This helper is a fixed-command boundary for Orca Whirlpools position monitoring. It accepts only public wallet addresses, network, request ID, and optional RPC URL. It never accepts wallet private keys, signing seeds, wallet JSON, transaction payloads, or instruction payloads.
+This helper is a fixed-command boundary for Orca Whirlpools position monitoring and unsigned harvest planning. It accepts only public wallet addresses, position mints, network, request ID, and optional RPC URL. It never accepts wallet private keys, signing seeds, wallet JSON, user-supplied transaction payloads, or arbitrary instruction payloads.
 
 Allowed commands:
 
 - `health`
 - `env-check`
 - `positions`
+- `harvest-plan`
 
-The `positions` command uses the official `@orca-so/whirlpools` read-only `fetchPositionsForOwner` function with `@solana/kit` RPC. Liquidity action methods, tx-sender flows, private-key/file-wallet loading, and transaction builders are denylisted and tested.
+The `positions` command uses the official `@orca-so/whirlpools` read-only `fetchPositionsForOwner` function with `@solana/kit` RPC.
+
+The `harvest-plan` command verifies the selected position mint belongs to the requested owner, then calls `harvestPositionInstructions` to return unsigned instruction metadata only. It does not sign, send, call callback send paths, use tx-sender, load wallet files, or use Jito tips. Native Swift review, simulation, approval, signing, sending, confirmation, and audit remain mandatory.
+
+Liquidity action methods outside harvest, tx-sender flows, private-key/file-wallet loading, and transaction send helpers are denylisted and tested.
 
 Reviewed public constants:
 

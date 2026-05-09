@@ -2,6 +2,45 @@ import SwiftUI
 
 struct PortfolioLiquidityView: View {
     let summary: LPPortfolioSummary
+    let harvestDraft: OrcaHarvestDraft?
+    let harvestReview: OrcaHarvestReview?
+    let harvestSimulation: SimulationResult?
+    let harvestApprovalState: ApprovalState
+    let harvestErrorMessage: String?
+    @Binding var mainnetConfirmation: String
+    @Binding var completedDevnetSmoke: Bool
+    let prepareHarvestAction: (LPPositionSummary) -> Void
+    let simulateHarvestAction: () -> Void
+    let approveHarvestAction: () -> Void
+    let resetHarvestAction: () -> Void
+
+    init(
+        summary: LPPortfolioSummary,
+        harvestDraft: OrcaHarvestDraft? = nil,
+        harvestReview: OrcaHarvestReview? = nil,
+        harvestSimulation: SimulationResult? = nil,
+        harvestApprovalState: ApprovalState = .idle,
+        harvestErrorMessage: String? = nil,
+        mainnetConfirmation: Binding<String> = .constant(""),
+        completedDevnetSmoke: Binding<Bool> = .constant(false),
+        prepareHarvestAction: @escaping (LPPositionSummary) -> Void = { _ in },
+        simulateHarvestAction: @escaping () -> Void = {},
+        approveHarvestAction: @escaping () -> Void = {},
+        resetHarvestAction: @escaping () -> Void = {}
+    ) {
+        self.summary = summary
+        self.harvestDraft = harvestDraft
+        self.harvestReview = harvestReview
+        self.harvestSimulation = harvestSimulation
+        self.harvestApprovalState = harvestApprovalState
+        self.harvestErrorMessage = harvestErrorMessage
+        self._mainnetConfirmation = mainnetConfirmation
+        self._completedDevnetSmoke = completedDevnetSmoke
+        self.prepareHarvestAction = prepareHarvestAction
+        self.simulateHarvestAction = simulateHarvestAction
+        self.approveHarvestAction = approveHarvestAction
+        self.resetHarvestAction = resetHarvestAction
+    }
 
     var body: some View {
         GorkhPanel("Liquidity") {
@@ -12,8 +51,8 @@ struct PortfolioLiquidityView: View {
                         systemImage: icon(for: summary.status),
                         color: color(for: summary.status)
                     )
-                    GorkhStatusChip(title: "Read-only", systemImage: "eye", color: GorkhColors.accent)
-                    GorkhStatusChip(title: "Execution locked", systemImage: "lock", color: GorkhColors.warning)
+                    GorkhStatusChip(title: "Harvest guarded", systemImage: "checkmark.shield", color: GorkhColors.accent)
+                    GorkhStatusChip(title: "Add/remove locked", systemImage: "lock", color: GorkhColors.warning)
                 }
 
                 Text(summary.noDoubleCountNotice)
@@ -31,9 +70,22 @@ struct PortfolioLiquidityView: View {
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 10)], alignment: .leading, spacing: 10) {
                     ForEach(summary.protocols) { protocolSummary in
-                        LPProtocolCardView(summary: protocolSummary)
+                        LPProtocolCardView(summary: protocolSummary, prepareHarvestAction: prepareHarvestAction)
                     }
                 }
+
+                OrcaHarvestApprovalPanel(
+                    draft: harvestDraft,
+                    review: harvestReview,
+                    simulation: harvestSimulation,
+                    approvalState: harvestApprovalState,
+                    errorMessage: harvestErrorMessage,
+                    mainnetConfirmation: $mainnetConfirmation,
+                    completedDevnetSmoke: $completedDevnetSmoke,
+                    simulateAction: simulateHarvestAction,
+                    approveAction: approveHarvestAction,
+                    resetAction: resetHarvestAction
+                )
 
                 HStack(spacing: 8) {
                     ForEach(LPLockedAction.allCases) { action in
@@ -99,8 +151,160 @@ struct PortfolioLiquidityView: View {
     }
 }
 
+private struct OrcaHarvestApprovalPanel: View {
+    let draft: OrcaHarvestDraft?
+    let review: OrcaHarvestReview?
+    let simulation: SimulationResult?
+    let approvalState: ApprovalState
+    let errorMessage: String?
+    @Binding var mainnetConfirmation: String
+    @Binding var completedDevnetSmoke: Bool
+    let simulateAction: () -> Void
+    let approveAction: () -> Void
+    let resetAction: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Orca Harvest Approval")
+                    .font(.callout)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(GorkhColors.primaryText)
+                Spacer()
+                GorkhStatusChip(title: approvalStatusTitle, systemImage: "signature", color: approvalColor)
+            }
+
+            if let draft {
+                HStack(spacing: 8) {
+                    GorkhStatusChip(title: simulation?.status.rawValue ?? "not simulated", systemImage: "waveform.path.ecg", color: simulation?.status == .success ? GorkhColors.success : GorkhColors.warning)
+                    GorkhStatusChip(title: "Mainnet real funds", systemImage: "exclamationmark.triangle.fill", color: GorkhColors.warning)
+                    GorkhStatusChip(title: "Native signer only", systemImage: "lock.shield", color: GorkhColors.accent)
+                }
+
+                row("Wallet", draft.walletPublicAddress.shortAddress)
+                row("Position mint", draft.positionMint)
+                row("Pool", draft.poolAddress)
+                row("Instructions", "\(review?.instructionCount ?? draft.plan.instructionCount)")
+                row("Writable accounts", "\(review?.writableAccountCount ?? draft.plan.writableAccountCount)")
+                row("Estimated fee", simulation?.estimatedFeeLamports.map { "\($0) lamports" } ?? "Unavailable")
+                row("Review", review?.canApprove == true ? "passed" : "missing or blocked")
+
+                if let warning = draft.plan.warning {
+                    Text(warning)
+                        .font(.caption)
+                        .foregroundStyle(GorkhColors.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if let errorMessage, !errorMessage.isEmpty {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(GorkhColors.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Text("Harvesting Orca fees/rewards is a real mainnet transaction. GORKH builds an unsigned proposal, reviews it locally, simulates it, then signs with the native wallet only after explicit approval.")
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                TextField(TransactionApprovalPolicy.requiredMainnetConfirmation, text: $mainnetConfirmation)
+                    .textFieldStyle(.roundedBorder)
+                Toggle("I have completed a devnet smoke send for this build.", isOn: $completedDevnetSmoke)
+                    .toggleStyle(.checkbox)
+                    .foregroundStyle(GorkhColors.warning)
+
+                if let logs = simulation?.logs, !logs.isEmpty {
+                    DisclosureGroup("Simulation logs") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(logs.prefix(16), id: \.self) { line in
+                                Text(line)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundStyle(GorkhColors.secondaryText)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                        .padding(.top, 4)
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    Button(action: simulateAction) {
+                        Label("Simulate Harvest", systemImage: "waveform.path.ecg")
+                    }
+                    .buttonStyle(.gorkhSecondary)
+                    .disabled(review?.canApprove != true)
+
+                    Button(action: approveAction) {
+                        Label("Approve, Authenticate, Sign Locally, and Send", systemImage: "signature")
+                    }
+                    .buttonStyle(.gorkhPrimary)
+                    .disabled(!(review?.canApprove == true && simulation?.status == .success))
+
+                    Button(action: resetAction) {
+                        Label("Clear", systemImage: "xmark.circle")
+                    }
+                    .buttonStyle(.gorkhSecondary)
+                }
+            } else {
+                Text("Select an Orca LP position and create a harvest plan before approval.")
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.secondaryText)
+            }
+        }
+        .padding(10)
+        .background(GorkhColors.panelElevated.opacity(0.35))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var approvalStatusTitle: String {
+        switch approvalState {
+        case .idle:
+            return "idle"
+        case .drafted:
+            return "drafted"
+        case .simulated:
+            return "ready"
+        case .approved:
+            return "approved"
+        case .sending:
+            return "sending"
+        case .sent:
+            return "sent"
+        case .failed:
+            return "failed"
+        }
+    }
+
+    private var approvalColor: Color {
+        switch approvalState {
+        case .simulated, .sent:
+            return GorkhColors.success
+        case .failed:
+            return GorkhColors.danger
+        case .idle, .drafted, .approved, .sending:
+            return GorkhColors.warning
+        }
+    }
+
+    private func row(_ title: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(GorkhColors.secondaryText)
+            Spacer()
+            Text(value)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(GorkhColors.primaryText)
+                .lineLimit(2)
+                .textSelection(.enabled)
+        }
+    }
+}
+
 private struct LPProtocolCardView: View {
     let summary: LPProtocolSummary
+    let prepareHarvestAction: (LPPositionSummary) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -131,7 +335,7 @@ private struct LPProtocolCardView: View {
             }
 
             if !summary.positions.isEmpty {
-                LPPositionTableView(positions: summary.positions)
+                LPPositionTableView(positions: summary.positions, prepareHarvestAction: prepareHarvestAction)
             } else {
                 Text(emptyMessage)
                     .font(.caption)
@@ -180,6 +384,7 @@ private struct LPProtocolCardView: View {
 
 private struct LPPositionTableView: View {
     let positions: [LPPositionSummary]
+    let prepareHarvestAction: (LPPositionSummary) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -204,6 +409,23 @@ private struct LPPositionTableView: View {
                             .font(.caption2)
                             .foregroundStyle(GorkhColors.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if position.protocolKind == .orca {
+                        HStack {
+                            Button {
+                                prepareHarvestAction(position)
+                            } label: {
+                                Label("Harvest fees/rewards", systemImage: "tray.and.arrow.down")
+                            }
+                            .buttonStyle(.gorkhSecondary)
+                            .disabled(position.positionMintAddress == nil)
+
+                            if position.positionMintAddress == nil {
+                                Text("Position mint unavailable.")
+                                    .font(.caption2)
+                                    .foregroundStyle(GorkhColors.warning)
+                            }
+                        }
                     }
                 }
             }

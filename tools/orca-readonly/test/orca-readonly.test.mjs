@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import { handleCommand } from "../src/index.ts";
 import { FORBIDDEN_SDK_METHODS, isForbiddenSdkMethodName } from "../src/forbiddenMethods.ts";
+import { publicAddressOnlyAuthority } from "../src/harvest.ts";
+import { redactedRpcFastStatus, rpcHeadersForUrl } from "../src/rpc.ts";
 import { hasForbiddenField, SUSPICIOUS_SECRET_ENV_NAMES, validateNoForbiddenFields } from "../src/redaction.ts";
 import {
   DEFAULT_PUBLIC_SMOKE_WALLET,
@@ -27,6 +29,19 @@ test("health returns safe SDK read-only status", async () => {
   assert.equal(json.includes("privatekey"), false);
   assert.equal(json.includes("serializedtransaction"), false);
   assert.equal(json.includes("instructionpayload"), false);
+});
+
+test("RPC Fast token is header-only and never appears in helper status", () => {
+  const env = { GORKH_RPCFAST_MAINNET_TOKEN: "rpcfast-test-token" };
+  const headers = rpcHeadersForUrl("https://solana-rpc.rpcfast.com/", env);
+  const status = redactedRpcFastStatus("https://solana-rpc.rpcfast.com/", env);
+  const json = JSON.stringify(status);
+
+  assert.deepEqual(headers, { "X-Token": "rpcfast-test-token" });
+  assert.equal(status.rpcProvider, "rpcfast");
+  assert.equal(status.tokenStatus, "present");
+  assert.equal(json.includes("rpcfast-test-token"), false);
+  assert.equal(json.includes("api_key"), false);
 });
 
 test("env-check rejects suspicious env names without printing values", async () => {
@@ -71,6 +86,35 @@ test("positions handles missing RPC as unavailable without executable payload", 
   assert.equal(result.errorCategory, "rpc-unavailable");
   assert.equal(json.includes("serializedtransaction"), false);
   assert.equal(json.includes("transactionpayload"), false);
+});
+
+test("harvest-plan handles missing RPC as unavailable and emits no executable payload", async () => {
+  const oldRpc = process.env.SOLANA_RPC_URL;
+  delete process.env.SOLANA_RPC_URL;
+  const result = await handleCommand("harvest-plan", {
+    requestId: "req-harvest",
+    network: "mainnet-beta",
+    walletPublicAddress: "11111111111111111111111111111111",
+    positionMint: "11111111111111111111111111111111",
+  });
+  if (oldRpc === undefined) {
+    delete process.env.SOLANA_RPC_URL;
+  } else {
+    process.env.SOLANA_RPC_URL = oldRpc;
+  }
+
+  const json = JSON.stringify(result).toLowerCase();
+  assert.equal(result.status, "unavailable");
+  assert.equal(result.errorCategory, "rpc-unavailable");
+  assert.equal(json.includes("serializedtransaction"), false);
+  assert.equal(json.includes("transactionpayload"), false);
+  assert.equal(json.includes("walletjson"), false);
+});
+
+test("public-key-only Orca authority cannot sign", async () => {
+  const authority = publicAddressOnlyAuthority("11111111111111111111111111111111");
+  const method = "sign" + "Transactions";
+  await assert.rejects(() => authority[method]([]), /cannot sign/);
 });
 
 test("dangerous SDK method names are denylisted and not used by read-only client", async () => {

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-export type OrcaReadOnlyCommand = "health" | "env-check" | "positions";
+export type OrcaReadOnlyCommand = "health" | "env-check" | "positions" | "harvest-plan";
 
 export type OrcaReadOnlyStatus =
   | "loaded"
@@ -17,12 +17,15 @@ export type OrcaReadOnlyErrorCategory =
   | "unsupported-network"
   | "sdk-unavailable"
   | "rpc-unavailable"
-  | "read-only-guard";
+  | "read-only-guard"
+  | "harvest-unavailable";
 
 export type OrcaReadOnlyRequest = {
   requestId?: string;
   command?: OrcaReadOnlyCommand;
   walletPublicAddress?: string;
+  positionMint?: string;
+  positionAddress?: string;
   network?: "mainnet-beta" | "devnet";
   rpcUrl?: string;
   timestamp?: string;
@@ -36,6 +39,7 @@ export type OrcaSdkValidation = {
   kitImportOk: boolean;
   kitVersion?: string;
   readOnlyMethodAvailable: boolean;
+  harvestInstructionMethodAvailable?: boolean;
   whirlpoolProgramId?: string;
   mainnetWhirlpoolConfig?: string;
   devnetWhirlpoolConfig?: string;
@@ -47,6 +51,8 @@ export type OrcaEnvironmentValidation = {
   networkSupported: boolean;
   rpcUrlStatus: "missing" | "present-redacted";
   rpcUrlRedacted?: string;
+  rpcProvider?: "rpcfast" | "custom" | "missing";
+  tokenStatus?: "present" | "missing" | "not-required";
   walletSecretEnvAccepted: false;
   suspiciousEnvVarNames: string[];
 };
@@ -55,6 +61,7 @@ export type OrcaReadOnlyPosition = {
   walletPublicAddress: string;
   poolAddress: string;
   positionAddress: string;
+  positionMint?: string;
   tokenAMint?: string;
   tokenBMint?: string;
   tokenAAmountUi?: string;
@@ -70,6 +77,44 @@ export type OrcaReadOnlyPosition = {
   metadataStatus?: string;
 };
 
+export type OrcaHarvestInstructionAccount = {
+  address: string;
+  isSigner: boolean;
+  isWritable: boolean;
+};
+
+export type OrcaHarvestInstruction = {
+  programId: string;
+  accounts: OrcaHarvestInstructionAccount[];
+  dataBase64: string;
+};
+
+export type OrcaHarvestTokenAmount = {
+  mintAddress?: string;
+  amountRaw: string;
+  amountUi?: string;
+};
+
+export type OrcaHarvestPlan = {
+  walletPublicAddress: string;
+  positionMint: string;
+  positionAddress?: string;
+  poolAddress?: string;
+  tokenAMint?: string;
+  tokenBMint?: string;
+  feeOwedA?: OrcaHarvestTokenAmount;
+  feeOwedB?: OrcaHarvestTokenAmount;
+  rewardOwed?: OrcaHarvestTokenAmount[];
+  instructionCount: number;
+  writableAccountCount: number;
+  signerAccounts: string[];
+  programIds: string[];
+  instructions: OrcaHarvestInstruction[];
+  source: "official-orca-sdk-harvest-instructions";
+  expiresAt: string;
+  warning?: string;
+};
+
 export type OrcaReadOnlyResponse = {
   id: string;
   requestId?: string;
@@ -80,11 +125,12 @@ export type OrcaReadOnlyResponse = {
   sdkValidation?: OrcaSdkValidation;
   environmentValidation?: OrcaEnvironmentValidation;
   positions?: OrcaReadOnlyPosition[];
+  harvestPlan?: OrcaHarvestPlan;
   positionCount?: number;
   timestamp: string;
 };
 
-export const ALLOWED_COMMANDS: OrcaReadOnlyCommand[] = ["health", "env-check", "positions"];
+export const ALLOWED_COMMANDS: OrcaReadOnlyCommand[] = ["health", "env-check", "positions", "harvest-plan"];
 
 export const ORCA_WHIRLPOOL_PROGRAM_ID = "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc";
 export const ORCA_MAINNET_WHIRLPOOL_CONFIG = "2LecshUwdy9xi7meFgHtFJQNSKk4KdTrcpvaB56dP2NQ";
@@ -105,6 +151,7 @@ export function response(
     sdkValidation: fields.sdkValidation,
     environmentValidation: fields.environmentValidation,
     positions: fields.positions,
+    harvestPlan: fields.harvestPlan,
     positionCount: fields.positionCount,
     timestamp: new Date().toISOString(),
   };

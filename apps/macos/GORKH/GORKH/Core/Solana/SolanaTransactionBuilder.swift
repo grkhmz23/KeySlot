@@ -7,6 +7,18 @@ struct SolanaCompiledInstruction: Equatable {
     let data: Data
 }
 
+struct SolanaInstructionAccountMeta: Equatable {
+    let address: String
+    let isSigner: Bool
+    let isWritable: Bool
+}
+
+struct SolanaInstructionProposal: Equatable {
+    let programID: String
+    let accounts: [SolanaInstructionAccountMeta]
+    let data: Data
+}
+
 enum SolanaTransactionBuilder {
     static func makeTransferMessage(draft: TransactionDraft, recentBlockhash: String) throws -> Data {
         guard let from = SolanaAddressValidator.decodeAddress(draft.fromAddress) else {
@@ -70,10 +82,117 @@ enum SolanaTransactionBuilder {
         return message
     }
 
+    static func makeInstructionProposalMessage(
+        feePayer: String,
+        recentBlockhash: String,
+        instructions proposals: [SolanaInstructionProposal]
+    ) throws -> Data {
+        guard !proposals.isEmpty else {
+            throw SolanaValidationError.invalidAddress("At least one instruction is required.")
+        }
+        guard let blockhash = Base58.decode(recentBlockhash), blockhash.count == 32 else {
+            throw SolanaValidationError.invalidAddress("Latest blockhash is invalid.")
+        }
+        guard SolanaAddressValidator.isValidAddress(feePayer) else {
+            throw SolanaValidationError.invalidAddress("Fee payer address is invalid.")
+        }
+
+        var metas: [String: (isSigner: Bool, isWritable: Bool, order: Int)] = [
+            feePayer: (isSigner: true, isWritable: true, order: 0)
+        ]
+        var order = 1
+        func merge(address: String, isSigner: Bool, isWritable: Bool) throws {
+            guard SolanaAddressValidator.isValidAddress(address) else {
+                throw SolanaValidationError.invalidAddress("Instruction account address is invalid.")
+            }
+            if var existing = metas[address] {
+                existing.isSigner = existing.isSigner || isSigner
+                existing.isWritable = existing.isWritable || isWritable
+                metas[address] = existing
+            } else {
+                metas[address] = (isSigner: isSigner, isWritable: isWritable, order: order)
+                order += 1
+            }
+        }
+
+        for proposal in proposals {
+            try merge(address: proposal.programID, isSigner: false, isWritable: false)
+            for account in proposal.accounts {
+                try merge(address: account.address, isSigner: account.isSigner, isWritable: account.isWritable)
+            }
+        }
+
+        let sortedKeys = metas
+            .sorted { left, right in
+                let lhs = accountSortRank(address: left.key, feePayer: feePayer, meta: left.value)
+                let rhs = accountSortRank(address: right.key, feePayer: feePayer, meta: right.value)
+                if lhs != rhs {
+                    return lhs < rhs
+                }
+                return left.value.order < right.value.order
+            }
+            .map(\.key)
+
+        guard sortedKeys.count <= Int(UInt8.max) else {
+            throw SolanaValidationError.invalidAddress("Instruction account list is too large for a legacy transaction.")
+        }
+
+        let keyIndexes = Dictionary(uniqueKeysWithValues: sortedKeys.enumerated().map { ($0.element, UInt8($0.offset)) })
+        let compiled = try proposals.map { proposal in
+            guard let programIndex = keyIndexes[proposal.programID] else {
+                throw SolanaValidationError.invalidAddress("Instruction program ID is missing from account keys.")
+            }
+            let accountIndexes = try proposal.accounts.map { account -> UInt8 in
+                guard let index = keyIndexes[account.address] else {
+                    throw SolanaValidationError.invalidAddress("Instruction account is missing from account keys.")
+                }
+                return index
+            }
+            return SolanaCompiledInstruction(
+                programIDIndex: programIndex,
+                accountIndexes: accountIndexes,
+                data: proposal.data
+            )
+        }
+
+        let signerMetas = sortedKeys.compactMap { key -> (String, (isSigner: Bool, isWritable: Bool, order: Int))? in
+            guard let meta = metas[key], meta.isSigner else {
+                return nil
+            }
+            return (key, meta)
+        }
+        let unsignedMetas = sortedKeys.compactMap { key -> (String, (isSigner: Bool, isWritable: Bool, order: Int))? in
+            guard let meta = metas[key], !meta.isSigner else {
+                return nil
+            }
+            return (key, meta)
+        }
+        guard signerMetas.count <= Int(UInt8.max) else {
+            throw SolanaValidationError.invalidAddress("Instruction signer list is too large.")
+        }
+
+        let accountKeyData = try sortedKeys.map { key -> Data in
+            guard let decoded = SolanaAddressValidator.decodeAddress(key) else {
+                throw SolanaValidationError.invalidAddress("Instruction account address is invalid.")
+            }
+            return decoded
+        }
+
+        return makeMessage(
+            accountKeys: accountKeyData,
+            recentBlockhash: Data(blockhash),
+            requiredSignatures: UInt8(signerMetas.count),
+            readonlySignedAccounts: UInt8(signerMetas.filter { !$0.1.isWritable }.count),
+            readonlyUnsignedAccounts: UInt8(unsignedMetas.filter { !$0.1.isWritable }.count),
+            instructions: compiled
+        )
+    }
+
     static func makeUnsignedTransactionBase64(message: Data) -> String {
         var transaction = Data()
-        transaction.append(shortVector(1))
-        transaction.append(Data(repeating: 0, count: 64))
+        let requiredSignatures = Int(message.first ?? 1)
+        transaction.append(shortVector(requiredSignatures))
+        transaction.append(Data(repeating: 0, count: requiredSignatures * 64))
         transaction.append(message)
         return transaction.base64EncodedString()
     }
@@ -117,5 +236,25 @@ enum SolanaTransactionBuilder {
     static func littleEndianUInt64(_ value: UInt64) -> Data {
         var littleEndian = value.littleEndian
         return Data(bytes: &littleEndian, count: MemoryLayout<UInt64>.size)
+    }
+
+    private static func accountSortRank(
+        address: String,
+        feePayer: String,
+        meta: (isSigner: Bool, isWritable: Bool, order: Int)
+    ) -> Int {
+        if address == feePayer {
+            return 0
+        }
+        switch (meta.isSigner, meta.isWritable) {
+        case (true, true):
+            return 1
+        case (true, false):
+            return 2
+        case (false, true):
+            return 3
+        case (false, false):
+            return 4
+        }
     }
 }

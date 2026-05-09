@@ -50,6 +50,12 @@ final class WalletManager: ObservableObject {
     @Published private(set) var lastSwapSignature: String?
     @Published private(set) var lastSwapConfirmationStatus: String?
     @Published private(set) var swapBalanceDeltaVerification: SwapBalanceDeltaVerification = .notStarted
+    @Published private(set) var currentOrcaHarvestDraft: OrcaHarvestDraft?
+    @Published private(set) var currentOrcaHarvestReview: OrcaHarvestReview?
+    @Published private(set) var orcaHarvestSimulationResult: SimulationResult?
+    @Published private(set) var orcaHarvestApprovalState: ApprovalState = .idle
+    @Published private(set) var orcaHarvestErrorMessage: String?
+    @Published private(set) var lastOrcaHarvestSignature: String?
     @Published private(set) var rpcHealthSnapshot: RPCHealthSnapshot
 
     private let vault: WalletVault
@@ -71,6 +77,7 @@ final class WalletManager: ObservableObject {
     private let pusdCirculationClient: PUSDCirculationClient
     private let jupiterQuoteClient: JupiterQuoteClient
     private let jupiterSwapClient: JupiterSwapClient
+    private let orcaHelperBridge: any OrcaHelperBridging
     private let derivationService: SolanaDerivationService
     private var lockController: WalletLockController
     private var unlockedSecrets: [UUID: WalletSecret] = [:]
@@ -79,6 +86,8 @@ final class WalletManager: ObservableObject {
     private var preparedDraftFingerprint: String?
     private var preparedTokenDraftFingerprint: String?
     private var preparedSwapFingerprint: String?
+    private var preparedOrcaHarvestMessage: Data?
+    private var preparedOrcaHarvestFingerprint: String?
     private var swapPreflightBalances: [String: UInt64] = [:]
 
     var rpcFastConfiguration: RPCFastConfiguration {
@@ -255,7 +264,8 @@ final class WalletManager: ObservableObject {
         portfolioSnapshotStore: PortfolioSnapshotStore? = nil,
         pusdCirculationClient: PUSDCirculationClient? = nil,
         jupiterQuoteClient: JupiterQuoteClient? = nil,
-        jupiterSwapClient: JupiterSwapClient? = nil
+        jupiterSwapClient: JupiterSwapClient? = nil,
+        orcaHelperBridge: (any OrcaHelperBridging)? = nil
     ) {
         let resolvedPortfolioPriceClient = portfolioPriceClient ?? JupiterPriceClient()
         self.vault = vault
@@ -277,6 +287,7 @@ final class WalletManager: ObservableObject {
         self.pusdCirculationClient = pusdCirculationClient ?? PUSDCirculationClient()
         self.jupiterQuoteClient = jupiterQuoteClient ?? JupiterQuoteClient()
         self.jupiterSwapClient = jupiterSwapClient ?? JupiterSwapClient()
+        self.orcaHelperBridge = orcaHelperBridge ?? OrcaHelperBridge.liveDefault()
         self.derivationService = SolanaDerivationService(mnemonicService: mnemonicService)
         self.rpcHealthSnapshot = .unchecked(network: .devnet, configuration: rpcClient.configuration)
         let policy = securitySettingsStore.loadPolicy()
@@ -326,6 +337,7 @@ final class WalletManager: ObservableObject {
         portfolioStatus = .idle
         portfolioErrorMessage = nil
         resetSwapState()
+        resetOrcaHarvestState()
         refreshVaultState()
         refreshCloakVaultStatus(recordAudit: false)
         refreshCloakScanCacheState()
@@ -363,6 +375,7 @@ final class WalletManager: ObservableObject {
         portfolioStatus = .idle
         portfolioErrorMessage = nil
         resetSwapState()
+        resetOrcaHarvestState()
         cloakBridgeResponse = cloakBridge.validateEnvironment(network: network)
         cloakBridgeContractResponse = cloakBridge.environmentCheck(network: network)
         cloakPrivateRecords = cloakPrivateVault.records(for: selectedWalletID)
@@ -2239,6 +2252,259 @@ final class WalletManager: ObservableObject {
         swapBalanceDeltaVerification = .notStarted
     }
 
+    func resetOrcaHarvestState() {
+        currentOrcaHarvestDraft = nil
+        currentOrcaHarvestReview = nil
+        orcaHarvestSimulationResult = nil
+        orcaHarvestApprovalState = .idle
+        orcaHarvestErrorMessage = nil
+        lastOrcaHarvestSignature = nil
+        preparedOrcaHarvestMessage = nil
+        preparedOrcaHarvestFingerprint = nil
+    }
+
+    func prepareOrcaHarvest(position: LPPositionSummary) async {
+        noteUserActivity()
+        guard let profile = selectedProfile else {
+            return
+        }
+
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            guard selectedNetwork == .mainnetBeta else {
+                throw OrcaHarvestError.invalidPosition("Orca harvest execution is mainnet-beta only.")
+            }
+            guard profile.canSign else {
+                throw OrcaHarvestError.invalidPosition("Watch-only wallets cannot harvest Orca LP fees or rewards.")
+            }
+            guard position.protocolKind == .orca else {
+                throw OrcaHarvestError.invalidPosition("Harvest is only enabled for Orca LP positions in this phase.")
+            }
+            guard position.walletID == profile.id,
+                  position.walletPublicAddress == profile.publicAddress else {
+                throw OrcaHarvestError.invalidPosition("Selected Orca LP position does not belong to the active wallet.")
+            }
+            let plan = try await orcaHelperBridge.buildHarvestPlan(position: position, network: selectedNetwork)
+            let positionMint = try resolvedOrcaPositionMint(position: position, plan: plan)
+            let draft = OrcaHarvestDraft(
+                walletID: profile.id,
+                walletPublicAddress: profile.publicAddress,
+                network: selectedNetwork,
+                positionMint: positionMint,
+                positionAddress: position.positionAddress,
+                poolAddress: plan.poolAddress ?? position.poolAddress,
+                plan: plan
+            )
+            let blockhash = try await rpcClient.getLatestBlockhash(network: selectedNetwork)
+            let message = try SolanaTransactionBuilder.makeInstructionProposalMessage(
+                feePayer: profile.publicAddress,
+                recentBlockhash: blockhash,
+                instructions: try solanaInstructionProposals(plan.instructions)
+            )
+            let unsignedBase64 = SolanaTransactionBuilder.makeUnsignedTransactionBase64(message: message)
+            let review = try OrcaHarvestReviewer.review(
+                draft: draft,
+                serializedTransactionBase64: unsignedBase64,
+                expectedWallet: profile.publicAddress
+            )
+
+            currentOrcaHarvestDraft = draft
+            currentOrcaHarvestReview = review
+            orcaHarvestSimulationResult = nil
+            preparedOrcaHarvestMessage = nil
+            preparedOrcaHarvestFingerprint = nil
+            orcaHarvestErrorMessage = review.canApprove ? nil : review.blockingReasons.joined(separator: " ")
+            orcaHarvestApprovalState = review.canApprove ? .drafted : .failed(review.blockingReasons.joined(separator: " "))
+            record(
+                kind: .orcaHarvestPlanCreated,
+                walletID: profile.id,
+                publicAddress: profile.publicAddress,
+                message: "Orca harvest plan created and reviewed.",
+                details: [
+                    "network": selectedNetwork.rawValue,
+                    "positionMint": positionMint,
+                    "poolAddress": draft.poolAddress,
+                    "instructionCount": "\(review.instructionCount)",
+                    "writableAccountCount": "\(review.writableAccountCount)",
+                    "warningCount": "\(review.warnings.count)",
+                    "blockingReasonsCount": "\(review.blockingReasons.count)"
+                ]
+            )
+            statusMessage = review.canApprove ? "Orca harvest plan reviewed." : "Orca harvest review blocked approval."
+        } catch {
+            orcaHarvestApprovalState = .failed(error.localizedDescription)
+            orcaHarvestErrorMessage = error.localizedDescription
+            statusMessage = error.localizedDescription
+            recordOrcaHarvestFailure(kind: .orcaHarvestBlockedByGuard, message: error.localizedDescription)
+        }
+    }
+
+    func simulateCurrentOrcaHarvest() async {
+        noteUserActivity()
+        guard let profile = selectedProfile,
+              let draft = currentOrcaHarvestDraft,
+              let review = currentOrcaHarvestReview else {
+            orcaHarvestErrorMessage = "Build and review an Orca harvest plan before simulation."
+            return
+        }
+
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            guard review.canApprove else {
+                throw OrcaHarvestError.reviewFailed(review.blockingReasons.joined(separator: " "))
+            }
+            guard let message = Data(base64Encoded: review.messageBase64) else {
+                throw OrcaHarvestError.signingBlocked("Prepared Orca harvest message is invalid.")
+            }
+            let transactionBase64 = SolanaTransactionBuilder.makeUnsignedTransactionBase64(message: message)
+            let fee = try? await rpcClient.getFeeForMessage(messageBase64: review.messageBase64, network: draft.network)
+            var result = try await rpcClient.simulateTransaction(transactionBase64: transactionBase64, network: draft.network)
+            result.estimatedFeeLamports = fee ?? result.estimatedFeeLamports
+            orcaHarvestSimulationResult = result
+
+            if result.status == .success {
+                preparedOrcaHarvestMessage = message
+                preparedOrcaHarvestFingerprint = OrcaHarvestApprovalGuard.fingerprint(draft: draft)
+                orcaHarvestApprovalState = .simulated
+                record(
+                    kind: .orcaHarvestSimulationPassed,
+                    walletID: profile.id,
+                    publicAddress: profile.publicAddress,
+                    message: "Orca harvest transaction simulated.",
+                    details: [
+                        "network": draft.network.rawValue,
+                        "positionMint": draft.positionMint,
+                        "poolAddress": draft.poolAddress,
+                        "status": result.status.rawValue,
+                        "estimatedFeeLamports": "\(result.estimatedFeeLamports ?? 0)"
+                    ]
+                )
+                statusMessage = "Orca harvest simulation succeeded."
+            } else {
+                let message = result.errorMessage ?? "Orca harvest simulation failed."
+                orcaHarvestApprovalState = .failed(message)
+                recordOrcaHarvestFailure(kind: .orcaHarvestSimulationFailed, message: message)
+                statusMessage = message
+            }
+        } catch {
+            orcaHarvestSimulationResult = .unavailable(error.localizedDescription)
+            orcaHarvestApprovalState = .failed(error.localizedDescription)
+            orcaHarvestErrorMessage = error.localizedDescription
+            statusMessage = error.localizedDescription
+            recordOrcaHarvestFailure(kind: .orcaHarvestSimulationFailed, message: error.localizedDescription)
+        }
+    }
+
+    func approveAndSendOrcaHarvest(
+        mainnetConfirmation: String,
+        hasCompletedDevnetSmoke: Bool
+    ) async {
+        guard let profile = selectedProfile,
+              let draft = currentOrcaHarvestDraft,
+              let review = currentOrcaHarvestReview else {
+            return
+        }
+
+        enforceAutoLockIfNeeded()
+        let currentFingerprint = OrcaHarvestApprovalGuard.fingerprint(draft: draft)
+        do {
+            try OrcaHarvestApprovalGuard.validate(OrcaHarvestApprovalContext(
+                draft: draft,
+                review: review,
+                simulation: orcaHarvestSimulationResult,
+                network: draft.network,
+                walletPublicKey: profile.publicAddress,
+                mainnetConfirmation: mainnetConfirmation,
+                hasCompletedDevnetSmoke: hasCompletedDevnetSmoke,
+                vaultState: vaultState,
+                hasUnlockedSecret: unlockedSecrets[profile.id] != nil,
+                hasPreparedMessage: preparedOrcaHarvestMessage != nil,
+                currentFingerprint: currentFingerprint,
+                preparedFingerprint: preparedOrcaHarvestFingerprint
+            ))
+        } catch {
+            orcaHarvestApprovalState = .failed(error.localizedDescription)
+            orcaHarvestErrorMessage = error.localizedDescription
+            statusMessage = "Mainnet Orca harvest requires unlock, simulation, exact confirmation, and matching approval."
+            recordOrcaHarvestFailure(kind: .orcaHarvestBlockedByGuard, message: error.localizedDescription)
+            return
+        }
+
+        guard await authenticateIfNeeded(
+            required: securityPolicy.requireLocalAuthenticationForSigning,
+            reason: "Authorize local signing for this Orca harvest."
+        ) else {
+            orcaHarvestApprovalState = .failed("Device authentication failed.")
+            return
+        }
+
+        guard let secret = unlockedSecrets[profile.id],
+              let message = preparedOrcaHarvestMessage else {
+            orcaHarvestApprovalState = .failed(WalletSigningPreflightError.missingPreparedMessage.localizedDescription)
+            statusMessage = WalletSigningPreflightError.missingPreparedMessage.localizedDescription
+            return
+        }
+
+        noteUserActivity()
+        record(
+            kind: .orcaHarvestApproved,
+            walletID: profile.id,
+            publicAddress: profile.publicAddress,
+            message: "Orca harvest approved by user.",
+            details: [
+                "network": draft.network.rawValue,
+                "positionMint": draft.positionMint,
+                "poolAddress": draft.poolAddress,
+                "instructionCount": "\(review.instructionCount)",
+                "warningCount": "\(review.warnings.count)"
+            ]
+        )
+
+        orcaHarvestApprovalState = .approved
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            orcaHarvestApprovalState = .sending
+            let signedTransactionBase64 = try SolanaTransactionBuilder.makeSignedTransactionBase64(
+                message: message,
+                seed: secret.seed
+            )
+            let signature = try await rpcClient.sendTransaction(
+                transactionBase64: signedTransactionBase64,
+                network: draft.network
+            )
+            lastTransactionSignature = signature
+            lastOrcaHarvestSignature = signature
+            let status = try? await waitForConfirmation(signature: signature, network: draft.network, timeoutSeconds: 20)
+            lastConfirmationStatus = status?.confirmationStatus
+            orcaHarvestApprovalState = .sent(signature)
+            record(
+                kind: .orcaHarvestSent,
+                walletID: profile.id,
+                publicAddress: profile.publicAddress,
+                transactionSignature: signature,
+                message: "Orca harvest sent.",
+                details: [
+                    "network": draft.network.rawValue,
+                    "positionMint": draft.positionMint,
+                    "poolAddress": draft.poolAddress,
+                    "confirmationStatus": status?.confirmationStatus ?? ""
+                ]
+            )
+            statusMessage = "Orca harvest sent."
+        } catch {
+            orcaHarvestApprovalState = .failed(error.localizedDescription)
+            orcaHarvestErrorMessage = error.localizedDescription
+            statusMessage = error.localizedDescription
+            recordOrcaHarvestFailure(kind: .orcaHarvestFailed, message: error.localizedDescription)
+        }
+    }
+
     func requestSwapQuote(
         inputMint: String,
         outputMint: String,
@@ -3306,6 +3572,55 @@ final class WalletManager: ObservableObject {
                 "status": "failed"
             ]
         )
+    }
+
+    private func recordOrcaHarvestFailure(kind: AuditEvent.Kind = .orcaHarvestFailed, message: String) {
+        record(
+            kind: kind,
+            walletID: selectedWalletID,
+            publicAddress: selectedProfile?.publicAddress,
+            message: message,
+            details: [
+                "network": selectedNetwork.rawValue,
+                "status": "failed"
+            ]
+        )
+    }
+
+    private func resolvedOrcaPositionMint(position: LPPositionSummary, plan: OrcaHarvestPlan) throws -> String {
+        let candidate = position.positionMintAddress ?? plan.positionMint
+        guard SolanaAddressValidator.isValidAddress(candidate) else {
+            throw OrcaHarvestError.invalidPosition("Orca LP position mint is unavailable.")
+        }
+        guard candidate == plan.positionMint else {
+            throw OrcaHarvestError.invalidPosition("Orca harvest plan position mint does not match the selected position.")
+        }
+        return candidate
+    }
+
+    private func solanaInstructionProposals(_ instructions: [OrcaHarvestInstruction]) throws -> [SolanaInstructionProposal] {
+        try instructions.map { instruction in
+            guard SolanaAddressValidator.isValidAddress(instruction.programID) else {
+                throw OrcaHarvestError.reviewFailed("Orca harvest instruction has an invalid program ID.")
+            }
+            guard let data = Data(base64Encoded: instruction.dataBase64) else {
+                throw OrcaHarvestError.reviewFailed("Orca harvest instruction data is invalid.")
+            }
+            return SolanaInstructionProposal(
+                programID: instruction.programID,
+                accounts: try instruction.accounts.map { account in
+                    guard SolanaAddressValidator.isValidAddress(account.address) else {
+                        throw OrcaHarvestError.reviewFailed("Orca harvest instruction has an invalid account address.")
+                    }
+                    return SolanaInstructionAccountMeta(
+                        address: account.address,
+                        isSigner: account.isSigner,
+                        isWritable: account.isWritable
+                    )
+                },
+                data: data
+            )
+        }
     }
 }
 

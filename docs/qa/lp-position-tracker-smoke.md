@@ -1,6 +1,6 @@
 # LP Position Tracker Smoke Checklist
 
-Phase 3.5 is read-only. Do not run LP transactions.
+Meteora and Raydium remain read-only. Orca now supports one guarded execution path: harvest fees/rewards for an existing owned LP position. Do not run add, remove, open, close, or swap transactions.
 
 ## Manual UI Smoke
 
@@ -11,11 +11,12 @@ Phase 3.5 is read-only. Do not run LP transactions.
 5. Confirm Meteora shows `Loaded`, `Empty`, `Partial`, `Unavailable`, or `Error` honestly.
 6. Confirm Orca shows `Loaded`, `Empty`, `Partial`, `Unavailable`, or `Error` honestly.
 7. Confirm Raydium shows an unavailable placeholder.
-8. Confirm Add liquidity, Remove liquidity, Claim fees, and Close position controls are disabled.
-9. Confirm the copy says LP values are separate from wallet token balances to avoid double-counting.
-10. Confirm Portfolio total value does not include LP value.
-11. Confirm Snapshot History includes LP position count.
-12. Confirm Audit shows LP refresh/snapshot events without secrets.
+8. Confirm Add liquidity, Remove liquidity, and Close position controls are disabled.
+9. Confirm Orca positions with a position mint expose `Harvest fees/rewards` and all other Orca execution controls remain locked.
+10. Confirm the copy says LP values are separate from wallet token balances to avoid double-counting.
+11. Confirm Portfolio total value does not include LP value.
+12. Confirm Snapshot History includes LP position count.
+13. Confirm Audit shows LP refresh/snapshot events without secrets.
 
 ## Meteora Helper
 
@@ -77,11 +78,12 @@ The public API is no-auth read access and can enrich pool/token metadata only. P
 Helper boundary:
 
 - path: `tools/orca-readonly/src/index.ts`
-- commands: `health`, `env-check`, `positions`
+- commands: `health`, `env-check`, `positions`, `harvest-plan`
 - smoke wrapper: `scripts/orca-readonly-smoke.sh`
 - dependencies: `@orca-so/whirlpools@7.0.2`, `@solana/kit@5.5.1`
-- input: public wallet address, network, optional RPC URL, request ID
-- forbidden input: private key, seed phrase, mnemonic, signing seed, wallet JSON, serialized transaction, instruction payload
+- read-only input: public wallet address, network, optional RPC URL, request ID
+- harvest-plan input: public wallet address, position mint, network, RPC URL, request ID
+- forbidden input: private key, seed phrase, mnemonic, signing seed, wallet JSON, user-supplied transaction payload, arbitrary instruction payload
 
 Run helper tests:
 
@@ -106,6 +108,37 @@ The smoke prints only a safe summary: wallet public address, status, SDK version
 
 Do not use Orca tx-sender, Jito tips, private-key/file-wallet loading, or any callback that sends a transaction in this helper.
 
+## Orca Harvest
+
+Official SDK planning method:
+
+- `harvestPositionInstructions(rpc, positionMint, authority)`
+
+The helper uses this method to build unsigned instruction metadata only. It verifies the selected position mint is returned by `fetchPositionsForOwner` for the selected wallet before creating a plan.
+
+The helper must not call:
+
+- `harvestPosition`
+- tx-sender
+- callback send paths
+- `buildAndSendTransaction`
+- `setPayerFromBytes`
+- wallet file loading
+
+Native app flow:
+
+1. Build a harvest plan for the owned Orca position.
+2. Convert the helper instruction metadata into an unsigned Solana message.
+3. Review signer, fee payer, program IDs, writable accounts, and Whirlpool program presence.
+4. Simulate.
+5. Require explicit approval and mainnet phrase.
+6. Require wallet unlock and LocalAuthentication.
+7. Sign with the native wallet signer.
+8. Send through existing GORKH RPC.
+9. Confirm and audit.
+
+Detailed manual harvest smoke lives in `docs/qa/orca-harvest-smoke.md`.
+
 ## Expected States
 
 - `Loaded`: positions are returned with enough token and range data to display a complete read-only summary.
@@ -125,5 +158,6 @@ rg -n "mnemonic|seed phrase|privateKey|secretKey|wallet JSON|signingSeed|transac
 Expected:
 
 - No LP code stores or logs secrets.
-- No LP code builds transactions.
+- Orca helper may build unsigned harvest instruction proposals only.
+- Native Swift builds, reviews, simulates, signs, and sends harvest after approval.
 - Words for LP actions appear only as locked labels, docs, tests, denylist entries, or forbidden execution copy.

@@ -4,6 +4,7 @@ enum OrcaHelperCommand: String, Codable, CaseIterable {
     case health
     case envCheck = "env-check"
     case positions
+    case harvestPlan = "harvest-plan"
 }
 
 enum OrcaHelperStatus: String, Codable, Equatable {
@@ -76,7 +77,7 @@ struct OrcaHelperInvocationPolicy: Equatable {
             "/usr/local/bin/node",
             "/usr/bin/node"
         ],
-        allowedCommands: [.health, .envCheck, .positions]
+        allowedCommands: [.health, .envCheck, .positions, .harvestPlan]
     )
 
     static func readOnlyEnabledForDevelopment(
@@ -95,6 +96,8 @@ struct OrcaHelperRequest: Codable, Equatable {
     let requestID: String
     let command: OrcaHelperCommand
     let walletPublicAddress: String?
+    let positionMint: String?
+    let positionAddress: String?
     let network: WalletNetwork
     let rpcURL: String?
     let timestamp: Date
@@ -103,6 +106,8 @@ struct OrcaHelperRequest: Codable, Equatable {
         requestID: String = UUID().uuidString,
         command: OrcaHelperCommand,
         walletPublicAddress: String? = nil,
+        positionMint: String? = nil,
+        positionAddress: String? = nil,
         network: WalletNetwork,
         rpcURL: String? = nil,
         timestamp: Date = Date()
@@ -110,6 +115,8 @@ struct OrcaHelperRequest: Codable, Equatable {
         self.requestID = requestID
         self.command = command
         self.walletPublicAddress = walletPublicAddress
+        self.positionMint = positionMint
+        self.positionAddress = positionAddress
         self.network = network
         self.rpcURL = rpcURL
         self.timestamp = timestamp
@@ -119,6 +126,8 @@ struct OrcaHelperRequest: Codable, Equatable {
         case requestID = "requestId"
         case command
         case walletPublicAddress
+        case positionMint
+        case positionAddress
         case network
         case rpcURL = "rpcUrl"
         case timestamp
@@ -133,6 +142,7 @@ struct OrcaHelperSDKValidation: Codable, Equatable {
     let kitImportOk: Bool
     let kitVersion: String?
     let readOnlyMethodAvailable: Bool
+    var harvestInstructionMethodAvailable: Bool? = nil
 }
 
 struct OrcaHelperResponse: Codable, Equatable {
@@ -144,6 +154,7 @@ struct OrcaHelperResponse: Codable, Equatable {
     let message: String
     let sdkValidation: OrcaHelperSDKValidation?
     let positions: [OrcaHelperPosition]?
+    var harvestPlan: OrcaHarvestPlan? = nil
     let positionCount: Int?
     let timestamp: Date
 
@@ -156,6 +167,7 @@ struct OrcaHelperResponse: Codable, Equatable {
         case message
         case sdkValidation
         case positions
+        case harvestPlan
         case positionCount
         case timestamp
     }
@@ -165,6 +177,7 @@ struct OrcaHelperPosition: Codable, Equatable {
     let walletPublicAddress: String
     let poolAddress: String
     let positionAddress: String
+    var positionMint: String? = nil
     let tokenAMint: String?
     let tokenBMint: String?
     let tokenAAmountUI: String?
@@ -183,6 +196,7 @@ struct OrcaHelperPosition: Codable, Equatable {
         case walletPublicAddress
         case poolAddress
         case positionAddress
+        case positionMint
         case tokenAMint = "tokenAMint"
         case tokenBMint = "tokenBMint"
         case tokenAAmountUI = "tokenAAmountUi"
@@ -199,12 +213,97 @@ struct OrcaHelperPosition: Codable, Equatable {
     }
 }
 
+struct OrcaHarvestInstructionAccount: Codable, Equatable, Identifiable {
+    var id: String { "\(address):\(isSigner):\(isWritable)" }
+
+    let address: String
+    let isSigner: Bool
+    let isWritable: Bool
+}
+
+struct OrcaHarvestInstruction: Codable, Equatable, Identifiable {
+    var id: String { "\(programID):\(accounts.count):\(dataBase64.count)" }
+
+    let programID: String
+    let accounts: [OrcaHarvestInstructionAccount]
+    let dataBase64: String
+
+    enum CodingKeys: String, CodingKey {
+        case programID = "programId"
+        case accounts
+        case dataBase64
+    }
+}
+
+struct OrcaHarvestTokenAmount: Codable, Equatable {
+    let mintAddress: String?
+    let amountRaw: String
+    let amountUI: String?
+
+    enum CodingKeys: String, CodingKey {
+        case mintAddress
+        case amountRaw
+        case amountUI = "amountUi"
+    }
+}
+
+struct OrcaHarvestPlan: Codable, Equatable, Identifiable {
+    var id: String { "\(walletPublicAddress):\(positionMint):\(expiresAt.timeIntervalSince1970)" }
+
+    let walletPublicAddress: String
+    let positionMint: String
+    let positionAddress: String?
+    let poolAddress: String?
+    let tokenAMint: String?
+    let tokenBMint: String?
+    let feeOwedA: OrcaHarvestTokenAmount?
+    let feeOwedB: OrcaHarvestTokenAmount?
+    let rewardOwed: [OrcaHarvestTokenAmount]?
+    let instructionCount: Int
+    let writableAccountCount: Int
+    let signerAccounts: [String]
+    let programIDs: [String]
+    let instructions: [OrcaHarvestInstruction]
+    let source: String
+    let expiresAt: Date
+    let warning: String?
+
+    enum CodingKeys: String, CodingKey {
+        case walletPublicAddress
+        case positionMint
+        case positionAddress
+        case poolAddress
+        case tokenAMint = "tokenAMint"
+        case tokenBMint = "tokenBMint"
+        case feeOwedA
+        case feeOwedB
+        case rewardOwed
+        case instructionCount
+        case writableAccountCount
+        case signerAccounts
+        case programIDs = "programIds"
+        case instructions
+        case source
+        case expiresAt
+        case warning
+    }
+
+    func isExpired(relativeTo date: Date = Date()) -> Bool {
+        date >= expiresAt
+    }
+}
+
 protocol OrcaHelperBridging {
     func fetchPositions(
         profiles: [WalletProfile],
         network: WalletNetwork,
         prices: [String: PortfolioPriceQuote]
     ) async -> LPAdapterResult?
+
+    func buildHarvestPlan(
+        position: LPPositionSummary,
+        network: WalletNetwork
+    ) async throws -> OrcaHarvestPlan
 }
 
 struct OrcaHelperBridge: OrcaHelperBridging {
@@ -220,6 +319,45 @@ struct OrcaHelperBridge: OrcaHelperBridging {
             pathResolver: OrcaHelperPathResolver(),
             processRunner: OrcaHelperDirectProcessRunner()
         )
+    }
+
+    static func liveDefault() -> OrcaHelperBridge {
+        OrcaHelperBridge(
+            policy: .readOnlyEnabledForDevelopment(),
+            projectRoot: OrcaHelperProjectRootResolver.resolve(),
+            pathResolver: OrcaHelperPathResolver(),
+            processRunner: OrcaHelperDirectProcessRunner()
+        )
+    }
+
+    func buildHarvestPlan(
+        position: LPPositionSummary,
+        network: WalletNetwork
+    ) async throws -> OrcaHarvestPlan {
+        guard policy.enabled else {
+            throw OrcaHelperError.disabled
+        }
+        guard position.protocolKind == .orca else {
+            throw OrcaHelperError.responseRejected("harvest plan requires an Orca LP position")
+        }
+        guard let positionMint = position.positionMintAddress ?? (SolanaAddressValidator.isValidAddress(position.positionAddress) ? position.positionAddress : nil) else {
+            throw OrcaHelperError.responseRejected("Orca LP position mint is unavailable")
+        }
+
+        let request = OrcaHelperRequest(
+            command: .harvestPlan,
+            walletPublicAddress: position.walletPublicAddress,
+            positionMint: positionMint,
+            positionAddress: position.positionAddress,
+            network: network,
+            rpcURL: network.rpcURL.absoluteString
+        )
+        let response = try await invoke(request)
+        guard response.status == .loaded || response.status == .empty,
+              let plan = response.harvestPlan else {
+            throw OrcaHelperError.helperRejected(response.message)
+        }
+        return plan
     }
 
     func fetchPositions(
@@ -328,6 +466,11 @@ struct OrcaHelperBridge: OrcaHelperBridging {
                 throw OrcaHelperError.responseRejected("invalid public wallet address")
             }
         }
+        if let positionMint = request.positionMint {
+            guard SolanaAddressValidator.isValidAddress(positionMint) else {
+                throw OrcaHelperError.responseRejected("invalid Orca LP position mint")
+            }
+        }
     }
 
     private func validate(_ response: OrcaHelperResponse, for request: OrcaHelperRequest) throws {
@@ -403,6 +546,7 @@ struct OrcaHelperBridge: OrcaHelperBridging {
             protocolKind: .orca,
             poolAddress: position.poolAddress,
             positionAddress: position.positionAddress,
+            positionMintAddress: position.positionMint,
             tokenA: tokenA,
             tokenB: tokenB,
             estimatedValueUSD: estimatedValue,
@@ -482,6 +626,33 @@ struct OrcaHelperBridge: OrcaHelperBridging {
             return "[redacted orca helper message]"
         }
         return value
+    }
+}
+
+enum OrcaHelperProjectRootResolver {
+    static func resolve() -> URL? {
+        let env = ProcessInfo.processInfo.environment
+        if let explicit = env["GORKH_PROJECT_ROOT"], !explicit.isEmpty {
+            return URL(fileURLWithPath: explicit)
+        }
+        let current = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        return firstProjectRoot(startingAt: current)
+    }
+
+    private static func firstProjectRoot(startingAt url: URL) -> URL? {
+        var candidate = url.standardizedFileURL
+        for _ in 0..<8 {
+            let helper = candidate.appendingPathComponent(OrcaHelperPathResolver.allowedRelativePath)
+            if FileManager.default.fileExists(atPath: helper.path) {
+                return candidate
+            }
+            let parent = candidate.deletingLastPathComponent()
+            if parent.path == candidate.path {
+                return nil
+            }
+            candidate = parent
+        }
+        return nil
     }
 }
 
@@ -569,7 +740,7 @@ struct OrcaHelperDirectProcessRunner: OrcaHelperProcessRunning {
         process.standardInput = input
         process.standardOutput = stdout
         process.standardError = stderr
-        process.environment = [:]
+        process.environment = rpcFastEnvironment()
 
         try process.run()
         try input.fileHandleForWriting.write(contentsOf: stdin)
@@ -593,5 +764,17 @@ struct OrcaHelperDirectProcessRunner: OrcaHelperProcessRunning {
             return "[redacted orca helper stderr]"
         }
         return String(value.prefix(500))
+    }
+
+    private func rpcFastEnvironment() -> [String: String] {
+        let env = ProcessInfo.processInfo.environment
+        return [
+            RPCFastConfiguration.mainnetTokenEnvironmentName,
+            RPCFastConfiguration.fallbackMainnetTokenEnvironmentName
+        ].reduce(into: [String: String]()) { partial, key in
+            if let value = env[key], !value.isEmpty {
+                partial[key] = value
+            }
+        }
     }
 }

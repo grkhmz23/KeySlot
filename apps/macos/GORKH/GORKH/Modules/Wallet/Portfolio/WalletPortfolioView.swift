@@ -2,6 +2,8 @@ import SwiftUI
 
 struct WalletPortfolioView: View {
     @EnvironmentObject private var walletManager: WalletManager
+    @State private var orcaHarvestMainnetConfirmation = ""
+    @State private var orcaHarvestDevnetSmokeCompleted = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -65,7 +67,31 @@ struct WalletPortfolioView: View {
             PortfolioStakeView(summary: walletManager.portfolioSummary.nativeStakeSummary)
             PortfolioLSTView(summary: walletManager.portfolioSummary.lstSummary)
             PortfolioLendingView(summary: walletManager.portfolioSummary.lendingSummary)
-            PortfolioLiquidityView(summary: walletManager.portfolioSummary.lpSummary)
+            PortfolioLiquidityView(
+                summary: walletManager.portfolioSummary.lpSummary,
+                harvestDraft: walletManager.currentOrcaHarvestDraft,
+                harvestReview: walletManager.currentOrcaHarvestReview,
+                harvestSimulation: walletManager.orcaHarvestSimulationResult,
+                harvestApprovalState: walletManager.orcaHarvestApprovalState,
+                harvestErrorMessage: walletManager.orcaHarvestErrorMessage,
+                mainnetConfirmation: $orcaHarvestMainnetConfirmation,
+                completedDevnetSmoke: $orcaHarvestDevnetSmokeCompleted,
+                prepareHarvestAction: { position in
+                    Task { await walletManager.prepareOrcaHarvest(position: position) }
+                },
+                simulateHarvestAction: {
+                    Task { await walletManager.simulateCurrentOrcaHarvest() }
+                },
+                approveHarvestAction: {
+                    Task {
+                        await walletManager.approveAndSendOrcaHarvest(
+                            mainnetConfirmation: orcaHarvestMainnetConfirmation,
+                            hasCompletedDevnetSmoke: orcaHarvestDevnetSmokeCompleted
+                        )
+                    }
+                },
+                resetHarvestAction: walletManager.resetOrcaHarvestState
+            )
             PortfolioHistoryView(
                 snapshots: walletManager.portfolioHistory,
                 clearAction: walletManager.clearPortfolioHistory(confirmation:)

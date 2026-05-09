@@ -5,8 +5,10 @@ import {
   type OrcaReadOnlyResponse,
   response,
 } from "./contracts.ts";
+import { buildHarvestPlan } from "./harvest.ts";
 import { fetchPositionsReadOnly, sdkValidation } from "./readOnlyClient.ts";
 import { redactedRpcStatus, suspiciousEnvNames, validateNoForbiddenFields } from "./redaction.ts";
+import { redactedRpcFastStatus } from "./rpc.ts";
 
 export async function handleCommand(
   command: OrcaReadOnlyCommand,
@@ -29,6 +31,8 @@ export async function handleCommand(
       return envCheck(typedRequest);
     case "positions":
       return positions(typedRequest);
+    case "harvest-plan":
+      return harvestPlan(typedRequest);
   }
 }
 
@@ -48,6 +52,7 @@ async function health(request: OrcaReadOnlyRequest): Promise<OrcaReadOnlyRespons
 async function envCheck(request: OrcaReadOnlyRequest): Promise<OrcaReadOnlyResponse> {
   const names = suspiciousEnvNames();
   const rpc = redactedRpcStatus(request.rpcUrl ?? process.env.SOLANA_RPC_URL);
+  const rpcFast = redactedRpcFastStatus(request.rpcUrl ?? process.env.SOLANA_RPC_URL);
   const environmentValidation = {
     network: request.network,
     networkSupported: request.network === "mainnet-beta",
@@ -55,6 +60,8 @@ async function envCheck(request: OrcaReadOnlyRequest): Promise<OrcaReadOnlyRespo
     rpcUrlRedacted: rpc.redacted,
     walletSecretEnvAccepted: false as const,
     suspiciousEnvVarNames: names,
+    rpcProvider: rpcFast.rpcProvider,
+    tokenStatus: rpcFast.tokenStatus,
   };
 
   if (names.length > 0) {
@@ -108,6 +115,34 @@ async function positions(request: OrcaReadOnlyRequest): Promise<OrcaReadOnlyResp
   });
 }
 
+async function harvestPlan(request: OrcaReadOnlyRequest): Promise<OrcaReadOnlyResponse> {
+  const names = suspiciousEnvNames();
+  if (names.length > 0) {
+    const rpc = redactedRpcStatus(request.rpcUrl ?? process.env.SOLANA_RPC_URL);
+    return response("harvest-plan", {
+      requestId: request.requestId,
+      status: "rejected",
+      errorCategory: "forbidden-field",
+      message: "Suspicious wallet secret environment variable names are present. Values were not printed.",
+      environmentValidation: {
+        network: request.network,
+        networkSupported: request.network === "mainnet-beta",
+        rpcUrlStatus: rpc.status,
+        rpcUrlRedacted: rpc.redacted,
+        walletSecretEnvAccepted: false,
+        suspiciousEnvVarNames: names,
+      },
+      sdkValidation: await sdkValidation(),
+    });
+  }
+
+  return buildHarvestPlan({
+    ...request,
+    command: "harvest-plan",
+    rpcUrl: request.rpcUrl ?? process.env.SOLANA_RPC_URL,
+  });
+}
+
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) {
@@ -122,7 +157,7 @@ async function main(): Promise<void> {
     writeAndExit(response("health", {
       status: "rejected",
       errorCategory: "invalid-request",
-      message: "Usage: node src/index.ts <health|env-check|positions>",
+      message: "Usage: node src/index.ts <health|env-check|positions|harvest-plan>",
     }), 2);
     return;
   }

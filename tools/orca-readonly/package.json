@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Strictly read-only Orca Whirlpools position helper boundary for GORKH macOS.",
+  "description": "Strict Orca Whirlpools helper boundary for GORKH macOS read-only positions and unsigned harvest plans.",
   "engines": {
     "node": ">=22.6"
   },
@@ -11,6 +11,7 @@
     "health": "node src/index.ts health",
     "env-check": "node src/index.ts env-check",
     "positions": "node src/index.ts positions",
+    "harvest-plan": "node src/index.ts harvest-plan",
     "smoke": "node src/smoke.ts",
     "test": "node --test test/*.test.mjs"
   },

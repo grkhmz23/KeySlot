@@ -376,6 +376,7 @@ struct MeteoraHelperBridge: MeteoraHelperBridging {
             protocolKind: .meteora,
             poolAddress: position.poolAddress,
             positionAddress: position.positionAddress,
+            positionMintAddress: nil,
             tokenA: tokenA,
             tokenB: tokenB,
             estimatedValueUSD: estimatedValue,
