@@ -331,6 +331,17 @@ private struct LPProtocolCardView: View {
                     row("SDK method", value: "DLMM.getAllLbPairPositionsByUser")
                 } else if summary.protocolKind == .orca {
                     row("SDK method", value: "fetchPositionsForOwner")
+                } else if summary.protocolKind == .raydium {
+                    row("Owner API", value: "/position/stake + /position/clmm-lock")
+                    row("Enrichment", value: "API v3 pools/mints/prices")
+                }
+            }
+
+            if summary.protocolKind == .raydium {
+                HStack(spacing: 6) {
+                    lockedLabel("Claim rewards locked")
+                    lockedLabel("Raydium harvest locked")
+                    lockedLabel("Close position locked")
                 }
             }
 
@@ -379,6 +390,14 @@ private struct LPProtocolCardView: View {
 
     private var emptyMessage: String {
         summary.errorMessage ?? "No LP positions returned."
+    }
+
+    private func lockedLabel(_ title: String) -> some View {
+        Label(title, systemImage: "lock")
+            .font(.caption2)
+            .foregroundStyle(GorkhColors.warning)
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
     }
 }
 

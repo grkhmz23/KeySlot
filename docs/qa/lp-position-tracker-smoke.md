@@ -10,7 +10,7 @@ Meteora and Raydium remain read-only. Orca now supports one guarded execution pa
 4. Confirm the panel says read-only and execution locked.
 5. Confirm Meteora shows `Loaded`, `Empty`, `Partial`, `Unavailable`, or `Error` honestly.
 6. Confirm Orca shows `Loaded`, `Empty`, `Partial`, `Unavailable`, or `Error` honestly.
-7. Confirm Raydium shows an unavailable placeholder.
+7. Confirm Raydium shows `Loaded`, `Empty`, `Partial`, `Unavailable`, or `Error` honestly.
 8. Confirm Add liquidity, Remove liquidity, and Close position controls are disabled.
 9. Confirm Orca positions with a position mint expose `Harvest fees/rewards` and all other Orca execution controls remain locked.
 10. Confirm the copy says LP values are separate from wallet token balances to avoid double-counting.
@@ -139,6 +139,37 @@ Native app flow:
 
 Detailed manual harvest smoke lives in `docs/qa/orca-harvest-smoke.md`.
 
+## Raydium Read-Only API
+
+Official read-only endpoints:
+
+- `GET https://owner-v1.raydium.io/position/stake/{owner}`
+- `GET https://owner-v1.raydium.io/position/clmm-lock/{owner}`
+- `GET https://api-v3.raydium.io/pools/info/ids?ids=...`
+- `GET https://api-v3.raydium.io/mint/ids?mints=...`
+- `GET https://api-v3.raydium.io/mint/price?mints=...`
+- `GET https://api-v3.raydium.io/farms/info/lp?lp=...&pageSize=10&page=1`
+
+Devnet uses `owner-v1-devnet.raydium.io` and `api-v3-devnet.raydium.io`.
+
+Owner API is primary for wallet positions. API v3 is enrichment only. Cached values may lag recent changes and are portfolio display data, not settlement truth.
+
+Run default empty-wallet smoke:
+
+```bash
+scripts/raydium-readonly-smoke.sh --mainnet --expected empty
+```
+
+Run against a known public Raydium wallet:
+
+```bash
+GORKH_RAYDIUM_SMOKE_WALLET=<public-wallet> scripts/raydium-readonly-smoke.sh --mainnet
+```
+
+The smoke prints only wallet public address, network, endpoint host, HTTP statuses, position counts, status, and timestamp. It must not print private keys, seed phrases, wallet JSON, raw API dumps, transaction payloads, or instruction payloads.
+
+Raydium Transaction API, SDK transaction builders, add/remove liquidity, claim rewards, harvest, close position, create pool, farm stake, farm unstake, and swap execution remain forbidden.
+
 ## Expected States
 
 - `Loaded`: positions are returned with enough token and range data to display a complete read-only summary.
@@ -159,5 +190,6 @@ Expected:
 
 - No LP code stores or logs secrets.
 - Orca helper may build unsigned harvest instruction proposals only.
+- Raydium uses read-only HTTPS APIs only and does not build instructions or transactions.
 - Native Swift builds, reviews, simulates, signs, and sends harvest after approval.
 - Words for LP actions appear only as locked labels, docs, tests, denylist entries, or forbidden execution copy.

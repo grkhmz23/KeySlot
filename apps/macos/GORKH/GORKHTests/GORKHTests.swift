@@ -3125,17 +3125,18 @@ struct GORKHTests {
         let meteora = await MeteoraReadOnlyAdapter(helperBridge: MockMeteoraHelperBridge(result: helperResult))
             .fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
         let orca = await OrcaReadOnlyAdapter().fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
-        let raydium = await RaydiumReadOnlyAdapter().fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
+        let raydium = await RaydiumReadOnlyAdapter(client: MockRaydiumAPIClient.empty())
+            .fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
         let summary = LPPortfolioAggregator.aggregate(adapterResults: [meteora, orca, raydium], refreshedAt: Date(timeIntervalSince1970: 0))
 
         #expect(meteora.status == .partial)
         #expect(meteora.positions.count == 1)
         #expect(orca.status == .unavailable)
-        #expect(raydium.status == .unavailable)
+        #expect(raydium.status == .empty)
         #expect(summary.status == .partial)
         #expect(summary.positionCount == 1)
         #expect(summary.partialAdapterCount == 1)
-        #expect(summary.unavailableAdapterCount == 2)
+        #expect(summary.unavailableAdapterCount == 1)
     }
 
     @Test func lpSummaryStaysSeparateFromPortfolioTotalsAndSnapshotsSafely() throws {
@@ -3353,7 +3354,8 @@ struct GORKHTests {
             .fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
         let orca = await OrcaReadOnlyAdapter(helperBridge: MockOrcaHelperBridge(result: orcaResult))
             .fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
-        let raydium = await RaydiumReadOnlyAdapter().fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
+        let raydium = await RaydiumReadOnlyAdapter(client: MockRaydiumAPIClient.empty())
+            .fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
         let summary = LPPortfolioAggregator.aggregate(adapterResults: [meteora, orca, raydium], refreshedAt: Date(timeIntervalSince1970: 0))
 
         #expect(orca.status == .partial)
@@ -3361,9 +3363,145 @@ struct GORKHTests {
         #expect(summary.status == .partial)
         #expect(summary.positionCount == 2)
         #expect(summary.partialAdapterCount == 1)
-        #expect(summary.unavailableAdapterCount == 1)
+        #expect(summary.unavailableAdapterCount == 0)
         #expect(summary.estimatedValueUSD == nil)
         #expect(summary.protocols.first { $0.protocolKind == .orca }?.status == .partial)
+    }
+
+    @Test func raydiumEndpointGuardAllowsOnlyReviewedReadOnlyPaths() throws {
+        let owner = SolanaConstants.systemProgramID
+        let mint = PortfolioConstants.nativeSolMint
+        try RaydiumEndpointGuard.validate(
+            url: try #require(URL(string: "https://owner-v1.raydium.io/position/stake/\(owner)")),
+            kind: .ownerStake(owner: owner)
+        )
+        try RaydiumEndpointGuard.validate(
+            url: try #require(URL(string: "https://owner-v1-devnet.raydium.io/position/clmm-lock/\(owner)")),
+            kind: .ownerCLMMLock(owner: owner)
+        )
+        try RaydiumEndpointGuard.validate(
+            url: try #require(URL(string: "https://api-v3.raydium.io/mint/price?mints=\(mint)")),
+            kind: .mintPrice(mints: [mint])
+        )
+        #expect(throws: RaydiumEndpointGuardError.self) {
+            try RaydiumEndpointGuard.validate(
+                url: try #require(URL(string: "https://api-v3.raydium.io/transaction/swap")),
+                kind: .mintList
+            )
+        }
+        #expect(throws: RaydiumEndpointGuardError.self) {
+            try RaydiumEndpointGuard.validate(
+                url: try #require(URL(string: "https://transaction-v1.raydium.io/anything")),
+                kind: .mintList
+            )
+        }
+    }
+
+    @Test func raydiumOwner404AndAPIEnvelopesNormalizeSafely() throws {
+        let empty = try RaydiumAPIClient.decodeOwnerEndpointResult(
+            statusCode: 404,
+            data: Data(),
+            owner: SolanaConstants.systemProgramID,
+            kind: .standardLP,
+            sourceEndpoint: "/position/stake/{owner}",
+            emptyMessage: "No positions."
+        )
+        #expect(empty.status == .empty)
+        #expect(empty.positions.isEmpty)
+
+        let positions = try RaydiumAPIClient.decodeOwnerPositions(
+            data: raydiumStakeFixture(),
+            owner: SolanaConstants.systemProgramID,
+            kind: .standardLP,
+            sourceEndpoint: "/position/stake/{owner}"
+        )
+        let first = try #require(positions.first)
+        #expect(first.kind == .standardLP)
+        #expect(first.poolAddress == "3oS3RJ8UYrYw7TAQEVh6u6ifrHi35o3DnvqyqGti4Gwa")
+        #expect(first.tokenAAmountUI == "1.25")
+
+        let prices = try RaydiumAPIClient.decodeMintPrices(data: Data(#"{"success":true,"data":{"So11111111111111111111111111111111111111112":"150.25"}}"#.utf8))
+        #expect(prices[PortfolioConstants.nativeSolMint] == Decimal(string: "150.25"))
+    }
+
+    @Test func raydiumAdapterNormalizesStakeAndLockedCLMMWithoutExecution() async throws {
+        let profile = WalletProfile(label: "Raydium User", publicAddress: SolanaConstants.systemProgramID)
+        let adapter = RaydiumReadOnlyAdapter(client: MockRaydiumAPIClient(
+            stake: try RaydiumAPIClient.decodeOwnerEndpointResult(
+                statusCode: 200,
+                data: raydiumStakeFixture(),
+                owner: profile.publicAddress,
+                kind: .standardLP,
+                sourceEndpoint: "/position/stake/{owner}",
+                emptyMessage: ""
+            ),
+            locked: try RaydiumAPIClient.decodeOwnerEndpointResult(
+                statusCode: 200,
+                data: raydiumCLMMLockFixture(),
+                owner: profile.publicAddress,
+                kind: .lockedCLMM,
+                sourceEndpoint: "/position/clmm-lock/{owner}",
+                emptyMessage: ""
+            ),
+            pools: try RaydiumAPIClient.decodePoolInfos(data: raydiumPoolFixture()),
+            mints: try RaydiumAPIClient.decodeMintInfos(data: raydiumMintFixture()),
+            prices: try RaydiumAPIClient.decodeMintPrices(data: raydiumPriceFixture())
+        ))
+
+        let result = await adapter.fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
+        let summary = LPPortfolioAggregator.aggregate(adapterResults: [result], refreshedAt: Date(timeIntervalSince1970: 0))
+        let json = try #require(String(data: JSONEncoder().encode(summary), encoding: .utf8)).lowercased()
+
+        #expect(result.protocolKind == .raydium)
+        #expect(result.status == .loaded)
+        #expect(result.positions.count == 2)
+        #expect(result.positions.contains { $0.metadataStatus?.contains("Locked CLMM") == true })
+        #expect(summary.positionCount == 2)
+        #expect(summary.protocols.first { $0.protocolKind == .raydium }?.status == .loaded)
+        for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "serializedtransaction", "transactionpayload", "unsignedtransaction", "instructionpayload"] {
+            #expect(!json.contains(forbidden))
+        }
+    }
+
+    @Test func raydiumAdapterReportsPartialWhenEnrichmentMissingAndAggregatesWithOtherLPs() async throws {
+        let profile = WalletProfile(label: "LP", publicAddress: SolanaConstants.systemProgramID)
+        let meteora = LPAdapterResult(
+            protocolKind: .meteora,
+            status: .loaded,
+            positions: [sampleLPPosition(profile: profile, protocolKind: .meteora, estimatedValueUSD: 50)],
+            source: .sdkReadOnly,
+            updatedAt: Date(timeIntervalSince1970: 0),
+            errorMessage: nil
+        )
+        let orca = LPAdapterResult(
+            protocolKind: .orca,
+            status: .partial,
+            positions: [sampleLPPosition(profile: profile, protocolKind: .orca, estimatedValueUSD: nil, status: .partial)],
+            source: .sdkReadOnly,
+            updatedAt: Date(timeIntervalSince1970: 0),
+            errorMessage: "Orca value unavailable"
+        )
+        let raydium = await RaydiumReadOnlyAdapter(client: MockRaydiumAPIClient(
+            stake: try RaydiumAPIClient.decodeOwnerEndpointResult(
+                statusCode: 200,
+                data: raydiumStakeFixture(),
+                owner: profile.publicAddress,
+                kind: .standardLP,
+                sourceEndpoint: "/position/stake/{owner}",
+                emptyMessage: ""
+            ),
+            locked: RaydiumOwnerEndpointResult(status: .empty, positions: [], message: nil),
+            pools: [:],
+            mints: [:],
+            prices: [:]
+        )).fetchPositions(profiles: [profile], network: .mainnetBeta, prices: [:])
+        let summary = LPPortfolioAggregator.aggregate(adapterResults: [meteora, orca, raydium], refreshedAt: Date(timeIntervalSince1970: 0))
+
+        #expect(raydium.status == .partial)
+        #expect(raydium.positions.first?.estimatedValueUSD == nil)
+        #expect(summary.status == .partial)
+        #expect(summary.positionCount == 3)
+        #expect(summary.estimatedValueUSD == nil)
     }
 
     @Test func orcaHarvestReviewAllowsOnlyExpectedSignerAndWhirlpoolProgram() throws {
@@ -4365,6 +4503,48 @@ private struct MockOrcaHelperBridge: OrcaHelperBridging {
     }
 }
 
+private struct MockRaydiumAPIClient: RaydiumAPIClienting {
+    let stake: RaydiumOwnerEndpointResult
+    let locked: RaydiumOwnerEndpointResult
+    let pools: [String: RaydiumPoolInfo]
+    let mints: [String: RaydiumMintInfo]
+    let prices: [String: Decimal]
+
+    static func empty() -> MockRaydiumAPIClient {
+        MockRaydiumAPIClient(
+            stake: RaydiumOwnerEndpointResult(status: .empty, positions: [], message: nil),
+            locked: RaydiumOwnerEndpointResult(status: .empty, positions: [], message: nil),
+            pools: [:],
+            mints: [:],
+            prices: [:]
+        )
+    }
+
+    func fetchOwnerStakePositions(owner: String, network: WalletNetwork) async throws -> RaydiumOwnerEndpointResult {
+        stake
+    }
+
+    func fetchOwnerCLMMLockPositions(owner: String, network: WalletNetwork) async throws -> RaydiumOwnerEndpointResult {
+        locked
+    }
+
+    func fetchPoolInfos(ids: [String], network: WalletNetwork) async throws -> [String: RaydiumPoolInfo] {
+        pools.filter { ids.contains($0.key) }
+    }
+
+    func fetchMintInfos(mints: [String], network: WalletNetwork) async throws -> [String: RaydiumMintInfo] {
+        self.mints.filter { mints.contains($0.key) }
+    }
+
+    func fetchMintPrices(mints: [String], network: WalletNetwork) async throws -> [String: Decimal] {
+        prices.filter { mints.contains($0.key) }
+    }
+
+    func fetchFarmInfos(lpMint: String, network: WalletNetwork) async throws -> [RaydiumFarmInfo] {
+        []
+    }
+}
+
 private struct MockMarginFiHelperPathResolver: MarginFiHelperPathResolving {
     func resolve(policy: MarginFiHelperInvocationPolicy, projectRoot: URL?) throws -> MarginFiHelperResolvedPath {
         MarginFiHelperResolvedPath(
@@ -4790,6 +4970,101 @@ private func sampleLPPosition(
         metadataStatus: "Sample read-only LP position.",
         errorMessage: status == .partial ? "Partial sample." : nil
     )
+}
+
+private func raydiumStakeFixture() -> Data {
+    Data("""
+    {
+      "success": true,
+      "data": [
+        {
+          "poolId": "3oS3RJ8UYrYw7TAQEVh6u6ifrHi35o3DnvqyqGti4Gwa",
+          "positionId": "4N9T5NZ7nVgT5WV5mgWbHcCxgVhM7kUWvQmr6YQb7wNo",
+          "lpMint": "7vfCXTUXxAo2DUsmUjtqmnCwZKvcS4XhrGgdVn2SAXYh",
+          "lpAmount": "10.5",
+          "mintA": "\(PortfolioConstants.nativeSolMint)",
+          "mintB": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "amountA": "1.25",
+          "amountB": "25.00",
+          "poolType": "CPMM",
+          "rewards": [{"mint": "Es9vMFrzaCERmJfrF4H2FYD4TEtvbkfLsggqK7KQ9x4", "amount": "1"}]
+        }
+      ]
+    }
+    """.utf8)
+}
+
+private func raydiumCLMMLockFixture() -> Data {
+    Data("""
+    {
+      "success": true,
+      "data": {
+        "rows": [
+          {
+            "poolId": "6uYdU3sP7iXaWmFkYzHqH2WH2x3EGa3NGeFk1mXQ7j9p",
+            "positionId": "7YttLkHDoqR82kWbfm2Q6VZ1QW9YxijK3ghn93Rr2P7f",
+            "lpMint": "Es9vMFrzaCERmJfrF4H2FYD4TEtvbkfLsggqK7KQ9x4",
+            "mintA": "\(PortfolioConstants.nativeSolMint)",
+            "mintB": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+            "amountA": "0.5",
+            "amountB": "10",
+            "feeOwedA": "0.01",
+            "feeOwedB": "0.25",
+            "lockEndTime": 1893456000,
+            "poolType": "CLMM"
+          }
+        ]
+      }
+    }
+    """.utf8)
+}
+
+private func raydiumPoolFixture() -> Data {
+    Data("""
+    {
+      "success": true,
+      "data": [
+        {
+          "id": "3oS3RJ8UYrYw7TAQEVh6u6ifrHi35o3DnvqyqGti4Gwa",
+          "type": "CPMM",
+          "lpMint": "7vfCXTUXxAo2DUsmUjtqmnCwZKvcS4XhrGgdVn2SAXYh",
+          "mintA": {"address": "\(PortfolioConstants.nativeSolMint)"},
+          "mintB": {"address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"}
+        },
+        {
+          "id": "6uYdU3sP7iXaWmFkYzHqH2WH2x3EGa3NGeFk1mXQ7j9p",
+          "type": "CLMM",
+          "lpMint": "Es9vMFrzaCERmJfrF4H2FYD4TEtvbkfLsggqK7KQ9x4",
+          "mintA": {"address": "\(PortfolioConstants.nativeSolMint)"},
+          "mintB": {"address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"}
+        }
+      ]
+    }
+    """.utf8)
+}
+
+private func raydiumMintFixture() -> Data {
+    Data("""
+    {
+      "success": true,
+      "data": [
+        {"address": "\(PortfolioConstants.nativeSolMint)", "symbol": "wSOL", "name": "Wrapped SOL", "decimals": 9},
+        {"address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "symbol": "USDC", "name": "USD Coin", "decimals": 6}
+      ]
+    }
+    """.utf8)
+}
+
+private func raydiumPriceFixture() -> Data {
+    Data("""
+    {
+      "success": true,
+      "data": {
+        "\(PortfolioConstants.nativeSolMint)": "100",
+        "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": "1"
+      }
+    }
+    """.utf8)
 }
 
 private func sampleOrcaHarvestPlan(

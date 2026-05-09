@@ -26,6 +26,7 @@ Official docs reviewed:
 - Portfolio Liquidity panel with protocol cards for Meteora, Orca, and Raydium.
 - Meteora helper boundary under `tools/meteora-readonly/`.
 - Orca helper boundary under `tools/orca-readonly/`.
+- Raydium Swift REST adapter using Owner API and API v3.
 - Safe LP models for pool address, position address, token mints, optional amounts, optional fees, bin/range state, value state, source, timestamp, and adapter status.
 - Orca harvest plan/review/simulation/approval/sign/send flow for existing Orca positions only.
 - Portfolio snapshots store LP counts, protocol statuses, partial/unavailable counts, and optional estimated value only.
@@ -49,6 +50,8 @@ Orca harvest follows the same wallet safety pipeline as other real wallet action
 10. audit.
 
 Add liquidity, remove liquidity, open position, close position, and swap actions are locked in UI.
+
+Raydium is read-only only. Raydium add/remove/claim/harvest/close/create/swap actions are locked and no Raydium Transaction API or SDK transaction builder is used.
 
 No private keys, seed phrases, mnemonics, signing seeds, wallet JSON, serialized transactions, instruction payloads, or raw signer data are accepted by the helper, stored in snapshots, logged, or audited.
 
@@ -206,9 +209,19 @@ Orca:
 
 Raydium:
 
-- Placeholder only. It returns `unavailable` with an explicit reason.
-- No data is faked.
-- No SDK or action path is imported.
+- Uses Raydium Owner API for wallet positions:
+  - `GET https://owner-v1.raydium.io/position/stake/{owner}`
+  - `GET https://owner-v1.raydium.io/position/clmm-lock/{owner}`
+  - devnet equivalents on `owner-v1-devnet.raydium.io`
+- Treats `404` from owner endpoints as an honest empty state.
+- Uses API v3 for enrichment only:
+  - `/pools/info/ids`
+  - `/mint/ids`
+  - `/mint/price`
+  - `/farms/info/lp`
+- Supports AMM/CPMM LP, farm/staked LP when returned by Owner API, and locked CLMM positions.
+- Returns `partial` when Raydium cached responses omit token amounts, mints, pool metadata, prices, or lock/range details.
+- No data is faked and no SDK/action path is imported.
 
 ## Storage and Audit
 
