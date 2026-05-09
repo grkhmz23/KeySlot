@@ -68,6 +68,33 @@ struct WalletBackupStatus: Equatable, Identifiable {
                 title: "Local keypair wallet",
                 message: "This wallet was stored as a signing seed only. Recovery phrase export is unavailable."
             )
+        case .watchOnly:
+            return WalletBackupStatus(
+                id: profile.id,
+                riskStatus: .cannotVerify,
+                recoveryPhraseConfirmed: false,
+                recoveryPhraseExportAvailable: false,
+                title: "Watch-only address",
+                message: "This profile stores public metadata only. It cannot sign, export, or recover funds."
+            )
+        case .hardwarePlaceholder:
+            return WalletBackupStatus(
+                id: profile.id,
+                riskStatus: .cannotVerify,
+                recoveryPhraseConfirmed: false,
+                recoveryPhraseExportAvailable: false,
+                title: "Hardware wallet placeholder",
+                message: "Hardware wallet signing is not implemented in GORKH yet."
+            )
+        case .multisigPlaceholder:
+            return WalletBackupStatus(
+                id: profile.id,
+                riskStatus: .cannotVerify,
+                recoveryPhraseConfirmed: false,
+                recoveryPhraseExportAvailable: false,
+                title: "Multisig placeholder",
+                message: "Multisig execution is not implemented in GORKH yet."
+            )
         }
     }
 }

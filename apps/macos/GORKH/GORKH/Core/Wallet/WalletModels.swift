@@ -7,7 +7,10 @@ struct WalletProfile: Codable, Equatable, Identifiable {
     var accounts: [WalletAccount]
     var selectedNetwork: WalletNetwork
     var walletOrigin: WalletOrigin
+    var profileKind: WalletProfileKind
     var derivationPath: String?
+    var isPinned: Bool
+    var colorTag: String?
     var createdAt: Date
     var lastUsedAt: Date?
 
@@ -17,7 +20,10 @@ struct WalletProfile: Codable, Equatable, Identifiable {
         publicAddress: String,
         selectedNetwork: WalletNetwork = .devnet,
         walletOrigin: WalletOrigin = .legacyKeypair,
+        profileKind: WalletProfileKind? = nil,
         derivationPath: String? = nil,
+        isPinned: Bool = false,
+        colorTag: String? = nil,
         createdAt: Date = Date(),
         lastUsedAt: Date? = nil
     ) {
@@ -29,9 +35,20 @@ struct WalletProfile: Codable, Equatable, Identifiable {
         ]
         self.selectedNetwork = selectedNetwork
         self.walletOrigin = walletOrigin
+        self.profileKind = profileKind ?? WalletProfileKind.inferred(from: walletOrigin)
         self.derivationPath = derivationPath
+        self.isPinned = isPinned
+        self.colorTag = colorTag
         self.createdAt = createdAt
         self.lastUsedAt = lastUsedAt
+    }
+
+    var canSign: Bool {
+        profileKind.canSign
+    }
+
+    var isWatchOnly: Bool {
+        profileKind == .watchOnly
     }
 
     enum CodingKeys: String, CodingKey {
@@ -41,7 +58,10 @@ struct WalletProfile: Codable, Equatable, Identifiable {
         case accounts
         case selectedNetwork
         case walletOrigin
+        case profileKind
         case derivationPath
+        case isPinned
+        case colorTag
         case createdAt
         case lastUsedAt
     }
@@ -53,7 +73,11 @@ struct WalletProfile: Codable, Equatable, Identifiable {
         publicAddress = try container.decode(String.self, forKey: .publicAddress)
         selectedNetwork = try container.decode(WalletNetwork.self, forKey: .selectedNetwork)
         walletOrigin = try container.decodeIfPresent(WalletOrigin.self, forKey: .walletOrigin) ?? .legacyKeypair
+        profileKind = try container.decodeIfPresent(WalletProfileKind.self, forKey: .profileKind)
+            ?? WalletProfileKind.inferred(from: walletOrigin)
         derivationPath = try container.decodeIfPresent(String.self, forKey: .derivationPath)
+        isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+        colorTag = try container.decodeIfPresent(String.self, forKey: .colorTag)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         lastUsedAt = try container.decodeIfPresent(Date.self, forKey: .lastUsedAt)
         accounts = try container.decodeIfPresent([WalletAccount].self, forKey: .accounts) ?? [
@@ -69,11 +93,68 @@ struct WalletAccount: Codable, Equatable, Identifiable {
     var derivationPath: String?
 }
 
+enum WalletProfileKind: String, Codable, CaseIterable, Identifiable {
+    case localSigner = "local_signer"
+    case mnemonicDerived = "recovery_derived"
+    case importedPrivateKey = "imported_private_key"
+    case watchOnly = "watch_only"
+    case hardwarePlaceholder = "hardware_placeholder"
+    case multisigPlaceholder = "multisig_placeholder"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .localSigner:
+            return "Local signer"
+        case .mnemonicDerived:
+            return "Recovery-derived"
+        case .importedPrivateKey:
+            return "Imported private key"
+        case .watchOnly:
+            return "Watch-only"
+        case .hardwarePlaceholder:
+            return "Hardware wallet"
+        case .multisigPlaceholder:
+            return "Multisig"
+        }
+    }
+
+    var canSign: Bool {
+        switch self {
+        case .localSigner, .mnemonicDerived, .importedPrivateKey:
+            return true
+        case .watchOnly, .hardwarePlaceholder, .multisigPlaceholder:
+            return false
+        }
+    }
+
+    static func inferred(from origin: WalletOrigin) -> WalletProfileKind {
+        switch origin {
+        case .generatedRecovery, .importedRecovery:
+            return .mnemonicDerived
+        case .importedPrivateKey:
+            return .importedPrivateKey
+        case .legacyKeypair:
+            return .localSigner
+        case .watchOnly:
+            return .watchOnly
+        case .hardwarePlaceholder:
+            return .hardwarePlaceholder
+        case .multisigPlaceholder:
+            return .multisigPlaceholder
+        }
+    }
+}
+
 enum WalletOrigin: String, Codable, CaseIterable {
     case generatedRecovery = "generated_recovery"
     case importedRecovery = "imported_recovery"
     case importedPrivateKey = "advanced_import"
     case legacyKeypair = "legacy_local"
+    case watchOnly = "watch_only"
+    case hardwarePlaceholder = "hardware_placeholder"
+    case multisigPlaceholder = "multisig_placeholder"
 
     var displayName: String {
         switch self {
@@ -85,6 +166,12 @@ enum WalletOrigin: String, Codable, CaseIterable {
             return "Imported private key"
         case .legacyKeypair:
             return "Legacy local keypair"
+        case .watchOnly:
+            return "Watch-only address"
+        case .hardwarePlaceholder:
+            return "Hardware wallet placeholder"
+        case .multisigPlaceholder:
+            return "Multisig placeholder"
         }
     }
 }
@@ -235,6 +322,10 @@ struct AuditEvent: Codable, Equatable, Identifiable {
         case portfolioPriceRefreshFailed = "portfolio_price_refresh_failed"
         case portfolioSnapshotStored = "portfolio_snapshot_stored"
         case portfolioHistoryCleared = "portfolio_history_cleared"
+        case watchOnlyWalletAdded = "watch_only_wallet_added"
+        case watchOnlyWalletRemoved = "watch_only_wallet_removed"
+        case walletLabelUpdated = "wallet_label_updated"
+        case multiWalletPortfolioRefreshed = "multi_wallet_portfolio_refreshed"
     }
 
     let id: UUID

@@ -14,6 +14,9 @@ struct WalletView: View {
 
                     WalletCreateView()
                     WalletImportView()
+                    if walletManager.profiles.isEmpty {
+                        AddWatchOnlyWalletView()
+                    }
 
                     if walletManager.selectedProfile != nil {
                         sectionPicker
@@ -35,35 +38,50 @@ struct WalletView: View {
         .onReceive(autoLockTimer) { now in
             walletManager.enforceAutoLockIfNeeded(now: now)
         }
+        .onChange(of: walletManager.selectedWalletID) { _, _ in
+            normalizeSelectedSection()
+        }
     }
 
     @ViewBuilder
     private var selectedSectionView: some View {
-        switch selectedSection {
-        case .assets:
-            WalletBalanceView()
-            TokenBalancesView()
-        case .portfolio:
+        if walletManager.selectedProfile?.canSign == false,
+           [.send, .privateWallet, .security].contains(selectedSection) {
             WalletPortfolioView()
-        case .send:
-            SendSolView()
-            TokenBalancesView()
-        case .privateWallet:
-            WalletPrivateView()
-        case .security:
-            WalletSecurityView()
-        case .audit:
-            AuditLogView()
+        } else {
+            switch selectedSection {
+            case .assets:
+                WalletBalanceView()
+                TokenBalancesView()
+            case .portfolio:
+                WalletPortfolioView()
+            case .send:
+                SendSolView()
+                TokenBalancesView()
+            case .privateWallet:
+                WalletPrivateView()
+            case .security:
+                WalletSecurityView()
+            case .audit:
+                AuditLogView()
+            }
         }
     }
 
     private var sectionPicker: some View {
         Picker("Wallet section", selection: $selectedSection) {
-            ForEach(WalletSection.allCases) { section in
+            ForEach(availableSections) { section in
                 Text(section.title).tag(section)
             }
         }
         .pickerStyle(.segmented)
+    }
+
+    private var availableSections: [WalletSection] {
+        guard walletManager.selectedProfile?.canSign == false else {
+            return WalletSection.allCases
+        }
+        return [.assets, .portfolio, .audit]
     }
 
     private var header: some View {
@@ -104,7 +122,14 @@ struct WalletView: View {
                                 .textSelection(.enabled)
                                 .foregroundStyle(GorkhColors.secondaryText)
                             HStack(spacing: 8) {
-                                GorkhStatusChip(title: profile.walletOrigin.displayName, systemImage: "key", color: GorkhColors.accent)
+                                GorkhStatusChip(
+                                    title: profile.profileKind.displayName,
+                                    systemImage: profile.canSign ? "key" : "eye",
+                                    color: profile.canSign ? GorkhColors.accent : GorkhColors.warning
+                                )
+                                if profile.profileKind != .watchOnly {
+                                    GorkhStatusChip(title: profile.walletOrigin.displayName, systemImage: "key", color: GorkhColors.accent)
+                                }
                                 if let derivationPath = profile.derivationPath {
                                     Text(derivationPath)
                                         .font(.system(.caption, design: .monospaced))
@@ -121,21 +146,25 @@ struct WalletView: View {
                     HStack {
                         vaultChip
                         Spacer()
-                        Button {
-                            Task { await walletManager.unlockWallet() }
-                        } label: {
-                            Label("Unlock", systemImage: "lock.open")
-                        }
-                        .buttonStyle(.gorkhSecondary)
-                        .disabled(walletManager.selectedProfile == nil || walletManager.vaultState == .unlocked)
+                        if walletManager.selectedProfile?.canSign == true {
+                            Button {
+                                Task { await walletManager.unlockWallet() }
+                            } label: {
+                                Label("Unlock", systemImage: "lock.open")
+                            }
+                            .buttonStyle(.gorkhSecondary)
+                            .disabled(walletManager.selectedProfile == nil || walletManager.vaultState == .unlocked)
 
-                        Button {
-                            walletManager.lockWallet()
-                        } label: {
-                            Label("Lock", systemImage: "lock")
+                            Button {
+                                walletManager.lockWallet()
+                            } label: {
+                                Label("Lock", systemImage: "lock")
+                            }
+                            .buttonStyle(.gorkhSecondary)
+                            .disabled(walletManager.selectedProfile == nil || walletManager.vaultState != .unlocked)
+                        } else if walletManager.selectedProfile?.isWatchOnly == true {
+                            GorkhStatusChip(title: "No signer", systemImage: "eye.slash", color: GorkhColors.warning)
                         }
-                        .buttonStyle(.gorkhSecondary)
-                        .disabled(walletManager.selectedProfile == nil || walletManager.vaultState != .unlocked)
                     }
                 }
             }
@@ -171,6 +200,9 @@ struct WalletView: View {
     }
 
     private var vaultChip: some View {
+        if walletManager.selectedProfile?.isWatchOnly == true {
+            return GorkhStatusChip(title: "Watch-only", systemImage: "eye", color: GorkhColors.warning)
+        }
         let state = walletManager.vaultState
         let color: Color = {
             switch state {
@@ -184,6 +216,12 @@ struct WalletView: View {
         }()
 
         return GorkhStatusChip(title: state.title, systemImage: state == .unlocked ? "checkmark.seal" : "lock", color: color)
+    }
+
+    private func normalizeSelectedSection() {
+        if !availableSections.contains(selectedSection) {
+            selectedSection = .portfolio
+        }
     }
 }
 

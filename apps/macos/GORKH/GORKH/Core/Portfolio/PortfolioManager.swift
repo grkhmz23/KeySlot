@@ -81,6 +81,7 @@ struct PortfolioManager {
                     scope: summary.scope,
                     network: summary.network,
                     wallets: summary.wallets,
+                    consolidatedAssets: summary.consolidatedAssets,
                     totalUSD: summary.totalUSD,
                     unavailablePriceCount: summary.unavailablePriceCount,
                     assetCount: summary.assetCount,
@@ -108,10 +109,12 @@ struct PortfolioManager {
                 return []
             }
             return [profile]
-        case .allWallets, .localWallets:
+        case .allWallets:
             return profiles
+        case .localWallets:
+            return profiles.filter(\.canSign)
         case .watchOnlyWallets:
-            return []
+            return profiles.filter(\.isWatchOnly)
         }
     }
 }

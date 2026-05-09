@@ -76,6 +76,7 @@ struct PortfolioAssetBalance: Codable, Equatable, Identifiable {
     let walletID: UUID
     let walletLabel: String
     let walletPublicAddress: String
+    let walletProfileKind: WalletProfileKind
     let network: WalletNetwork
     let mintAddress: String
     let symbol: String
@@ -116,18 +117,53 @@ struct PortfolioWalletSummary: Codable, Equatable, Identifiable {
     let id: UUID
     let label: String
     let publicAddress: String
+    let profileKind: WalletProfileKind
+    let colorTag: String?
     let network: WalletNetwork
     let assets: [PortfolioTokenValue]
     let totalUSD: Decimal
     let unavailablePriceCount: Int
     let fetchedAt: Date
     let errorMessage: String?
+
+    var solBalance: PortfolioTokenValue? {
+        assets.first { $0.asset.isNativeSOL }
+    }
+
+    var splTokenCount: Int {
+        assets.filter { !$0.asset.isNativeSOL }.count
+    }
+
+    var isWatchOnly: Bool {
+        profileKind == .watchOnly
+    }
+}
+
+struct PortfolioConsolidatedAsset: Codable, Equatable, Identifiable {
+    var id: String { mintAddress }
+
+    let mintAddress: String
+    let symbol: String
+    let name: String
+    let decimals: UInt8?
+    let totalAmountRaw: UInt64
+    let uiAmountString: String
+    let totalUSD: Decimal?
+    let priceQuote: PortfolioPriceQuote?
+    let walletBreakdown: [PortfolioTokenValue]
+    let unavailablePriceCount: Int
+    let warnings: [TokenWarning]
+
+    var isNativeSOL: Bool {
+        mintAddress == PortfolioConstants.nativeSolMint
+    }
 }
 
 struct PortfolioAggregateSummary: Codable, Equatable {
     let scope: PortfolioWalletScope
     let network: WalletNetwork
     let wallets: [PortfolioWalletSummary]
+    let consolidatedAssets: [PortfolioConsolidatedAsset]
     let totalUSD: Decimal
     let unavailablePriceCount: Int
     let assetCount: Int
@@ -141,6 +177,7 @@ struct PortfolioAggregateSummary: Codable, Equatable {
             scope: scope,
             network: network,
             wallets: [],
+            consolidatedAssets: [],
             totalUSD: 0,
             unavailablePriceCount: 0,
             assetCount: 0,
@@ -157,6 +194,7 @@ struct PortfolioSnapshotAsset: Codable, Equatable, Identifiable {
 
     let walletPublicAddress: String
     let walletLabel: String
+    let walletKind: WalletProfileKind
     let network: WalletNetwork
     let mintAddress: String
     let tokenAccountAddress: String?
@@ -195,6 +233,7 @@ struct PortfolioSnapshot: Codable, Equatable, Identifiable {
                 PortfolioSnapshotAsset(
                     walletPublicAddress: wallet.publicAddress,
                     walletLabel: wallet.label,
+                    walletKind: wallet.profileKind,
                     network: wallet.network,
                     mintAddress: value.asset.mintAddress,
                     tokenAccountAddress: value.asset.tokenAccountAddress,

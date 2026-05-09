@@ -667,6 +667,107 @@ final class WalletManager: ObservableObject {
         }
     }
 
+    func addWatchOnlyWallet(label: String, publicAddress: String, tag: String?) {
+        noteUserActivity()
+        let address = publicAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard SolanaAddressValidator.isValidAddress(address) else {
+            statusMessage = "Watch-only address is not a valid Solana public key."
+            return
+        }
+        guard !profiles.contains(where: { $0.publicAddress == address && $0.profileKind == .watchOnly }) else {
+            statusMessage = "This watch-only address is already tracked."
+            return
+        }
+
+        let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedTag = tag?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let profile = WalletProfile(
+            label: trimmedLabel.isEmpty ? "Watch \(address.shortAddress)" : trimmedLabel,
+            publicAddress: address,
+            selectedNetwork: selectedNetwork,
+            walletOrigin: .watchOnly,
+            profileKind: .watchOnly,
+            colorTag: trimmedTag?.isEmpty == false ? trimmedTag : nil
+        )
+
+        profiles.append(profile)
+        selectedWalletID = profile.id
+        saveMetadata()
+        refreshVaultState()
+        record(
+            kind: .watchOnlyWalletAdded,
+            walletID: profile.id,
+            publicAddress: profile.publicAddress,
+            message: "Watch-only wallet added.",
+            details: [
+                "profileKind": profile.profileKind.rawValue,
+                "tag": profile.colorTag ?? ""
+            ]
+        )
+        statusMessage = "Watch-only wallet added."
+    }
+
+    func updateWalletLabel(profileID: UUID, label: String, tag: String? = nil) {
+        noteUserActivity()
+        guard let index = profiles.firstIndex(where: { $0.id == profileID }) else {
+            return
+        }
+
+        let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedLabel.isEmpty else {
+            statusMessage = "Wallet label cannot be empty."
+            return
+        }
+
+        profiles[index].label = trimmedLabel
+        profiles[index].accounts = profiles[index].accounts.map {
+            WalletAccount(id: $0.id, publicAddress: $0.publicAddress, label: trimmedLabel, derivationPath: $0.derivationPath)
+        }
+        let trimmedTag = tag?.trimmingCharacters(in: .whitespacesAndNewlines)
+        profiles[index].colorTag = trimmedTag?.isEmpty == false ? trimmedTag : nil
+        profiles[index].lastUsedAt = Date()
+        saveMetadata()
+        let updated = profiles[index]
+        record(
+            kind: .walletLabelUpdated,
+            walletID: updated.id,
+            publicAddress: updated.publicAddress,
+            message: "Wallet label updated.",
+            details: [
+                "profileKind": updated.profileKind.rawValue,
+                "tag": updated.colorTag ?? ""
+            ]
+        )
+        statusMessage = "Wallet label updated."
+    }
+
+    func removeWatchOnlyWallet(profileID: UUID, confirmation: String) {
+        noteUserActivity()
+        guard confirmation == "REMOVE WATCH" else {
+            statusMessage = "Type REMOVE WATCH to remove this watch-only address."
+            return
+        }
+        guard let profile = profiles.first(where: { $0.id == profileID && $0.profileKind == .watchOnly }) else {
+            statusMessage = "Only watch-only profiles can be removed here."
+            return
+        }
+
+        profiles.removeAll { $0.id == profileID }
+        if selectedWalletID == profileID {
+            selectedWalletID = profiles.first?.id
+        }
+        saveMetadata()
+        refreshVaultState()
+        record(
+            kind: .watchOnlyWalletRemoved,
+            walletID: profile.id,
+            publicAddress: profile.publicAddress,
+            message: "Watch-only wallet removed.",
+            details: ["profileKind": profile.profileKind.rawValue]
+        )
+        statusMessage = "Watch-only wallet removed."
+    }
+
     func previewMnemonicAddress(mnemonic: String, derivationPath: DerivationPath) throws -> String {
         try derivationService.deriveKeypair(mnemonic: mnemonic, path: derivationPath).publicAddress
     }
@@ -725,6 +826,11 @@ final class WalletManager: ObservableObject {
     func unlockWallet() async {
         guard let profile = selectedProfile else {
             vaultState = .missing
+            return
+        }
+        guard profile.canSign else {
+            vaultState = .missing
+            statusMessage = "Watch-only wallets cannot be unlocked or used for signing."
             return
         }
 
@@ -787,6 +893,10 @@ final class WalletManager: ObservableObject {
 
     func deleteSelectedWallet(confirmation: String) {
         guard let profile = selectedProfile else {
+            return
+        }
+        if profile.profileKind == .watchOnly {
+            removeWatchOnlyWallet(profileID: profile.id, confirmation: confirmation == "DELETE WALLET" ? "REMOVE WATCH" : confirmation)
             return
         }
         guard confirmation == "DELETE WALLET" else {
@@ -913,7 +1023,7 @@ final class WalletManager: ObservableObject {
         }
 
         record(
-            kind: .portfolioRefreshed,
+            kind: selectedPortfolioScope == .activeWallet ? .portfolioRefreshed : .multiWalletPortfolioRefreshed,
             walletID: selectedWalletID,
             publicAddress: selectedProfile?.publicAddress,
             message: "Portfolio refreshed with read-only balances and prices.",
@@ -1003,6 +1113,9 @@ final class WalletManager: ObservableObject {
         defer { isBusy = false }
 
         do {
+            guard profile.canSign else {
+                throw TokenTransferValidationError.invalidTokenAccount("Watch-only wallets cannot draft or send SPL token transfers.")
+            }
             guard vaultState == .unlocked else {
                 throw WalletVaultError.missingSecret
             }
@@ -1337,6 +1450,9 @@ final class WalletManager: ObservableObject {
         }
 
         do {
+            guard profile.canSign else {
+                throw SolanaValidationError.invalidAddress("Watch-only wallets cannot draft or send SOL transfers.")
+            }
             guard SolanaAddressValidator.isValidAddress(recipient) else {
                 throw SolanaValidationError.invalidAddress("Recipient address is invalid.")
             }
@@ -1498,7 +1614,11 @@ final class WalletManager: ObservableObject {
 
     private func refreshVaultState() {
         guard let selectedWalletID else {
-            vaultState = profiles.isEmpty ? .missing : .locked
+            vaultState = profiles.contains(where: { $0.canSign }) ? .locked : .missing
+            return
+        }
+        guard profiles.first(where: { $0.id == selectedWalletID })?.canSign == true else {
+            vaultState = .missing
             return
         }
 

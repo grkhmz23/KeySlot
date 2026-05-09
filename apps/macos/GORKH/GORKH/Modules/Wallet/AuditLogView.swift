@@ -88,6 +88,7 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
     case wallet
     case sol
     case spl
+    case portfolio
     case privateWallet
     case security
     case failed
@@ -104,6 +105,8 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
             return "SOL"
         case .spl:
             return "SPL"
+        case .portfolio:
+            return "Portfolio"
         case .privateWallet:
             return "Private"
         case .security:
@@ -118,7 +121,16 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
         case .all:
             return true
         case .wallet:
-            return [.walletCreated, .walletImported, .walletUnlocked, .walletLocked, .walletDeleted].contains(event.kind)
+            return [
+                .walletCreated,
+                .walletImported,
+                .walletUnlocked,
+                .walletLocked,
+                .walletDeleted,
+                .watchOnlyWalletAdded,
+                .watchOnlyWalletRemoved,
+                .walletLabelUpdated
+            ].contains(event.kind)
         case .sol:
             return [.balanceRefreshed, .transactionDrafted, .transactionSimulated, .transactionApproved, .transactionSent].contains(event.kind)
         case .spl:
@@ -151,8 +163,12 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
                 .cloakSignerRequestRejected,
                 .cloakSignerRequestLocked,
                 .cloakReviewFlowViewed,
-                .cloakApprovalRequirementGenerated,
+                .cloakApprovalRequirementGenerated
+            ].contains(event.kind)
+        case .portfolio:
+            return [
                 .portfolioRefreshed,
+                .multiWalletPortfolioRefreshed,
                 .portfolioPriceRefreshFailed,
                 .portfolioSnapshotStored,
                 .portfolioHistoryCleared
@@ -201,6 +217,8 @@ private extension AuditEvent {
             "requirementsCount",
             "requiresMainnetPhrase",
             "portfolioScope",
+            "profileKind",
+            "tag",
             "walletCount",
             "assetCount",
             "unavailablePriceCount",

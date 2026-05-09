@@ -27,11 +27,13 @@ enum PortfolioAggregator {
         let unavailablePriceCount = walletSummaries.reduce(0) { $0 + $1.unavailablePriceCount }
         let assetCount = walletSummaries.reduce(0) { $0 + $1.assets.count }
         let status: PortfolioDataStatus = errors.isEmpty ? .loaded : (walletSummaries.isEmpty ? .error : .stale)
+        let consolidatedAssets = consolidateAssets(walletSummaries.flatMap(\.assets))
 
         return PortfolioAggregateSummary(
             scope: scope,
             network: network,
             wallets: walletSummaries,
+            consolidatedAssets: consolidatedAssets,
             totalUSD: totalUSD,
             unavailablePriceCount: unavailablePriceCount,
             assetCount: assetCount,
@@ -56,6 +58,7 @@ enum PortfolioAggregator {
             walletID: profile.id,
             walletLabel: profile.label,
             walletPublicAddress: profile.publicAddress,
+            walletProfileKind: profile.profileKind,
             network: network,
             mintAddress: PortfolioConstants.nativeSolMint,
             symbol: "SOL",
@@ -79,6 +82,7 @@ enum PortfolioAggregator {
                 walletID: profile.id,
                 walletLabel: profile.label,
                 walletPublicAddress: profile.publicAddress,
+                walletProfileKind: profile.profileKind,
                 network: network,
                 mintAddress: balance.mintAddress,
                 symbol: metadata.symbol,
@@ -101,6 +105,8 @@ enum PortfolioAggregator {
             id: profile.id,
             label: profile.label,
             publicAddress: profile.publicAddress,
+            profileKind: profile.profileKind,
+            colorTag: profile.colorTag,
             network: network,
             assets: values,
             totalUSD: totalUSD,
@@ -139,6 +145,54 @@ enum PortfolioAggregator {
 
     static func decimalAmount(rawAmount: UInt64, decimals: UInt8) -> Decimal {
         Decimal(rawAmount) / pow10(decimals)
+    }
+
+    static func consolidateAssets(_ values: [PortfolioTokenValue]) -> [PortfolioConsolidatedAsset] {
+        let grouped = Dictionary(grouping: values) { $0.asset.mintAddress }
+        return grouped.map { mintAddress, mintValues in
+            let sortedValues = mintValues.sorted {
+                if $0.asset.walletLabel == $1.asset.walletLabel {
+                    return $0.asset.walletPublicAddress < $1.asset.walletPublicAddress
+                }
+                return $0.asset.walletLabel < $1.asset.walletLabel
+            }
+            let first = sortedValues[0].asset
+            let totalRaw = sortedValues.reduce(UInt64(0)) { partial, value in
+                partial.addingReportingOverflow(value.asset.amountRaw).overflow ? UInt64.max : partial + value.asset.amountRaw
+            }
+            let decimals = first.decimals
+            let totalUSDValues = sortedValues.compactMap(\.usdValue)
+            let totalUSD = totalUSDValues.count == sortedValues.count
+                ? totalUSDValues.reduce(Decimal(0), +)
+                : nil
+            let warnings = sortedValues
+                .flatMap { $0.asset.warnings }
+                .reduce(into: [TokenWarning]()) { partial, warning in
+                    if !partial.contains(warning) {
+                        partial.append(warning)
+                    }
+                }
+                .sorted { $0.rawValue < $1.rawValue }
+            return PortfolioConsolidatedAsset(
+                mintAddress: mintAddress,
+                symbol: first.symbol,
+                name: first.name,
+                decimals: decimals,
+                totalAmountRaw: totalRaw,
+                uiAmountString: decimals.map { TokenAmountFormatter.format(rawAmount: totalRaw, decimals: $0) } ?? "\(totalRaw)",
+                totalUSD: totalUSD,
+                priceQuote: sortedValues.first?.priceQuote,
+                walletBreakdown: sortedValues,
+                unavailablePriceCount: sortedValues.filter { $0.usdValue == nil }.count,
+                warnings: warnings
+            )
+        }
+        .sorted {
+            if $0.isNativeSOL != $1.isNativeSOL {
+                return $0.isNativeSOL
+            }
+            return $0.symbol < $1.symbol
+        }
     }
 
     private static func pow10(_ exponent: UInt8) -> Decimal {

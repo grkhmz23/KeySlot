@@ -1428,6 +1428,166 @@ struct GORKHTests {
         }
     }
 
+    @Test func watchOnlyProfileMetadataHasNoSecretsAndCannotSign() throws {
+        let profile = WalletProfile(
+            label: "DAO Treasury",
+            publicAddress: Base58.encode(Data(repeating: 7, count: 32)),
+            walletOrigin: .watchOnly,
+            profileKind: .watchOnly,
+            colorTag: "DAO"
+        )
+
+        let data = try JSONEncoder().encode(profile)
+        let json = try #require(String(data: data, encoding: .utf8)).lowercased()
+        let decoded = try JSONDecoder().decode(WalletProfile.self, from: data)
+
+        #expect(decoded.profileKind == .watchOnly)
+        #expect(decoded.walletOrigin == .watchOnly)
+        #expect(!decoded.canSign)
+        #expect(decoded.isWatchOnly)
+        #expect(json.contains("watch_only"))
+        for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "serializedtransaction", "transactionpayload"] {
+            #expect(!json.contains(forbidden))
+        }
+    }
+
+    @Test func walletManagerAddsEditsAndRemovesWatchOnlyWithoutVaultSecret() throws {
+        let vault = InMemoryWalletVault()
+        let suiteName = "ai.gorkh.watch.tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let auditURL = FileManager.default.temporaryDirectory.appendingPathComponent("gorkh-watch-test-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: auditURL) }
+        let manager = WalletManager(
+            vault: vault,
+            rpcClient: SolanaRPCClient(),
+            auditLog: AuditLog(fileURL: auditURL),
+            metadataStore: WalletMetadataStore(defaults: defaults)
+        )
+        let address = Base58.encode(Data(repeating: 9, count: 32))
+
+        manager.addWatchOnlyWallet(label: "Treasury", publicAddress: "not an address", tag: nil)
+        #expect(manager.profiles.isEmpty)
+
+        manager.addWatchOnlyWallet(label: "Treasury", publicAddress: address, tag: "DAO")
+        let profile = try #require(manager.selectedProfile)
+        #expect(profile.profileKind == .watchOnly)
+        #expect(!profile.canSign)
+        #expect(!vault.containsSecret(for: profile.id))
+        #expect(manager.vaultState == .missing)
+        #expect(manager.auditEvents.contains { $0.kind == .watchOnlyWalletAdded })
+
+        manager.updateWalletLabel(profileID: profile.id, label: "DAO Treasury", tag: "Ops")
+        #expect(manager.selectedProfile?.label == "DAO Treasury")
+        #expect(manager.selectedProfile?.colorTag == "Ops")
+        #expect(manager.auditEvents.contains { $0.kind == .walletLabelUpdated })
+
+        manager.removeWatchOnlyWallet(profileID: profile.id, confirmation: "wrong")
+        #expect(manager.profiles.count == 1)
+
+        manager.removeWatchOnlyWallet(profileID: profile.id, confirmation: "REMOVE WATCH")
+        #expect(manager.profiles.isEmpty)
+        #expect(manager.auditEvents.contains { $0.kind == .watchOnlyWalletRemoved })
+    }
+
+    @Test func multiWalletAggregationConsolidatesAssetsByMint() throws {
+        let signer = WalletProfile(
+            label: "Trading",
+            publicAddress: SolanaConstants.systemProgramID,
+            walletOrigin: .generatedRecovery,
+            profileKind: .mnemonicDerived
+        )
+        let watch = WalletProfile(
+            label: "Treasury",
+            publicAddress: Base58.encode(Data(repeating: 8, count: 32)),
+            walletOrigin: .watchOnly,
+            profileKind: .watchOnly
+        )
+        let usdcMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+        let signerToken = sampleTokenBalance(owner: signer.publicAddress, mint: usdcMint, amountRaw: 1_000_000, decimals: 6)
+        let watchToken = sampleTokenBalance(
+            tokenAccount: Base58.encode(Data(repeating: 4, count: 32)),
+            owner: watch.publicAddress,
+            mint: usdcMint,
+            amountRaw: 2_500_000,
+            decimals: 6
+        )
+        let prices = [
+            PortfolioConstants.nativeSolMint: PortfolioPriceQuote(
+                mintAddress: PortfolioConstants.nativeSolMint,
+                usdPrice: 100,
+                source: PortfolioConstants.priceSource,
+                blockID: 1,
+                priceChange24h: nil,
+                fetchedAt: Date(),
+                errorMessage: nil
+            ),
+            usdcMint: PortfolioPriceQuote(
+                mintAddress: usdcMint,
+                usdPrice: 1,
+                source: PortfolioConstants.priceSource,
+                blockID: 1,
+                priceChange24h: nil,
+                fetchedAt: Date(),
+                errorMessage: nil
+            )
+        ]
+
+        let summary = PortfolioAggregator.aggregate(
+            scope: .allWallets,
+            network: .mainnetBeta,
+            profiles: [signer, watch],
+            solBalances: [
+                signer.id: 1_000_000_000,
+                watch.id: 2_000_000_000
+            ],
+            tokenBalances: [
+                signer.id: [signerToken],
+                watch.id: [watchToken]
+            ],
+            prices: prices
+        )
+
+        #expect(summary.wallets.count == 2)
+        #expect(summary.totalUSD == Decimal(string: "303.5", locale: Locale(identifier: "en_US_POSIX")))
+        let usdc = try #require(summary.consolidatedAssets.first { $0.mintAddress == usdcMint })
+        #expect(usdc.totalAmountRaw == 3_500_000)
+        #expect(usdc.uiAmountString == "3.5")
+        #expect(usdc.totalUSD == Decimal(string: "3.5", locale: Locale(identifier: "en_US_POSIX")))
+        #expect(usdc.walletBreakdown.count == 2)
+        #expect(usdc.walletBreakdown.contains { $0.asset.walletProfileKind == .watchOnly })
+    }
+
+    @Test func portfolioAggregationKeepsPerWalletErrorsAndSnapshotWalletKinds() throws {
+        let signer = WalletProfile(label: "Signer", publicAddress: SolanaConstants.systemProgramID)
+        let watch = WalletProfile(
+            label: "Watch",
+            publicAddress: Base58.encode(Data(repeating: 6, count: 32)),
+            walletOrigin: .watchOnly,
+            profileKind: .watchOnly
+        )
+
+        let summary = PortfolioAggregator.aggregate(
+            scope: .allWallets,
+            network: .devnet,
+            profiles: [signer, watch],
+            solBalances: [signer.id: 1, watch.id: 2],
+            tokenBalances: [:],
+            prices: [:],
+            errors: [watch.id: "RPC unavailable"]
+        )
+        let snapshot = PortfolioSnapshot(summary: summary)
+        let json = try #require(String(data: JSONEncoder().encode(snapshot), encoding: .utf8)).lowercased()
+
+        #expect(summary.status == .stale)
+        #expect(summary.wallets.first { $0.id == watch.id }?.errorMessage == "RPC unavailable")
+        #expect(snapshot.assets.contains { $0.walletKind == .watchOnly })
+        #expect(json.contains("watch_only"))
+        for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "serializedtransaction", "transactionpayload"] {
+            #expect(!json.contains(forbidden))
+        }
+    }
+
     @Test func devnetAirdropRejectsMainnet() async {
         var rejectedMainnet = false
         do {

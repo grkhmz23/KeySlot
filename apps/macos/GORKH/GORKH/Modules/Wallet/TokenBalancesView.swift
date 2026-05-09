@@ -130,13 +130,17 @@ struct TokenBalancesView: View {
 
                 Spacer()
 
-                Button {
-                    selectedToken = token
-                } label: {
-                    Label("Send", systemImage: "paperplane")
+                if walletManager.selectedProfile?.canSign == true {
+                    Button {
+                        selectedToken = token
+                    } label: {
+                        Label("Send", systemImage: "paperplane")
+                    }
+                    .buttonStyle(.gorkhSecondary)
+                    .disabled(!canSend || walletManager.vaultState != .unlocked || walletManager.isBusy)
+                } else {
+                    GorkhStatusChip(title: "Watch-only", systemImage: "eye", color: GorkhColors.warning)
                 }
-                .buttonStyle(.gorkhSecondary)
-                .disabled(!canSend || walletManager.vaultState != .unlocked || walletManager.isBusy)
             }
         }
         .padding(12)
