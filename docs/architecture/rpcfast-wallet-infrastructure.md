@@ -40,6 +40,14 @@ RPC Fast method notes:
 
 Blocked, rate-limited, plan-upgrade, unauthorized, and timeout errors are normalized to clear non-crashing messages.
 
+The native RPC client rejects unsupported method names before building a request. It also rejects Token Program `getProgramAccounts` usage so SPL balances stay on `getTokenAccountsByOwner`.
+
+Read-heavy paths are intentionally bounded:
+- SPL balances use `getTokenAccountsByOwner` per token program.
+- Stake discovery uses filtered Stake Program queries and surfaces plan/provider errors as stale or unavailable state.
+- Portfolio aggregation keeps wallet rows visible when a read path fails and marks the summary stale instead of fabricating balances.
+- Lending and LP helper paths remain read-only and unavailable/partial when their fixed helper boundary cannot run safely.
+
 ## Health Checks
 
 The health checker uses fixed read-only methods:
@@ -49,6 +57,16 @@ The health checker uses fixed read-only methods:
 - `getBlockHeight`
 
 It records latency, slot, block height, version, status, and updated time. It never sends transactions.
+
+Local smoke:
+
+```sh
+scripts/rpcfast-wallet-smoke.sh --devnet --wallet <public-address>
+scripts/rpcfast-wallet-smoke.sh --mainnet --wallet <public-address>
+scripts/rpcfast-wallet-smoke.sh --all --wallet <public-address>
+```
+
+The smoke script reads local env tokens, sends them as `X-Token`, prints only redacted hosts/statuses, and never prints token values.
 
 ## Beam
 

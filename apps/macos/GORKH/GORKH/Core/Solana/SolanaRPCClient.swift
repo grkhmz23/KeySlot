@@ -465,6 +465,15 @@ struct SolanaRPCClient {
         guard configuration.tokenStatus(for: network) == .present else {
             throw SolanaRPCError.tokenMissing(configuration.missingTokenMessage(for: network))
         }
+        let availability = RPCMethodAvailability.evaluate(method: method, programID: Self.programIDParameter(from: params))
+        switch availability {
+        case .unsupported:
+            throw SolanaRPCError.methodBlocked("Solana RPC method is not allowlisted for GORKH Wallet.")
+        case .blocked:
+            throw SolanaRPCError.methodBlocked("RPC Fast blocks this RPC method or program for the current plan.")
+        case .allowed, .expensive, .planLimited:
+            break
+        }
         var urlRequest = URLRequest(url: configuration.httpURL(for: network))
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -477,6 +486,10 @@ struct SolanaRPCClient {
         ]
         urlRequest.httpBody = try JSONSerialization.data(withJSONObject: body)
         return urlRequest
+    }
+
+    private static func programIDParameter(from params: [Any]) -> String? {
+        params.first as? String
     }
 
     private func request(method: String, params: [Any], network: WalletNetwork) async throws -> Any {

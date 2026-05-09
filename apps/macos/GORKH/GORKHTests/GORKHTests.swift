@@ -162,6 +162,38 @@ struct GORKHTests {
         }
     }
 
+    @Test func solanaRPCClientRejectsUnsupportedAndBlockedRPCFastMethods() throws {
+        let client = SolanaRPCClient(configuration: RPCFastConfiguration(environment: [
+            RPCFastConfiguration.devnetTokenEnvironmentName: "devnet-rpcfast-token"
+        ]))
+
+        #expect(throws: SolanaRPCError.self) {
+            try client.makeRequest(method: "customUnsafeMethod", params: [], network: .devnet)
+        }
+        #expect(throws: SolanaRPCError.self) {
+            try client.makeRequest(
+                method: "getProgramAccounts",
+                params: [SolanaConstants.splTokenProgramID, ["encoding": "jsonParsed"]],
+                network: .devnet
+            )
+        }
+    }
+
+    @Test func rpcFastSmokeStyleSummaryRedactsTokenValues() throws {
+        let configuration = RPCFastConfiguration(environment: [
+            RPCFastConfiguration.devnetTokenEnvironmentName: "devnet-rpcfast-token",
+            RPCFastConfiguration.mainnetTokenEnvironmentName: "mainnet-rpcfast-token"
+        ])
+        let raw = """
+        {"status":"failed","header":"X-Token: devnet-rpcfast-token","env":"GORKH_RPCFAST_MAINNET_TOKEN: mainnet-rpcfast-token"}
+        """
+        let redacted = configuration.redact(raw)
+
+        #expect(!redacted.contains("devnet-rpcfast-token"))
+        #expect(!redacted.contains("mainnet-rpcfast-token"))
+        #expect(redacted.contains("[redacted]"))
+    }
+
     @Test func rpcFastErrorNormalizationAndMethodAvailability() {
         let configuration = RPCFastConfiguration(environment: [
             RPCFastConfiguration.devnetTokenEnvironmentName: "devnet-rpcfast-token"
@@ -197,6 +229,27 @@ struct GORKHTests {
         #expect(snapshot.latencyMilliseconds == nil)
         #expect(snapshot.beamStatus == "locked-future")
         #expect(snapshot.errorMessage?.contains("GORKH_RPCFAST_DEVNET_TOKEN") == true)
+    }
+
+    @Test func portfolioAggregateReportsReadHeavyRPCErrorWithoutCrashing() {
+        let profile = WalletProfile(label: "RPC Fast", publicAddress: SolanaConstants.systemProgramID)
+        let summary = PortfolioAggregator.aggregate(
+            scope: .activeWallet,
+            network: .mainnetBeta,
+            profiles: [profile],
+            solBalances: [profile.id: 0],
+            tokenBalances: [profile.id: []],
+            prices: [:],
+            stakeAccounts: [profile.id: []],
+            stakeErrors: [profile.id: "RPC Fast plan does not currently allow getProgramAccounts."],
+            fetchedAt: Date(timeIntervalSince1970: 0),
+            errors: [profile.id: "RPC Fast blocked this RPC method or program."]
+        )
+
+        #expect(summary.status == .stale)
+        #expect(summary.wallets.count == 1)
+        #expect(summary.wallets[0].errorMessage?.contains("RPC Fast blocked") == true)
+        #expect(summary.errorMessage?.contains("RPC Fast plan") == true)
     }
 
     @Test func addressValidationAcceptsBase58PublicKeysOnly() {

@@ -22,6 +22,26 @@ Do not commit `.env`. Rotate any token that was pasted into chat or shared in pl
 
 ## Manual QA
 
+Run the fixed read-only smoke script before broad wallet testing:
+
+```sh
+scripts/rpcfast-wallet-smoke.sh --devnet --wallet <public-address>
+scripts/rpcfast-wallet-smoke.sh --mainnet --wallet <public-address>
+scripts/rpcfast-wallet-smoke.sh --all --wallet <public-address>
+scripts/rpcfast-wallet-smoke.sh --devnet --json
+```
+
+The script checks token presence without printing token values, sends tokens only as `X-Token`, prints endpoint hosts only, and runs fixed read-only methods:
+- `getHealth`
+- `getVersion`
+- `getSlot`
+- `getBlockHeight`
+- `getBalance`
+- `getTokenAccountsByOwner`
+- bounded stake-account discovery filters
+
+If no token is available for a requested network, the script reports `skipped-token-missing`. Plan-limited read paths are reported as degraded findings instead of fake data.
+
 1. Launch GORKH with a devnet RPC Fast token.
 2. Open Wallet.
 3. Confirm the header shows `RPC Fast`.
@@ -49,6 +69,15 @@ If the provider returns a plan or method error, GORKH should show a clear non-cr
 - RPC method is blocked for this program
 - Endpoint timed out
 
+The smoke script should normalize the same states:
+- `unauthorized`
+- `rate-limited`
+- `plan-upgrade-required`
+- `method-blocked`
+- `timeout`
+
+Use a public wallet address only. Do not use private keys, seed phrases, wallet JSON, or signing material for smoke.
+
 ## Exclusions
 
-This phase does not add Beam transaction delivery, Jito bundles, arbitrary RPC tools, user custom RPC UI, or any new execution feature.
+This phase does not add Beam transaction delivery, Jito bundles, arbitrary RPC tools, user custom RPC UI, or any new execution feature. Beam remains locked/future only.
