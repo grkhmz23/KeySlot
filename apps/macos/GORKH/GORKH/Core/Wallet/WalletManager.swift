@@ -3743,6 +3743,33 @@ final class WalletManager: ObservableObject {
         )
     }
 
+    func shieldReviewStudioHandoff(for summary: ShieldReviewSummary) -> ShieldReviewStudioHandoff {
+        let transactionBase64: String?
+        switch summary.handoff.sourceFlow {
+        case .solSend:
+            transactionBase64 = preparedMessage.map { SolanaTransactionBuilder.makeUnsignedTransactionBase64(message: $0) }
+        case .splSend:
+            transactionBase64 = preparedTokenMessage.map { SolanaTransactionBuilder.makeUnsignedTransactionBase64(message: $0) }
+        case .jupiterSwap:
+            transactionBase64 = currentSwapBuild?.swapTransactionBase64
+        case .orcaHarvest:
+            if let messageBase64 = currentOrcaHarvestReview?.messageBase64,
+               let message = Data(base64Encoded: messageBase64) {
+                transactionBase64 = SolanaTransactionBuilder.makeUnsignedTransactionBase64(message: message)
+            } else {
+                transactionBase64 = nil
+            }
+        case .cloakDeposit, .cloakFullWithdraw, .zerionTinySwap, .transactionStudio, .unknown:
+            transactionBase64 = nil
+        }
+
+        return ShieldReviewPayloadPolicy.makeHandoff(
+            sourceFlow: summary.handoff.sourceFlow,
+            safeSummary: summary.handoff.safeSummary,
+            transactionBase64: transactionBase64
+        )
+    }
+
     private func recordFailure(message: String) {
         record(
             kind: .transactionFailed,

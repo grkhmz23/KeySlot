@@ -177,6 +177,8 @@ enum ShieldReviewApprovalRequirement: String, Codable, Equatable, Hashable, Case
 struct ShieldReviewHandoff: Codable, Equatable {
     let safeSummary: String
     let temporaryRawPayloadAvailable: Bool
+    let payloadAvailability: ShieldReviewPayloadAvailability
+    let sourceFlow: ShieldReviewSourceFlow
     let note: String
 }
 
@@ -255,6 +257,8 @@ struct ShieldReviewSummary: Codable, Equatable, Identifiable {
             handoff: ShieldReviewHandoff(
                 safeSummary: safeSummary,
                 temporaryRawPayloadAvailable: false,
+                payloadAvailability: .summaryOnly,
+                sourceFlow: .unknown,
                 note: "Safe summary only."
             )
         )

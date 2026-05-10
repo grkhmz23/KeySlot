@@ -7,7 +7,10 @@ Use this checklist to validate that Shield Review improves approval context with
 - Open Wallet.
 - Confirm approval screens show a Shield Review card before final approval.
 - Confirm the card shows status, risk, recognized action, programs, signer count, writable count, simulation status, and risk flags.
-- Click "Open in Transaction Studio" and confirm only a safe summary appears.
+- Click "Open in Transaction Studio" and confirm the payload mode is honest:
+  - exact transaction when an approval payload is available in memory,
+  - summary-only when raw bytes are unavailable,
+  - unavailable when a transient handoff has expired or failed validation.
 - Confirm Transaction Studio still has no signing or broadcast controls.
 
 ## SOL Send
@@ -20,6 +23,7 @@ Use this checklist to validate that Shield Review improves approval context with
   - native SOL movement warning
   - simulation status
   - mainnet phrase requirement on mainnet
+  - exact Transaction Studio handoff while the prepared message is in memory
 
 ## SPL Token Send
 
@@ -30,6 +34,7 @@ Use this checklist to validate that Shield Review improves approval context with
   - transferChecked action
   - token movement warning
   - Token-2022 hook/fee warnings when applicable
+  - exact Transaction Studio handoff while the prepared token message is in memory
 
 ## Jupiter Swap
 
@@ -40,6 +45,7 @@ Use this checklist to validate that Shield Review improves approval context with
   - ALT warning when the built transaction uses lookup tables
   - simulation status
   - no direct execution from Shield Review
+  - exact Transaction Studio handoff while the built Jupiter transaction is in memory
 
 ## Orca Harvest
 

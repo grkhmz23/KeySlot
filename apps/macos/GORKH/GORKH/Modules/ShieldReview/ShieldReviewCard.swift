@@ -30,6 +30,7 @@ struct ShieldReviewCard: View {
                 metric("Writable", value: "\(summary.writableCount)")
                 metric("Unknown", value: "\(summary.unknownInstructionCount)")
                 metric("Simulation", value: summary.simulation.status.title)
+                metric("Payload", value: studioHandoff.payloadAvailability.title)
             }
 
             if summary.parsedActions.isEmpty == false {
@@ -69,14 +70,23 @@ struct ShieldReviewCard: View {
 
             HStack(spacing: 8) {
                 Button {
-                    appState.requestTransactionStudioSummary(summary.handoff.safeSummary)
+                    appState.requestShieldReviewStudioHandoff(studioHandoff)
+                    walletManager.recordShieldReviewEvent(
+                        kind: studioHandoff.payloadAvailability == .transientPayload
+                            ? .shieldReviewExactHandoffCreated
+                            : .shieldReviewSummaryHandoffCreated,
+                        summary: summary,
+                        message: studioHandoff.payloadAvailability == .transientPayload
+                            ? "Shield Review exact in-memory handoff created."
+                            : "Shield Review summary handoff created."
+                    )
                     walletManager.recordShieldReviewEvent(
                         kind: .shieldReviewOpenedInStudio,
                         summary: summary,
                         message: "Shield Review opened in Transaction Studio."
                     )
                 } label: {
-                    Label("Open in Transaction Studio", systemImage: "doc.text.magnifyingglass")
+                    Label(studioHandoff.payloadAvailability.studioButtonTitle, systemImage: "doc.text.magnifyingglass")
                 }
                 .buttonStyle(.gorkhSecondary)
 
@@ -92,7 +102,7 @@ struct ShieldReviewCard: View {
             }
 
             DisclosureGroup("Details") {
-                ShieldReviewDetailView(summary: summary)
+                ShieldReviewDetailView(summary: summary, studioHandoff: studioHandoff)
                     .padding(.top, 6)
             }
         }
@@ -103,6 +113,10 @@ struct ShieldReviewCard: View {
         .onAppear {
             recordAppearanceIfNeeded()
         }
+    }
+
+    private var studioHandoff: ShieldReviewStudioHandoff {
+        walletManager.shieldReviewStudioHandoff(for: summary)
     }
 
     private var statusIcon: String {

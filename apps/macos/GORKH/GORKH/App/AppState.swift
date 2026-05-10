@@ -7,8 +7,10 @@ final class AppState: ObservableObject {
     @Published var requestedWalletSection: WalletSection?
     @Published var pendingAgentMessage: String?
     @Published var pendingTransactionStudioSummary: String?
+    @Published var pendingShieldReviewStudioHandoffID: UUID?
 
     let walletManager: WalletManager
+    private let shieldReviewHandoffStore = ShieldReviewHandoffStore()
 
     init() {
         self.walletManager = WalletManager()
@@ -31,6 +33,20 @@ final class AppState: ObservableObject {
     func requestTransactionStudioSummary(_ summary: String) {
         pendingTransactionStudioSummary = summary
         selectedModule = .transactionStudio
+    }
+
+    func requestShieldReviewStudioHandoff(_ handoff: ShieldReviewStudioHandoff) {
+        shieldReviewHandoffStore.store(handoff)
+        pendingShieldReviewStudioHandoffID = handoff.id
+        selectedModule = .transactionStudio
+    }
+
+    func consumePendingShieldReviewStudioHandoff() -> ShieldReviewStudioHandoff? {
+        guard let id = pendingShieldReviewStudioHandoffID else {
+            return nil
+        }
+        pendingShieldReviewStudioHandoffID = nil
+        return shieldReviewHandoffStore.take(id)
     }
 }
 

@@ -5361,6 +5361,134 @@ struct GORKHTests {
         #expect(!smoke.contains("nft"))
     }
 
+    @Test func shieldReviewStudioHandoffsAreTransientAndPayloadAware() throws {
+        let sender = Base58.encode(Data(repeating: 31, count: 32))
+        let recipient = Base58.encode(Data(repeating: 32, count: 32))
+        let blockhash = Base58.encode(Data(repeating: 33, count: 32))
+        let draft = TransactionDraft(
+            network: .devnet,
+            fromAddress: sender,
+            toAddress: recipient,
+            amountLamports: 42_000
+        )
+        let message = try SolanaTransactionBuilder.makeTransferMessage(draft: draft, recentBlockhash: blockhash)
+        let transactionBase64 = SolanaTransactionBuilder.makeUnsignedTransactionBase64(message: message)
+        let now = Date()
+        let exact = ShieldReviewPayloadPolicy.makeHandoff(
+            sourceFlow: .solSend,
+            safeSummary: "Shield Review safe summary",
+            transactionBase64: transactionBase64,
+            now: now
+        )
+
+        #expect(exact.payloadAvailability == .transientPayload)
+        #expect(exact.transientTransactionBase64 == transactionBase64)
+        #expect(exact.sourceFlow == .solSend)
+        #expect(exact.redactionStatus == "redacted_safe")
+
+        let exactBase64 = try #require(exact.transientTransactionBase64)
+        let exactData = try #require(Data(base64Encoded: exactBase64))
+        let decoded = try TransactionDecoder.decode(
+            data: exactData,
+            inputKind: .importHandoff,
+            fetchedSignature: nil,
+            slot: nil,
+            blockTime: nil,
+            network: .devnet
+        )
+        #expect(decoded.programSummaries.contains { $0.label == "System Program" })
+        #expect(decoded.instructions.contains { $0.decodedAction.contains("System transfer") })
+
+        let summaryOnly = ShieldReviewPayloadPolicy.summaryOnly(
+            sourceFlow: .cloakDeposit,
+            safeSummary: "Cloak summary without proof input",
+            now: now
+        )
+        #expect(summaryOnly.payloadAvailability == .summaryOnly)
+        #expect(summaryOnly.transientTransactionBase64 == nil)
+        #expect(summaryOnly.sourceFlow == .cloakDeposit)
+
+        let rejected = ShieldReviewPayloadPolicy.makeHandoff(
+            sourceFlow: .jupiterSwap,
+            safeSummary: "safe",
+            transactionBase64: "not-base64",
+            now: now
+        )
+        #expect(rejected.payloadAvailability == .unavailable)
+        #expect(rejected.transientTransactionBase64 == nil)
+
+        let store = ShieldReviewHandoffStore()
+        store.store(exact)
+        #expect(store.count == 1)
+        #expect(store.take(exact.id)?.payloadAvailability == .transientPayload)
+        #expect(store.count == 0)
+
+        let expired = ShieldReviewStudioHandoff(
+            id: UUID(),
+            sourceFlow: .splSend,
+            safeSummary: "Expired safe summary",
+            transientTransactionBase64: transactionBase64,
+            createdAt: Date(timeIntervalSince1970: 10),
+            expiresAt: Date(timeIntervalSince1970: 9),
+            redactionStatus: "redacted_safe",
+            payloadAvailability: .transientPayload
+        )
+        store.store(expired)
+        let expiredRead = try #require(store.take(expired.id))
+        #expect(expiredRead.payloadAvailability == .summaryOnly)
+        #expect(expiredRead.transientTransactionBase64 == nil)
+        #expect(expiredRead.redactionStatus == "payload_expired")
+
+        let history = TransactionStudioHistoryEntry(
+            inputKind: .importHandoff,
+            publicReference: "Shield Review SOL send",
+            summary: "Safe summary only",
+            riskLevel: .medium,
+            simulationStatus: .notRun,
+            recognizedInstructionCount: 1,
+            unknownInstructionCount: 0,
+            transactionVersion: decoded.transactionVersion,
+            altUsed: false,
+            accountDiffAvailable: false,
+            loadedAccountCount: 0,
+            topProgramCategories: decoded.programSummaries.map(\.category.title),
+            createdAt: now
+        )
+        let historyJSON = try #require(String(data: JSONEncoder().encode(history), encoding: .utf8))
+        #expect(!historyJSON.contains(transactionBase64))
+        #expect(!historyJSON.lowercased().contains("serializedtransaction"))
+        #expect(!historyJSON.lowercased().contains("transactionpayload"))
+
+        let docs = try [
+            "../../../docs/architecture/shield-review-integration.md",
+            "../../../docs/architecture/transaction-studio.md",
+            "../../../docs/qa/shield-review-approval-smoke.md",
+            "../../../docs/qa/shield-review-approval-regression.md"
+        ].map { try sourceText(relativePath: $0) }.joined(separator: "\n").lowercased()
+        #expect(docs.contains("exact transaction"))
+        #expect(docs.contains("summary-only"))
+        #expect(docs.contains("watch-only"))
+        #expect(docs.contains("raw payload"))
+        #expect(!docs.contains("nft"))
+
+        let shieldSource = try [
+            "GORKH/Core/ShieldReview/ShieldReviewModels.swift",
+            "GORKH/Core/ShieldReview/ShieldReviewService.swift",
+            "GORKH/Core/ShieldReview/ShieldReviewPolicy.swift",
+            "GORKH/Core/ShieldReview/ShieldReviewHandoff.swift",
+            "GORKH/Core/ShieldReview/ShieldReviewStudioHandoff.swift",
+            "GORKH/Core/ShieldReview/ShieldReviewPayloadPolicy.swift",
+            "GORKH/Core/ShieldReview/ShieldReviewHandoffStore.swift",
+            "GORKH/Modules/ShieldReview/ShieldReviewCard.swift",
+            "GORKH/Modules/ShieldReview/ShieldReviewDetailView.swift",
+            "GORKH/Modules/TransactionStudio/TransactionStudioView.swift"
+        ].map { try sourceText(relativePath: $0) }.joined(separator: "\n").lowercased()
+        for forbidden in ["sendtransaction(", "requestairdrop(", "signtransaction(", "broadcast(", "buildbundle", "/bin/sh", "eval("] {
+            #expect(!shieldSource.contains(forbidden))
+        }
+        #expect(!shieldSource.contains("nft"))
+    }
+
     @Test func agentMemoryAndAuditRedactionContainNoSecrets() throws {
         let sensitive = "ZERION_API_KEY=zk_unit_test_secret agent token: spend-power private key: abc"
         let message = AgentChatMessage(role: .user, text: sensitive)

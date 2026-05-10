@@ -2,13 +2,17 @@ import SwiftUI
 
 struct ShieldReviewDetailView: View {
     let summary: ShieldReviewSummary
+    let studioHandoff: ShieldReviewStudioHandoff
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             rows([
                 ("Generated", summary.generatedAt.formatted(date: .abbreviated, time: .standard)),
                 ("Requirements", summary.approvalRequirements.map(\.title).joined(separator: ", ")),
-                ("Handoff", summary.handoff.note)
+                ("Source", studioHandoff.sourceFlow.title),
+                ("Payload mode", studioHandoff.payloadAvailability.title),
+                ("Expires", studioHandoff.expiresAt.formatted(date: .omitted, time: .standard)),
+                ("Handoff", handoffNote)
             ])
 
             if let fee = summary.simulation.estimatedFeeLamports {
@@ -54,6 +58,17 @@ struct ShieldReviewDetailView: View {
                     Spacer()
                 }
             }
+        }
+    }
+
+    private var handoffNote: String {
+        switch studioHandoff.payloadAvailability {
+        case .transientPayload:
+            return "Exact transaction payload is available in memory only for Transaction Studio review. It expires quickly and is not persisted."
+        case .summaryOnly:
+            return summary.handoff.note
+        case .unavailable:
+            return studioHandoff.unavailableReason ?? summary.handoff.note
         }
     }
 }

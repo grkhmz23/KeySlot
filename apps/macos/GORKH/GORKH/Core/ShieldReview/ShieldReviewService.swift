@@ -41,6 +41,7 @@ enum ShieldReviewService {
                 unknownCount: decoded.instructions.filter { $0.parseStatus == .unknown }.count,
                 simulation: ShieldReviewSimulationStatus(simulation),
                 riskMessages: risk.flags.map(\.message),
+                sourceFlow: .transactionStudio,
                 temporaryRawPayloadAvailable: false
             )
         )
@@ -97,7 +98,8 @@ enum ShieldReviewService {
             simulation: ShieldReviewSimulationSummary(simulation),
             explanation: "This approval prepares a System Program SOL transfer. Review the recipient, amount, fee estimate, simulation result, and mainnet phrase before signing.",
             requirements: [.review, .simulation, .explicitApproval, .localAuthentication, .nativeSigner, .destinationApproval]
-                + (draft.network.isMainnet ? [.mainnetPhrase] : [])
+                + (draft.network.isMainnet ? [.mainnetPhrase] : []),
+            sourceFlow: .solSend
         )
     }
 
@@ -147,7 +149,8 @@ enum ShieldReviewService {
             simulation: ShieldReviewSimulationSummary(simulation),
             explanation: "This approval prepares a token transfer. Review token mint, program, source token account, recipient owner, ATA creation state, amount, and simulation before signing.",
             requirements: [.review, .simulation, .explicitApproval, .localAuthentication, .nativeSigner, .destinationApproval]
-                + (draft.network.isMainnet ? [.mainnetPhrase] : [])
+                + (draft.network.isMainnet ? [.mainnetPhrase] : []),
+            sourceFlow: .splSend
         )
     }
 
@@ -184,7 +187,8 @@ enum ShieldReviewService {
             riskFlags: flags,
             simulation: ShieldReviewSimulationSummary(simulation),
             explanation: "This approval prepares a Jupiter swap. Review quote freshness, route, token mints, minimum received, writable accounts, ALT use, and simulation before signing.",
-            requirements: [.review, .simulation, .explicitApproval, .localAuthentication, .nativeSigner, .destinationApproval, .mainnetPhrase]
+            requirements: [.review, .simulation, .explicitApproval, .localAuthentication, .nativeSigner, .destinationApproval, .mainnetPhrase],
+            sourceFlow: .jupiterSwap
         )
     }
 
@@ -222,7 +226,8 @@ enum ShieldReviewService {
             riskFlags: flags,
             simulation: ShieldReviewSimulationSummary(simulation),
             explanation: "This approval prepares an Orca harvest. If exact instruction data is not fully decoded, treat it as a protocol interaction and review simulation logs before signing.",
-            requirements: [.review, .simulation, .explicitApproval, .localAuthentication, .nativeSigner, .destinationApproval, .mainnetPhrase]
+            requirements: [.review, .simulation, .explicitApproval, .localAuthentication, .nativeSigner, .destinationApproval, .mainnetPhrase],
+            sourceFlow: .orcaHarvest
         )
     }
 
@@ -250,7 +255,8 @@ enum ShieldReviewService {
             riskFlags: flags,
             simulation: .notRun,
             explanation: "Raw Cloak transaction bytes are not exposed in this approval panel. GORKH preserves the existing Cloak approval gates and does not expose private state or vault internals.",
-            requirements: [.review, .explicitApproval, .localAuthentication, .nativeSigner, .mainnetPhrase, .destinationApproval]
+            requirements: [.review, .explicitApproval, .localAuthentication, .nativeSigner, .mainnetPhrase, .destinationApproval],
+            sourceFlow: .cloakDeposit
         )
     }
 
@@ -277,7 +283,8 @@ enum ShieldReviewService {
             ],
             simulation: .notRun,
             explanation: "Raw Cloak transaction bytes and private inputs are not shown here. Review fee, recipient, local vault state, and exact mainnet phrase before signing.",
-            requirements: [.review, .explicitApproval, .localAuthentication, .nativeSigner, .mainnetPhrase, .destinationApproval]
+            requirements: [.review, .explicitApproval, .localAuthentication, .nativeSigner, .mainnetPhrase, .destinationApproval],
+            sourceFlow: .cloakFullWithdraw
         )
     }
 
@@ -313,6 +320,7 @@ enum ShieldReviewService {
             simulation: .notRun,
             explanation: "External Zerion execution summary; raw transaction decode unavailable. GORKH does not receive raw Solana transaction bytes and does not fake a decode. Preview: \(commandPreview)",
             requirements: [.review, .explicitApproval, .destinationApproval],
+            sourceFlow: .zerionTinySwap,
             temporaryRawPayloadAvailable: false
         )
     }
@@ -330,6 +338,7 @@ enum ShieldReviewService {
         simulation: ShieldReviewSimulationSummary,
         explanation: String,
         requirements: [ShieldReviewApprovalRequirement],
+        sourceFlow: ShieldReviewSourceFlow = .unknown,
         temporaryRawPayloadAvailable: Bool = false
     ) -> ShieldReviewSummary {
         ShieldReviewSummary(
@@ -356,6 +365,7 @@ enum ShieldReviewService {
                 unknownCount: unknownCount,
                 simulation: simulation.status,
                 riskMessages: riskFlags.map(\.message),
+                sourceFlow: sourceFlow,
                 temporaryRawPayloadAvailable: temporaryRawPayloadAvailable
             )
         )
@@ -372,6 +382,7 @@ enum ShieldReviewService {
         unknownCount: Int,
         simulation: ShieldReviewSimulationStatus,
         riskMessages: [String],
+        sourceFlow: ShieldReviewSourceFlow,
         temporaryRawPayloadAvailable: Bool
     ) -> ShieldReviewHandoff {
         let temporaryNote = temporaryRawPayloadAvailable
@@ -394,6 +405,8 @@ enum ShieldReviewService {
         return ShieldReviewHandoff(
             safeSummary: summary,
             temporaryRawPayloadAvailable: temporaryRawPayloadAvailable,
+            payloadAvailability: temporaryRawPayloadAvailable ? .transientPayload : .summaryOnly,
+            sourceFlow: sourceFlow,
             note: temporaryNote
         )
     }

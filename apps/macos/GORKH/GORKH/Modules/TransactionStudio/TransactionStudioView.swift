@@ -101,10 +101,19 @@ struct TransactionStudioView: View {
         .onAppear {
             history = historyStore.load()
             record(.studioOpened, "Transaction Studio opened.")
-            consumePendingShieldReviewSummaryIfNeeded()
+            Task {
+                await consumePendingShieldReviewHandoffIfNeeded()
+            }
         }
         .onChange(of: appState.pendingTransactionStudioSummary) { _, _ in
-            consumePendingShieldReviewSummaryIfNeeded()
+            Task {
+                await consumePendingShieldReviewHandoffIfNeeded()
+            }
+        }
+        .onChange(of: appState.pendingShieldReviewStudioHandoffID) { _, _ in
+            Task {
+                await consumePendingShieldReviewHandoffIfNeeded()
+            }
         }
         .accessibilityIdentifier("transactionStudio.root")
     }
@@ -358,13 +367,28 @@ struct TransactionStudioView: View {
         record(.handoffCreated, "Transaction Studio opened Wallet Activity.")
     }
 
-    private func consumePendingShieldReviewSummaryIfNeeded() {
+    @MainActor
+    private func consumePendingShieldReviewHandoffIfNeeded() async {
+        if let handoff = appState.consumePendingShieldReviewStudioHandoff() {
+            await openShieldReviewHandoff(handoff)
+            return
+        }
         guard let summary = appState.pendingTransactionStudioSummary else {
             return
         }
-        inputText = summary
+        let handoff = ShieldReviewPayloadPolicy.summaryOnly(
+            sourceFlow: .unknown,
+            safeSummary: summary
+        )
+        appState.pendingTransactionStudioSummary = nil
+        await openShieldReviewHandoff(handoff)
+    }
+
+    @MainActor
+    private func openShieldReviewHandoff(_ handoff: ShieldReviewStudioHandoff) async {
+        inputText = handoff.safeSummary
         detectedInput = TransactionStudioInput(
-            rawValue: "shield-review-summary",
+            rawValue: "shield-review-\(handoff.sourceFlow.rawValue)",
             kind: .importHandoff,
             encoding: .plain
         )
@@ -373,21 +397,88 @@ struct TransactionStudioView: View {
         accountEnrichment = .notRun
         simulation = .notRun
         riskReview = .empty
+
+        if let base64 = handoff.transientTransactionBase64,
+           handoff.payloadAvailability == .transientPayload,
+           let data = Data(base64Encoded: base64) {
+            do {
+                let decoded = try TransactionDecoder.decode(
+                    data: data,
+                    inputKind: .importHandoff,
+                    fetchedSignature: nil,
+                    slot: nil,
+                    blockTime: nil,
+                    network: walletManager.selectedNetwork
+                )
+                decodedTransaction = decoded
+                accountEnrichment = await enrichmentService.enrich(decoded: decoded)
+                riskReview = TransactionRiskAnalyzer.review(decoded: decoded, simulation: simulation)
+                explanation = TransactionExplanationBuilder.build(decoded: decoded, simulation: simulation, risk: riskReview)
+                selectedTab = .decode
+                status = .decoded
+                statusMessage = "Opened exact in-memory Shield Review payload from \(handoff.sourceFlow.title). It was not persisted."
+                record(
+                    .decodeSucceeded,
+                    "Shield Review exact in-memory payload decoded.",
+                    details: [
+                        "source_flow": handoff.sourceFlow.rawValue,
+                        "payload_mode": handoff.payloadAvailability.rawValue,
+                        "fingerprint": decoded.fingerprint
+                    ]
+                )
+                return
+            } catch {
+                status = .unavailable
+                statusMessage = "Exact Shield Review payload could not be decoded; showing summary only."
+                record(
+                    .decodeFailed,
+                    "Shield Review exact in-memory payload decode failed.",
+                    details: [
+                        "source_flow": handoff.sourceFlow.rawValue,
+                        "payload_mode": handoff.payloadAvailability.rawValue,
+                        "error": error.localizedDescription
+                    ]
+                )
+            }
+        }
+
         explanation = TransactionExplanation(
-            summary: summary,
+            summary: handoff.safeSummary,
             reviewChecklist: [
-                "This is a safe Shield Review summary from an approval screen.",
-                "Paste a raw transaction or signature for full Transaction Studio decode.",
+                "Source flow: \(handoff.sourceFlow.title).",
+                "Payload mode: \(handoff.payloadAvailability.title).",
+                handoff.unavailableReason ?? "Exact transaction decode is unavailable for this handoff.",
                 "Transaction Studio cannot sign or broadcast."
             ],
             source: "shield review handoff",
             generatedAt: Date()
         )
         selectedTab = .explanation
-        status = .decoded
-        statusMessage = "Opened safe Shield Review summary. No raw transaction payload was persisted."
-        appState.pendingTransactionStudioSummary = nil
-        record(.handoffCreated, "Shield Review safe summary opened in Transaction Studio.", details: ["payload": "safe_summary_only"])
+        status = handoff.payloadAvailability == .unavailable ? .unavailable : .decoded
+        statusMessage = handoff.unavailableReason
+            ?? "Opened Shield Review summary. No raw transaction payload was persisted."
+        if handoff.redactionStatus == "payload_expired" {
+            auditLog.record(AuditEvent(
+                kind: .shieldReviewHandoffExpired,
+                walletID: walletManager.selectedProfile?.id,
+                network: walletManager.selectedNetwork,
+                publicAddress: walletManager.selectedProfile?.publicAddress,
+                message: "Shield Review handoff expired before exact decode.",
+                details: [
+                    "source_flow": handoff.sourceFlow.rawValue,
+                    "payload": "safe_summary_only"
+                ]
+            ))
+        }
+        record(
+            .handoffCreated,
+            "Shield Review summary opened in Transaction Studio.",
+            details: [
+                "source_flow": handoff.sourceFlow.rawValue,
+                "payload_mode": handoff.payloadAvailability.rawValue,
+                "payload": "safe_summary_only"
+            ]
+        )
     }
 
     private func record(_ kind: TransactionStudioAuditEventKind, _ message: String, details: [String: String] = [:]) {

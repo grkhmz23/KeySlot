@@ -407,6 +407,9 @@ struct AuditEvent: Codable, Equatable, Identifiable {
         case shieldReviewOpenedInStudio = "shield_review_opened_in_studio"
         case shieldReviewApprovalBlocked = "shield_review_approval_blocked"
         case shieldReviewApprovalContinued = "shield_review_approval_continued"
+        case shieldReviewExactHandoffCreated = "shield_review_exact_handoff_created"
+        case shieldReviewSummaryHandoffCreated = "shield_review_summary_handoff_created"
+        case shieldReviewHandoffExpired = "shield_review_handoff_expired"
     }
 
     let id: UUID

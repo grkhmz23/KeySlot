@@ -40,7 +40,22 @@ When raw bytes are not safely available, Shield Review returns an honest summary
 
 ## Handoff
 
-Approval screens include "Open in Transaction Studio." The handoff sends a safe summary only unless a future flow explicitly provides an in-memory temporary payload. Raw transaction bytes are not persisted by Shield Review.
+Approval screens include an "Open in Transaction Studio" action with an explicit payload mode:
+
+- `Exact transaction`: the approval flow already has transaction/message bytes in memory and Shield Review can pass a temporary base64 transaction to Studio.
+- `Summary only`: the flow can provide a safe summary, but raw bytes are not available or not safe to expose.
+- `Unavailable`: payload validation failed or the temporary payload expired.
+
+Exact handoffs are transient and in-memory only. They expire after a short window, are not written to Studio history, are not logged, and are not sent to Agent or hosted AI. If the app restarts or the handoff expires, Transaction Studio falls back to summary-only review.
+
+Current payload fidelity:
+
+- SOL send: exact handoff when the prepared message is available.
+- SPL token send: exact handoff when the prepared token-transfer message is available.
+- Jupiter swap: exact handoff when the already-built Jupiter transaction is in memory.
+- Orca harvest: exact handoff when the harvest message is available before approval.
+- Cloak: summary-only unless a future flow can expose only a transaction payload without private proof inputs or local private state.
+- Zerion: summary-only unless the CLI exposes a safe raw transaction before execution. GORKH does not fake decode external Zerion execution summaries.
 
 ## Non-Goals
 

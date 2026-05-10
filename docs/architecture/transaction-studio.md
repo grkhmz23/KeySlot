@@ -145,4 +145,6 @@ Wallet approval screens reuse Transaction Studio review concepts through Shield 
 
 Execution still belongs to the destination approval flow. Transaction Studio and Shield Review do not sign, broadcast, or bypass mainnet phrase, LocalAuthentication, simulation, or fingerprint checks.
 
+When an approval flow can safely provide an exact payload, it is passed to Transaction Studio through a short-lived in-memory Shield Review handoff. Studio decodes that payload for review and does not save the raw transaction in history. When exact bytes are unavailable, expired, or unsafe, Studio shows a summary-only Shield Review import and explains that exact decode is unavailable. Cloak private state, proof inputs, local vault details, Zerion agent tokens, and command secrets are never included in Studio handoffs.
+
 If raw transaction bytes are unavailable, Shield Review shows a safe external or unavailable summary instead of faking a decode.
