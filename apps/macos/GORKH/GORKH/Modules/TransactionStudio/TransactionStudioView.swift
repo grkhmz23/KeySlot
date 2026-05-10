@@ -34,6 +34,7 @@ struct TransactionStudioView: View {
     @State private var detectedInput: TransactionStudioInput?
     @State private var decodedTransaction: DecodedTransaction?
     @State private var addressSummary: TransactionStudioAddressSummary?
+    @State private var accountEnrichment = TransactionAccountEnrichmentReport.notRun
     @State private var simulation = TransactionStudioSimulationSummary.notRun
     @State private var riskReview = TransactionRiskReview.empty
     @State private var explanation = TransactionExplanationBuilder.build(decoded: nil, simulation: .notRun, risk: .empty)
@@ -44,6 +45,7 @@ struct TransactionStudioView: View {
 
     private let rpcClient = SolanaRPCClient()
     private let simulationService = TransactionSimulationService()
+    private let enrichmentService = TransactionAccountEnrichmentService()
     private let historyStore = TransactionStudioHistoryStore()
     private let auditLog = AuditLog()
 
@@ -69,7 +71,11 @@ struct TransactionStudioView: View {
                 Group {
                     switch selectedTab {
                     case .decode:
-                        TransactionInstructionTimelineView(decoded: decodedTransaction, addressSummary: addressSummary)
+                        TransactionInstructionTimelineView(
+                            decoded: decodedTransaction,
+                            addressSummary: addressSummary,
+                            accountEnrichment: accountEnrichment
+                        )
                     case .simulate:
                         TransactionSimulationView(simulation: simulation)
                     case .riskReview:
@@ -155,6 +161,7 @@ struct TransactionStudioView: View {
         statusMessage = "Decoding input..."
         decodedTransaction = nil
         addressSummary = nil
+        accountEnrichment = .notRun
         simulation = .notRun
 
         do {
@@ -164,6 +171,7 @@ struct TransactionStudioView: View {
             case .rawTransaction:
                 let decoded = try TransactionDecoder.decode(input: input, network: walletManager.selectedNetwork)
                 decodedTransaction = decoded
+                accountEnrichment = await enrichmentService.enrich(decoded: decoded)
                 riskReview = TransactionRiskAnalyzer.review(decoded: decoded, simulation: simulation)
                 explanation = TransactionExplanationBuilder.build(decoded: decoded, simulation: simulation, risk: riskReview)
                 status = .decoded
@@ -179,9 +187,12 @@ struct TransactionStudioView: View {
                         signature: fetched.signature,
                         slot: fetched.slot,
                         blockTime: fetched.blockTime,
+                        loadedWritableAddresses: fetched.loadedWritableAddresses,
+                        loadedReadonlyAddresses: fetched.loadedReadonlyAddresses,
                         network: walletManager.selectedNetwork
                     )
                     decodedTransaction = decoded
+                    accountEnrichment = await enrichmentService.enrich(decoded: decoded)
                     riskReview = TransactionRiskAnalyzer.review(decoded: decoded, simulation: simulation)
                     explanation = TransactionExplanationBuilder.build(decoded: decoded, simulation: simulation, risk: riskReview)
                     status = .decoded
@@ -233,7 +244,7 @@ struct TransactionStudioView: View {
         record(.simulationAttempted, "Transaction Studio simulation attempted.", details: ["fingerprint": decodedTransaction.fingerprint])
         status = .simulating
         statusMessage = "Simulating without signing or broadcasting..."
-        simulation = await simulationService.simulate(decoded: decodedTransaction)
+        simulation = await simulationService.simulate(decoded: decodedTransaction, enrichment: accountEnrichment)
         riskReview = TransactionRiskAnalyzer.review(decoded: decodedTransaction, simulation: simulation)
         explanation = TransactionExplanationBuilder.build(decoded: decodedTransaction, simulation: simulation, risk: riskReview)
         selectedTab = .simulate
@@ -278,7 +289,12 @@ struct TransactionStudioView: View {
             riskLevel: riskReview.level,
             simulationStatus: simulation.status,
             recognizedInstructionCount: recognized,
-            unknownInstructionCount: unknown
+            unknownInstructionCount: unknown,
+            transactionVersion: decodedTransaction?.transactionVersion,
+            altUsed: decodedTransaction?.addressLookupTables.isEmpty == false,
+            accountDiffAvailable: simulation.accountDiff.status == .available,
+            loadedAccountCount: decodedTransaction.map { $0.addressLookupOverview.loadedWritableCount + $0.addressLookupOverview.loadedReadonlyCount } ?? 0,
+            topProgramCategories: topProgramCategories(for: decodedTransaction)
         )
         historyStore.append(entry)
         history = historyStore.load()
@@ -300,14 +316,32 @@ struct TransactionStudioView: View {
                 lines.append("Fingerprint: \(decodedTransaction.fingerprint)")
             }
             lines.append("Programs: \(decodedTransaction.programSummaries.map(\.label).joined(separator: ", "))")
+            lines.append("Version: \(decodedTransaction.transactionVersion)")
+            lines.append("ALT tables: \(decodedTransaction.addressLookupOverview.tableCount), loaded writable: \(decodedTransaction.addressLookupOverview.loadedWritableCount), loaded readonly: \(decodedTransaction.addressLookupOverview.loadedReadonlyCount)")
             lines.append("Recognized instructions: \(decodedTransaction.instructions.filter { $0.parseStatus == .recognized }.count)")
             lines.append("Unknown instructions: \(decodedTransaction.instructions.filter { $0.parseStatus == .unknown }.count)")
         }
+        lines.append("Account diff: \(simulation.accountDiff.status.title)")
         if riskReview.flags.isEmpty == false {
             lines.append("Risk flags: \(riskReview.flags.map(\.message).joined(separator: " | "))")
         }
         lines.append("No raw transaction payload is included. Do not execute from chat.")
         return lines.joined(separator: "\n")
+    }
+
+    private func topProgramCategories(for decoded: DecodedTransaction?) -> [String] {
+        guard let decoded else {
+            return []
+        }
+        var seen = Set<String>()
+        var result: [String] = []
+        for category in decoded.programSummaries.map(\.category.title) where seen.insert(category).inserted {
+            result.append(category)
+            if result.count == 4 {
+                break
+            }
+        }
+        return result
     }
 
     private func clearHistory() {

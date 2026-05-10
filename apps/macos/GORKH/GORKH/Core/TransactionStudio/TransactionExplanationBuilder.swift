@@ -42,7 +42,22 @@ enum TransactionExplanationBuilder {
         case .notRun:
             simText = "Simulation has not run."
         }
-        let summary = "This \(decoded.transactionVersion) transaction uses \(decoded.instructions.count) instruction(s) across \(decoded.programSummaries.count) program(s): \(programList.isEmpty ? "none detected" : programList). Required signer(s): \(signerText.isEmpty ? "none detected" : signerText). \(simText)"
+        let altSummary: String
+        if decoded.addressLookupTables.isEmpty {
+            altSummary = "No address lookup tables are referenced."
+        } else {
+            altSummary = "It references \(decoded.addressLookupOverview.tableCount) address lookup table(s), with \(decoded.addressLookupOverview.loadedWritableCount) loaded writable and \(decoded.addressLookupOverview.loadedReadonlyCount) loaded readonly address(es) available from RPC."
+        }
+        let diffSummary: String
+        switch simulation.accountDiff.status {
+        case .available:
+            diffSummary = "Account diff is available for \(simulation.accountDiff.rows.count) watched account(s)."
+        case .unavailable:
+            diffSummary = "Account diff is unavailable."
+        case .notRequested:
+            diffSummary = "Account diff has not been requested."
+        }
+        let summary = "This \(decoded.transactionVersion) transaction uses \(decoded.instructions.count) instruction(s) across \(decoded.programSummaries.count) program(s): \(programList.isEmpty ? "none detected" : programList). Required signer(s): \(signerText.isEmpty ? "none detected" : signerText). \(altSummary) \(simText) \(diffSummary)"
         let recognizedFragments = decoded.instructions
             .compactMap(\.parsedSummary.explanationFragment)
             .removingDuplicates()
@@ -59,6 +74,8 @@ enum TransactionExplanationBuilder {
         var checklist = [
             "Confirm fee payer \(decoded.feePayer.map(short) ?? "unknown") is expected.",
             "Review every writable account before approving in any destination module.",
+            decoded.addressLookupTables.isEmpty ? "No ALT review needed for this transaction." : "Review lookup-table loaded addresses and unresolved ALT state.",
+            simulation.accountDiff.status == .available ? "Review account diff rows for lamport, token, owner, created, or closed changes." : "Account diff is unavailable; do not infer balance movement from instruction labels alone.",
             "Check simulation logs and error state before approval.",
             "Transaction Studio does not sign, broadcast, or move funds."
         ]

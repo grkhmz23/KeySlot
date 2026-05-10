@@ -29,6 +29,18 @@ struct TransactionStudioHistoryView: View {
                                 GorkhStatusChip(title: entry.riskLevel.title, systemImage: "exclamationmark.shield", color: entry.riskLevel == .high ? .red : GorkhColors.warning)
                                 GorkhStatusChip(title: entry.simulationStatus.title, systemImage: "waveform.path.ecg", color: entry.simulationStatus == .success ? GorkhColors.accent : GorkhColors.warning)
                                 GorkhStatusChip(title: "\(entry.recognizedInstructionCount) parsed / \(entry.unknownInstructionCount) unknown", systemImage: "list.bullet.rectangle", color: GorkhColors.accent)
+                                if let version = entry.transactionVersion {
+                                    GorkhStatusChip(title: version, systemImage: "doc.text", color: GorkhColors.accent)
+                                }
+                                if entry.altUsed {
+                                    GorkhStatusChip(title: "\(entry.loadedAccountCount) loaded", systemImage: "tablecells", color: GorkhColors.warning)
+                                }
+                                GorkhStatusChip(title: entry.accountDiffAvailable ? "Diff available" : "Diff unavailable", systemImage: "plus.forwardslash.minus", color: entry.accountDiffAvailable ? GorkhColors.success : GorkhColors.warning)
+                            }
+                            if entry.topProgramCategories.isEmpty == false {
+                                Text("Categories: \(entry.topProgramCategories.joined(separator: ", "))")
+                                    .font(.caption)
+                                    .foregroundStyle(GorkhColors.secondaryText)
                             }
                             Text(entry.publicReference)
                                 .font(.system(.caption, design: .monospaced))

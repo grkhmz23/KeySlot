@@ -2,17 +2,47 @@
 set -euo pipefail
 
 MODE="local"
-if [[ "${1:-}" == "--live" ]]; then
-  MODE="live"
-fi
+CLI_SIGNATURES_TEXT=""
+CLI_ADDRESS=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --live)
+      MODE="live"
+      shift
+      ;;
+    --signature)
+      CLI_SIGNATURES_TEXT="${CLI_SIGNATURES_TEXT}
+${2:-}"
+      shift 2
+      ;;
+    --address)
+      CLI_ADDRESS="${2:-}"
+      shift 2
+      ;;
+    --help)
+      echo "Usage: scripts/transaction-studio-smoke.sh [--live] [--signature <public-sig>] [--address <public-address>]"
+      exit 0
+      ;;
+    *)
+      echo "unknown option: $1" >&2
+      exit 1
+      ;;
+  esac
+done
 
-RPC_URL="${GORKH_TX_STUDIO_RPC_URL:-https://api.mainnet-beta.solana.com}"
-PUBLIC_ADDRESS="${GORKH_TX_STUDIO_PUBLIC_ADDRESS:-11111111111111111111111111111111}"
+RPC_URL="${GORKH_TX_STUDIO_SMOKE_RPC_URL:-${GORKH_TX_STUDIO_RPC_URL:-https://api.mainnet-beta.solana.com}}"
+PUBLIC_ADDRESS="${CLI_ADDRESS:-${GORKH_TX_STUDIO_SMOKE_ADDRESS:-${GORKH_TX_STUDIO_PUBLIC_ADDRESS:-11111111111111111111111111111111}}}"
 RAW_TX_BASE64="${GORKH_TX_STUDIO_RAW_TX_BASE64:-}"
 
-SIGNATURES=()
+declare -a SIGNATURES=()
+while IFS= read -r value; do
+  if [[ -n "$value" ]]; then
+    SIGNATURES+=("$value")
+  fi
+done <<<"$CLI_SIGNATURES_TEXT"
 for value in \
   "${GORKH_TX_STUDIO_SMOKE_SIGNATURE:-}" \
+  "${GORKH_TX_STUDIO_ALT_SIGNATURE:-}" \
   "${GORKH_TX_STUDIO_SPL_SIGNATURE:-}" \
   "${GORKH_TX_STUDIO_JUPITER_SIGNATURE:-}" \
   "${GORKH_TX_STUDIO_FAILED_SIGNATURE:-}"; do

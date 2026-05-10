@@ -4802,6 +4802,13 @@ struct GORKHTests {
             "GORKH/Core/TransactionStudio/TransactionStudioInputDetector.swift",
             "GORKH/Core/TransactionStudio/TransactionDecoder.swift",
             "GORKH/Core/TransactionStudio/TransactionInstructionParser.swift",
+            "GORKH/Core/TransactionStudio/TransactionAddressLookupModels.swift",
+            "GORKH/Core/TransactionStudio/TransactionAccountEnrichmentModels.swift",
+            "GORKH/Core/TransactionStudio/TransactionAccountEnrichmentService.swift",
+            "GORKH/Core/TransactionStudio/TransactionAccountWatchListBuilder.swift",
+            "GORKH/Core/TransactionStudio/TransactionSimulationDiffModels.swift",
+            "GORKH/Core/TransactionStudio/TransactionSimulationDiffBuilder.swift",
+            "GORKH/Core/TransactionStudio/TransactionProgramCatalog.swift",
             "GORKH/Core/TransactionStudio/SystemInstructionParser.swift",
             "GORKH/Core/TransactionStudio/SPLTokenInstructionParser.swift",
             "GORKH/Core/TransactionStudio/Token2022InstructionParser.swift",
@@ -4824,7 +4831,7 @@ struct GORKHTests {
             "GORKH/Modules/TransactionStudio/TransactionExplanationView.swift",
             "GORKH/Modules/TransactionStudio/TransactionStudioHistoryView.swift"
         ].map { try sourceText(relativePath: $0) }.joined(separator: "\n").lowercased()
-        for forbidden in ["sendtransaction(", "requestairdrop(", "signtransaction(", "jito", "beam", "buildbundle", "/bin/sh", "eval("] {
+        for forbidden in ["sendtransaction(", "requestairdrop(", "signtransaction(", "getprogramaccounts", "jito", "beam", "buildbundle", "/bin/sh", "eval("] {
             #expect(!studioCoreFiles.contains(forbidden))
         }
         #expect(!studioCoreFiles.contains("nft"))
@@ -4928,6 +4935,7 @@ struct GORKHTests {
             signatures: [Base58.encode(Data(repeating: 1, count: 64))],
             feePayer: accounts[0].address,
             recentBlockhash: Base58.encode(Data(repeating: 7, count: 32)),
+            staticAccountCount: accounts.count,
             accountMetas: accounts,
             instructions: [
                 instruction(0, programID: SolanaConstants.systemProgramID, data: u32(2) + u64(1_500_000_000)),
@@ -4946,6 +4954,7 @@ struct GORKHTests {
             signerSummaries: [SignerSummary(address: accounts[0].address, isFeePayer: true)],
             writableAccounts: accounts.prefix(3).map { WritableAccountSummary(address: $0.address, isSigner: $0.isSigner) },
             addressLookupTables: [],
+            addressLookupOverview: .empty,
             feeSummary: TransactionFeeSummary(requiredSignatureCount: 1, estimatedFeeLamports: nil),
             messageBase64: "safe-message-summary",
             simulationTransactionBase64: "raw-payload-not-used-in-handoff",
@@ -4990,6 +4999,165 @@ struct GORKHTests {
         for forbidden in ["privatekey", "secretkey", "seedphrase", "mnemonic", "walletjson", "signingseed", "transactionpayload", "serializedtransaction"] {
             #expect(!historyJSON.contains(forbidden))
         }
+    }
+
+    @Test func transactionStudioALTAccountDiffAndProgramCatalogStayReadOnly() throws {
+        func address(_ byte: UInt8) -> String {
+            Base58.encode(Data(repeating: byte, count: 32))
+        }
+
+        let writableLoaded = (20..<34).map { address(UInt8($0)) }
+        let readonlyLoaded = [address(40), address(41)]
+        let alt = AddressLookupTableSummary(
+            tableAddress: address(9),
+            writableIndexCount: writableLoaded.count,
+            readonlyIndexCount: readonlyLoaded.count,
+            writableIndexes: Array(0..<writableLoaded.count),
+            readonlyIndexes: [1, 2],
+            loadedWritableAddresses: writableLoaded,
+            loadedReadonlyAddresses: readonlyLoaded,
+            resolutionStatus: .loaded
+        )
+        #expect(alt.resolutionStatus == .loaded)
+        #expect(alt.loadedWritableAddresses.count == 14)
+
+        let unresolved = AddressLookupTableSummary(
+            tableAddress: address(10),
+            writableIndexCount: 2,
+            readonlyIndexCount: 1,
+            writableIndexes: [0, 2],
+            readonlyIndexes: [1],
+            resolutionStatus: .unresolved,
+            resolutionReason: "unit unresolved"
+        )
+        #expect(unresolved.resolutionStatus == .unresolved)
+
+        let metas = (0..<4).map {
+            DecodedAccountMeta(index: $0, address: address(UInt8($0 + 1)), isSigner: $0 == 0, isWritable: true)
+        } + writableLoaded.enumerated().map {
+            DecodedAccountMeta(index: 4 + $0.offset, address: $0.element, isSigner: false, isWritable: true)
+        }
+        let decoded = DecodedTransaction(
+            inputKind: .signature,
+            network: .mainnetBeta,
+            transactionVersion: "v0",
+            signatureCount: 1,
+            signatures: [Base58.encode(Data(repeating: 1, count: 64))],
+            feePayer: metas[0].address,
+            recentBlockhash: address(7),
+            staticAccountCount: 4,
+            accountMetas: metas,
+            instructions: [],
+            programSummaries: [
+                ProgramSummary(programID: SolanaConstants.systemProgramID, label: "System Program", instructionCount: 1),
+                ProgramSummary(programID: TransactionInstructionLabeler.jupiterV6ProgramID, label: "Jupiter", instructionCount: 1)
+            ],
+            signerSummaries: [SignerSummary(address: metas[0].address, isFeePayer: true)],
+            writableAccounts: metas.map { WritableAccountSummary(address: $0.address, isSigner: $0.isSigner) },
+            addressLookupTables: [alt, unresolved],
+            addressLookupOverview: TransactionAddressLookupOverview(
+                tableCount: 2,
+                loadedWritableCount: writableLoaded.count,
+                loadedReadonlyCount: readonlyLoaded.count,
+                unresolvedTableCount: 1
+            ),
+            feeSummary: TransactionFeeSummary(requiredSignatureCount: 1, estimatedFeeLamports: nil),
+            messageBase64: "safe-message-summary",
+            simulationTransactionBase64: "raw-payload-not-in-history",
+            fetchedSignature: Base58.encode(Data(repeating: 2, count: 64)),
+            slot: 10,
+            blockTime: nil,
+            fingerprint: "alt-unit",
+            decodedAt: Date(timeIntervalSince1970: 0)
+        )
+
+        let watchList = TransactionAccountWatchListBuilder.build(decoded: decoded, maxCount: 5)
+        #expect(watchList.accounts.count == 5)
+        #expect(watchList.truncated)
+
+        let before = TransactionAccountEnrichment(
+            address: watchList.accounts[0].address,
+            ownerProgram: SolanaConstants.systemProgramID,
+            ownerLabel: "System Program",
+            lamports: 10,
+            executable: false,
+            dataLength: 0,
+            tokenMint: nil,
+            tokenOwner: nil,
+            tokenAmountRaw: nil,
+            tokenDecimals: nil,
+            tokenUIAmount: nil,
+            source: "unit-before"
+        )
+        let after = TransactionAccountEnrichment(
+            address: watchList.accounts[0].address,
+            ownerProgram: SolanaConstants.systemProgramID,
+            ownerLabel: "System Program",
+            lamports: 15,
+            executable: false,
+            dataLength: 0,
+            tokenMint: nil,
+            tokenOwner: nil,
+            tokenAmountRaw: nil,
+            tokenDecimals: nil,
+            tokenUIAmount: nil,
+            source: "unit-after"
+        )
+        let diff = TransactionSimulationDiffBuilder.build(watchList: watchList, before: [before], after: [after])
+        #expect(diff.status == .available)
+        #expect(diff.rows.first?.lamportsDelta == 5)
+
+        let simulation = TransactionStudioSimulationSummary(
+            status: .success,
+            logs: [],
+            unitsConsumed: 1_300_000,
+            errorMessage: nil,
+            replacementBlockhashUsed: false,
+            watchList: watchList,
+            accountDiff: diff,
+            simulatedAt: Date(timeIntervalSince1970: 1)
+        )
+        let risk = TransactionRiskAnalyzer.review(decoded: decoded, simulation: simulation)
+        #expect(risk.flags.contains { $0.kind == .addressLookupTableUse })
+        #expect(risk.flags.contains { $0.kind == .addressLookupTableUnavailable })
+        #expect(risk.flags.contains { $0.kind == .manyLoadedWritableAccounts })
+
+        let explanation = TransactionExplanationBuilder.build(decoded: decoded, simulation: simulation, risk: risk)
+        #expect(explanation.summary.contains("address lookup table"))
+        #expect(explanation.summary.contains("Account diff is available"))
+        #expect(TransactionProgramCatalog.entry(for: TransactionInstructionLabeler.jupiterV6ProgramID).category == .aggregator)
+
+        let history = TransactionStudioHistoryEntry(
+            inputKind: .signature,
+            publicReference: decoded.fetchedSignature ?? "unit",
+            summary: explanation.summary,
+            riskLevel: risk.level,
+            simulationStatus: simulation.status,
+            transactionVersion: decoded.transactionVersion,
+            altUsed: true,
+            accountDiffAvailable: true,
+            loadedAccountCount: decoded.addressLookupOverview.loadedWritableCount + decoded.addressLookupOverview.loadedReadonlyCount,
+            topProgramCategories: decoded.programSummaries.map(\.category.title)
+        )
+        let historyJSON = try #require(String(data: JSONEncoder().encode(history), encoding: .utf8)).lowercased()
+        #expect(historyJSON.contains("transactionversion"))
+        #expect(historyJSON.contains("altused"))
+        #expect(historyJSON.contains("accountdiffavailable"))
+        #expect(!historyJSON.contains("raw-payload-not-in-history"))
+
+        let handoffSummary = "Version: \(decoded.transactionVersion). ALT tables: \(decoded.addressLookupOverview.tableCount). Account diff: \(simulation.accountDiff.status.title). No raw transaction payload is included."
+        #expect(!handoffSummary.lowercased().contains("raw-payload-not-in-history"))
+
+        let script = try sourceText(relativePath: "../../../scripts/transaction-studio-smoke.sh")
+        #expect(script.contains("--signature"))
+        #expect(script.contains("--address"))
+        #expect(script.contains("GORKH_TX_STUDIO_SMOKE_RPC_URL"))
+        #expect(!script.contains(#""method":"sendTransaction""#))
+        #expect(!script.contains(#""method":"requestAirdrop""#))
+
+        let fixtures = try sourceText(relativePath: "../../../docs/qa/transaction-studio-public-fixtures.md").lowercased()
+        #expect(fixtures.contains("gorkh_tx_studio_alt_signature"))
+        #expect(!fixtures.contains("nft"))
     }
 
     @Test func agentMemoryAndAuditRedactionContainNoSecrets() throws {

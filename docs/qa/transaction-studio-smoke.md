@@ -42,6 +42,7 @@ Transaction Studio v0.1 is decode/simulate/review only. It cannot sign, broadcas
 2. Click `Decode`.
 3. Expected:
    - Transaction version, fee payer, static signers, writable accounts, program labels, and instruction timeline appear.
+   - For v0 transactions, ALT lookup tables, indexes, loaded addresses, and unresolved states are visible.
    - System transfer, SPL transfer, ATA create, Compute Budget, Memo, and Jupiter route instructions show parser badges when recognized.
    - Unknown instruction data remains explicitly unknown.
 
@@ -52,6 +53,7 @@ Transaction Studio v0.1 is decode/simulate/review only. It cannot sign, broadcas
 3. Expected:
    - Simulation failure or unavailable state is shown.
    - Logs are displayed if RPC returns them.
+   - Account diff is shown only when RPC returns watched account states; otherwise the UI says diff is unavailable.
    - Approval or signing controls do not appear.
 
 ### Unknown Program

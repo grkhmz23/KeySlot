@@ -379,17 +379,29 @@ struct SolanaRPCClient {
         )
     }
 
-    func simulateTransactionForStudio(transactionBase64: String, network: WalletNetwork) async throws -> TransactionStudioSimulationSummary {
+    func simulateTransactionForStudio(
+        transactionBase64: String,
+        network: WalletNetwork,
+        watchList: TransactionAccountWatchList = .empty,
+        preSimulationAccounts: [TransactionAccountEnrichment] = []
+    ) async throws -> TransactionStudioSimulationSummary {
+        var config: [String: Any] = [
+            "encoding": "base64",
+            "sigVerify": false,
+            "replaceRecentBlockhash": false,
+            "commitment": "processed"
+        ]
+        if watchList.accounts.isEmpty == false {
+            config["accounts"] = [
+                "encoding": "jsonParsed",
+                "addresses": watchList.accounts.map(\.address)
+            ]
+        }
         let result = try await request(
             method: "simulateTransaction",
             params: [
                 transactionBase64,
-                [
-                    "encoding": "base64",
-                    "sigVerify": false,
-                    "replaceRecentBlockhash": false,
-                    "commitment": "processed"
-                ]
+                config
             ],
             network: network
         )
@@ -410,6 +422,19 @@ struct SolanaRPCClient {
         } else {
             unitsConsumed = nil
         }
+        let postAccounts = Self.parseSimulationAccounts(value["accounts"], watchList: watchList)
+        let diff: TransactionSimulationDiffSummary
+        if watchList.accounts.isEmpty {
+            diff = .unavailable("No bounded account watchlist was supplied.")
+        } else if postAccounts.isEmpty {
+            diff = .unavailable("RPC simulation did not return post-simulation account states.")
+        } else {
+            diff = TransactionSimulationDiffBuilder.build(
+                watchList: watchList,
+                before: preSimulationAccounts,
+                after: postAccounts
+            )
+        }
 
         return TransactionStudioSimulationSummary(
             status: hasError ? .failed : .success,
@@ -417,6 +442,8 @@ struct SolanaRPCClient {
             unitsConsumed: unitsConsumed,
             errorMessage: hasError ? String(describing: errorValue ?? "Simulation failed") : nil,
             replacementBlockhashUsed: false,
+            watchList: watchList,
+            accountDiff: diff,
             simulatedAt: Date()
         )
     }
@@ -471,11 +498,14 @@ struct SolanaRPCClient {
         guard let transactionBase64 else {
             throw SolanaRPCError.invalidResponse
         }
+        let loadedAddresses = Self.parseLoadedAddresses(from: dictionary["meta"])
         return TransactionStudioFetchedTransaction(
             signature: signature,
             transactionBase64: transactionBase64,
             slot: slot,
-            blockTime: blockTime
+            blockTime: blockTime,
+            loadedWritableAddresses: loadedAddresses.writable,
+            loadedReadonlyAddresses: loadedAddresses.readonly
         )
     }
 
@@ -548,6 +578,34 @@ struct SolanaRPCClient {
             warning: executable == true ? "Executable account. Treat as a program, not a wallet." : nil,
             fetchedAt: Date()
         )
+    }
+
+    func getAccountEnrichmentForStudio(address: String, network: WalletNetwork) async throws -> TransactionAccountEnrichment? {
+        guard SolanaAddressValidator.isValidAddress(address) else {
+            throw SolanaRPCError.invalidResponse
+        }
+        let result = try await request(
+            method: "getParsedAccountInfo",
+            params: [
+                address,
+                [
+                    "encoding": "jsonParsed",
+                    "commitment": "confirmed"
+                ]
+            ],
+            network: network
+        )
+
+        guard let dictionary = result as? [String: Any] else {
+            throw SolanaRPCError.invalidResponse
+        }
+        if dictionary["value"] is NSNull || dictionary["value"] == nil {
+            return nil
+        }
+        guard let value = dictionary["value"] as? [String: Any] else {
+            throw SolanaRPCError.invalidResponse
+        }
+        return Self.parseAccountEnrichment(address: address, value: value, source: "getParsedAccountInfo")
     }
 
     func sendTransaction(transactionBase64: String, network: WalletNetwork) async throws -> String {
@@ -661,6 +719,89 @@ struct SolanaRPCClient {
 
     private static func programIDParameter(from params: [Any]) -> String? {
         params.first as? String
+    }
+
+    private static func parseLoadedAddresses(from metaValue: Any?) -> (writable: [String], readonly: [String]) {
+        guard let meta = metaValue as? [String: Any],
+              let loadedAddresses = meta["loadedAddresses"] as? [String: Any] else {
+            return ([], [])
+        }
+        let writable = loadedAddresses["writable"] as? [String] ?? []
+        let readonly = loadedAddresses["readonly"] as? [String] ?? []
+        return (writable, readonly)
+    }
+
+    private static func parseSimulationAccounts(_ value: Any?, watchList: TransactionAccountWatchList) -> [TransactionAccountEnrichment?] {
+        guard let rawAccounts = value as? [Any] else {
+            return []
+        }
+        return rawAccounts.enumerated().map { index, raw in
+            guard index < watchList.accounts.count, !(raw is NSNull), let dictionary = raw as? [String: Any] else {
+                return nil
+            }
+            return parseAccountEnrichment(
+                address: watchList.accounts[index].address,
+                value: dictionary,
+                source: "simulateTransaction.accounts"
+            )
+        }
+    }
+
+    private static func parseAccountEnrichment(address: String, value: [String: Any], source: String) -> TransactionAccountEnrichment {
+        let owner = value["owner"] as? String
+        let lamports: UInt64?
+        if let number = value["lamports"] as? NSNumber {
+            lamports = number.uint64Value
+        } else {
+            lamports = nil
+        }
+        let executable = value["executable"] as? Bool
+        let dataLength: Int?
+        if let space = value["space"] as? NSNumber {
+            dataLength = space.intValue
+        } else if let space = value["space"] as? Int {
+            dataLength = space
+        } else {
+            dataLength = nil
+        }
+
+        var tokenMint: String?
+        var tokenOwner: String?
+        var tokenAmountRaw: String?
+        var tokenDecimals: Int?
+        var tokenUIAmount: String?
+        if let data = value["data"] as? [String: Any],
+           let parsed = data["parsed"] as? [String: Any],
+           let type = parsed["type"] as? String,
+           let info = parsed["info"] as? [String: Any],
+           type == "account" {
+            tokenMint = info["mint"] as? String
+            tokenOwner = info["owner"] as? String
+            if let tokenAmount = info["tokenAmount"] as? [String: Any] {
+                tokenAmountRaw = tokenAmount["amount"] as? String
+                if let decimals = tokenAmount["decimals"] as? NSNumber {
+                    tokenDecimals = decimals.intValue
+                } else if let decimals = tokenAmount["decimals"] as? Int {
+                    tokenDecimals = decimals
+                }
+                tokenUIAmount = tokenAmount["uiAmountString"] as? String
+            }
+        }
+
+        return TransactionAccountEnrichment(
+            address: address,
+            ownerProgram: owner,
+            ownerLabel: owner.map(TransactionInstructionLabeler.label(for:)),
+            lamports: lamports,
+            executable: executable,
+            dataLength: dataLength,
+            tokenMint: tokenMint,
+            tokenOwner: tokenOwner,
+            tokenAmountRaw: tokenAmountRaw,
+            tokenDecimals: tokenDecimals,
+            tokenUIAmount: tokenUIAmount,
+            source: source
+        )
     }
 
     private func request(method: String, params: [Any], network: WalletNetwork) async throws -> Any {

@@ -190,7 +190,31 @@ struct ProgramSummary: Codable, Equatable, Identifiable {
 
     let programID: String
     let label: String
+    let category: TransactionProgramCategory
     let instructionCount: Int
+
+    init(programID: String, label: String, category: TransactionProgramCategory? = nil, instructionCount: Int) {
+        self.programID = programID
+        self.label = label
+        self.category = category ?? TransactionProgramCatalog.entry(for: programID).category
+        self.instructionCount = instructionCount
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case programID
+        case label
+        case category
+        case instructionCount
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        programID = try container.decode(String.self, forKey: .programID)
+        label = try container.decode(String.self, forKey: .label)
+        category = try container.decodeIfPresent(TransactionProgramCategory.self, forKey: .category)
+            ?? TransactionProgramCatalog.entry(for: programID).category
+        instructionCount = try container.decode(Int.self, forKey: .instructionCount)
+    }
 }
 
 struct SignerSummary: Codable, Equatable, Identifiable {
@@ -213,6 +237,60 @@ struct AddressLookupTableSummary: Codable, Equatable, Identifiable {
     let tableAddress: String
     let writableIndexCount: Int
     let readonlyIndexCount: Int
+    let writableIndexes: [Int]
+    let readonlyIndexes: [Int]
+    let loadedWritableAddresses: [String]
+    let loadedReadonlyAddresses: [String]
+    let resolutionStatus: TransactionAddressLookupResolutionStatus
+    let resolutionReason: String?
+
+    init(
+        tableAddress: String,
+        writableIndexCount: Int,
+        readonlyIndexCount: Int,
+        writableIndexes: [Int] = [],
+        readonlyIndexes: [Int] = [],
+        loadedWritableAddresses: [String] = [],
+        loadedReadonlyAddresses: [String] = [],
+        resolutionStatus: TransactionAddressLookupResolutionStatus = .unresolved,
+        resolutionReason: String? = nil
+    ) {
+        self.tableAddress = tableAddress
+        self.writableIndexCount = writableIndexCount
+        self.readonlyIndexCount = readonlyIndexCount
+        self.writableIndexes = writableIndexes
+        self.readonlyIndexes = readonlyIndexes
+        self.loadedWritableAddresses = loadedWritableAddresses
+        self.loadedReadonlyAddresses = loadedReadonlyAddresses
+        self.resolutionStatus = resolutionStatus
+        self.resolutionReason = resolutionReason
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case tableAddress
+        case writableIndexCount
+        case readonlyIndexCount
+        case writableIndexes
+        case readonlyIndexes
+        case loadedWritableAddresses
+        case loadedReadonlyAddresses
+        case resolutionStatus
+        case resolutionReason
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        tableAddress = try container.decode(String.self, forKey: .tableAddress)
+        writableIndexCount = try container.decode(Int.self, forKey: .writableIndexCount)
+        readonlyIndexCount = try container.decode(Int.self, forKey: .readonlyIndexCount)
+        writableIndexes = try container.decodeIfPresent([Int].self, forKey: .writableIndexes) ?? []
+        readonlyIndexes = try container.decodeIfPresent([Int].self, forKey: .readonlyIndexes) ?? []
+        loadedWritableAddresses = try container.decodeIfPresent([String].self, forKey: .loadedWritableAddresses) ?? []
+        loadedReadonlyAddresses = try container.decodeIfPresent([String].self, forKey: .loadedReadonlyAddresses) ?? []
+        resolutionStatus = try container.decodeIfPresent(TransactionAddressLookupResolutionStatus.self, forKey: .resolutionStatus)
+            ?? ((loadedWritableAddresses.isEmpty && loadedReadonlyAddresses.isEmpty) ? .unresolved : .loaded)
+        resolutionReason = try container.decodeIfPresent(String.self, forKey: .resolutionReason)
+    }
 }
 
 struct TransactionFeeSummary: Codable, Equatable {
@@ -237,12 +315,14 @@ struct DecodedTransaction: Codable, Equatable, Identifiable {
     let signatures: [String]
     let feePayer: String?
     let recentBlockhash: String
+    let staticAccountCount: Int
     let accountMetas: [DecodedAccountMeta]
     let instructions: [DecodedInstruction]
     let programSummaries: [ProgramSummary]
     let signerSummaries: [SignerSummary]
     let writableAccounts: [WritableAccountSummary]
     let addressLookupTables: [AddressLookupTableSummary]
+    let addressLookupOverview: TransactionAddressLookupOverview
     let feeSummary: TransactionFeeSummary
     let messageBase64: String
     let simulationTransactionBase64: String?
@@ -279,7 +359,29 @@ struct TransactionStudioSimulationSummary: Codable, Equatable {
     let unitsConsumed: UInt64?
     let errorMessage: String?
     let replacementBlockhashUsed: Bool
+    let watchList: TransactionAccountWatchList
+    let accountDiff: TransactionSimulationDiffSummary
     let simulatedAt: Date
+
+    init(
+        status: TransactionStudioSimulationStatus,
+        logs: [String],
+        unitsConsumed: UInt64?,
+        errorMessage: String?,
+        replacementBlockhashUsed: Bool,
+        watchList: TransactionAccountWatchList = .empty,
+        accountDiff: TransactionSimulationDiffSummary = .notRequested,
+        simulatedAt: Date
+    ) {
+        self.status = status
+        self.logs = logs
+        self.unitsConsumed = unitsConsumed
+        self.errorMessage = errorMessage
+        self.replacementBlockhashUsed = replacementBlockhashUsed
+        self.watchList = watchList
+        self.accountDiff = accountDiff
+        self.simulatedAt = simulatedAt
+    }
 
     static let notRun = TransactionStudioSimulationSummary(
         status: .notRun,
@@ -287,6 +389,8 @@ struct TransactionStudioSimulationSummary: Codable, Equatable {
         unitsConsumed: nil,
         errorMessage: nil,
         replacementBlockhashUsed: false,
+        watchList: .empty,
+        accountDiff: .notRequested,
         simulatedAt: Date()
     )
 
@@ -297,6 +401,8 @@ struct TransactionStudioSimulationSummary: Codable, Equatable {
             unitsConsumed: nil,
             errorMessage: reason,
             replacementBlockhashUsed: false,
+            watchList: .empty,
+            accountDiff: .unavailable(reason),
             simulatedAt: Date()
         )
     }
@@ -326,6 +432,8 @@ enum TransactionRiskFlagKind: String, Codable, Equatable, CaseIterable {
     case token2022TransferFee
     case upgradeableProgramInteraction
     case addressLookupTableUse
+    case addressLookupTableUnavailable
+    case manyLoadedWritableAccounts
     case highComputeUsage
     case simulationFailed
     case missingSimulation
@@ -375,6 +483,24 @@ struct TransactionStudioFetchedTransaction: Codable, Equatable {
     let transactionBase64: String
     let slot: UInt64?
     let blockTime: Date?
+    let loadedWritableAddresses: [String]
+    let loadedReadonlyAddresses: [String]
+
+    init(
+        signature: String,
+        transactionBase64: String,
+        slot: UInt64?,
+        blockTime: Date?,
+        loadedWritableAddresses: [String] = [],
+        loadedReadonlyAddresses: [String] = []
+    ) {
+        self.signature = signature
+        self.transactionBase64 = transactionBase64
+        self.slot = slot
+        self.blockTime = blockTime
+        self.loadedWritableAddresses = loadedWritableAddresses
+        self.loadedReadonlyAddresses = loadedReadonlyAddresses
+    }
 }
 
 struct TransactionStudioHistoryEntry: Codable, Equatable, Identifiable {
@@ -386,6 +512,11 @@ struct TransactionStudioHistoryEntry: Codable, Equatable, Identifiable {
     let simulationStatus: TransactionStudioSimulationStatus
     let recognizedInstructionCount: Int
     let unknownInstructionCount: Int
+    let transactionVersion: String?
+    let altUsed: Bool
+    let accountDiffAvailable: Bool
+    let loadedAccountCount: Int
+    let topProgramCategories: [String]
     let createdAt: Date
 
     init(
@@ -397,6 +528,11 @@ struct TransactionStudioHistoryEntry: Codable, Equatable, Identifiable {
         simulationStatus: TransactionStudioSimulationStatus,
         recognizedInstructionCount: Int = 0,
         unknownInstructionCount: Int = 0,
+        transactionVersion: String? = nil,
+        altUsed: Bool = false,
+        accountDiffAvailable: Bool = false,
+        loadedAccountCount: Int = 0,
+        topProgramCategories: [String] = [],
         createdAt: Date = Date()
     ) {
         self.id = id
@@ -407,6 +543,11 @@ struct TransactionStudioHistoryEntry: Codable, Equatable, Identifiable {
         self.simulationStatus = simulationStatus
         self.recognizedInstructionCount = recognizedInstructionCount
         self.unknownInstructionCount = unknownInstructionCount
+        self.transactionVersion = transactionVersion
+        self.altUsed = altUsed
+        self.accountDiffAvailable = accountDiffAvailable
+        self.loadedAccountCount = loadedAccountCount
+        self.topProgramCategories = topProgramCategories
         self.createdAt = createdAt
     }
 
@@ -419,6 +560,11 @@ struct TransactionStudioHistoryEntry: Codable, Equatable, Identifiable {
         case simulationStatus
         case recognizedInstructionCount
         case unknownInstructionCount
+        case transactionVersion
+        case altUsed
+        case accountDiffAvailable
+        case loadedAccountCount
+        case topProgramCategories
         case createdAt
     }
 
@@ -432,6 +578,11 @@ struct TransactionStudioHistoryEntry: Codable, Equatable, Identifiable {
         simulationStatus = try container.decode(TransactionStudioSimulationStatus.self, forKey: .simulationStatus)
         recognizedInstructionCount = try container.decodeIfPresent(Int.self, forKey: .recognizedInstructionCount) ?? 0
         unknownInstructionCount = try container.decodeIfPresent(Int.self, forKey: .unknownInstructionCount) ?? 0
+        transactionVersion = try container.decodeIfPresent(String.self, forKey: .transactionVersion)
+        altUsed = try container.decodeIfPresent(Bool.self, forKey: .altUsed) ?? false
+        accountDiffAvailable = try container.decodeIfPresent(Bool.self, forKey: .accountDiffAvailable) ?? false
+        loadedAccountCount = try container.decodeIfPresent(Int.self, forKey: .loadedAccountCount) ?? 0
+        topProgramCategories = try container.decodeIfPresent([String].self, forKey: .topProgramCategories) ?? []
         createdAt = try container.decode(Date.self, forKey: .createdAt)
     }
 }

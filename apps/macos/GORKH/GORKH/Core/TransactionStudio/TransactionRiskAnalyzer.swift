@@ -2,6 +2,7 @@ import Foundation
 
 enum TransactionRiskAnalyzer {
     private static let writableAccountWarningThreshold = 24
+    private static let loadedWritableWarningThreshold = 12
     private static let highComputeUnitThreshold: UInt64 = 1_200_000
 
     static func review(decoded: DecodedTransaction?, simulation: TransactionStudioSimulationSummary) -> TransactionRiskReview {
@@ -63,7 +64,13 @@ enum TransactionRiskAnalyzer {
             flags.append(.init(kind: .upgradeableProgramInteraction, level: .medium, message: "Upgradeable loader interaction is present. Confirm program-management intent."))
         }
         if decoded.addressLookupTables.isEmpty == false {
-            flags.append(.init(kind: .addressLookupTableUse, level: .medium, message: "Versioned transaction uses \(decoded.addressLookupTables.count) address lookup table(s). Loaded addresses are summarized, not fully expanded."))
+            flags.append(.init(kind: .addressLookupTableUse, level: .medium, message: "Versioned transaction uses \(decoded.addressLookupTables.count) address lookup table(s). Review loaded writable and readonly addresses."))
+            if decoded.addressLookupOverview.unresolvedTableCount > 0 {
+                flags.append(.init(kind: .addressLookupTableUnavailable, level: .unknown, message: "\(decoded.addressLookupOverview.unresolvedTableCount) lookup table(s) have unresolved loaded addresses. Do not assume hidden accounts are safe."))
+            }
+            if decoded.addressLookupOverview.loadedWritableCount >= loadedWritableWarningThreshold {
+                flags.append(.init(kind: .manyLoadedWritableAccounts, level: .medium, message: "Transaction loads \(decoded.addressLookupOverview.loadedWritableCount) writable ALT account(s). Review every loaded writable address."))
+            }
         }
         if let units = simulation.unitsConsumed, units >= highComputeUnitThreshold {
             flags.append(.init(kind: .highComputeUsage, level: .medium, message: "Simulation consumed \(units) compute units, which is high."))

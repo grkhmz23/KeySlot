@@ -3,6 +3,7 @@ import SwiftUI
 struct TransactionInstructionTimelineView: View {
     let decoded: DecodedTransaction?
     let addressSummary: TransactionStudioAddressSummary?
+    let accountEnrichment: TransactionAccountEnrichmentReport
 
     var body: some View {
         GorkhPanel("Decode Timeline") {
@@ -12,6 +13,8 @@ struct TransactionInstructionTimelineView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
                         metadata(decoded)
+                        altPanel(decoded)
+                        accountEnrichmentPanel(accountEnrichment)
                         ForEach(decoded.instructions) { instruction in
                             instructionRow(instruction)
                         }
@@ -39,6 +42,7 @@ struct TransactionInstructionTimelineView: View {
             HStack {
                 GorkhStatusChip(title: decoded.transactionVersion, systemImage: "doc.text", color: GorkhColors.accent)
                 GorkhStatusChip(title: "\(decoded.instructions.count) instruction(s)", systemImage: "list.bullet", color: GorkhColors.accent)
+                GorkhStatusChip(title: "\(decoded.staticAccountCount) static account(s)", systemImage: "person.2", color: GorkhColors.accent)
                 if decoded.addressLookupTables.isEmpty == false {
                     GorkhStatusChip(title: "\(decoded.addressLookupTables.count) ALT", systemImage: "tablecells", color: GorkhColors.warning)
                 }
@@ -51,6 +55,107 @@ struct TransactionInstructionTimelineView: View {
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(GorkhColors.secondaryText)
                 .textSelection(.enabled)
+        }
+    }
+
+    private func altPanel(_ decoded: DecodedTransaction) -> some View {
+        DisclosureGroup {
+            if decoded.addressLookupTables.isEmpty {
+                Text("No address lookup tables are referenced.")
+                    .foregroundStyle(GorkhColors.secondaryText)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        GorkhStatusChip(title: "\(decoded.addressLookupOverview.loadedWritableCount) loaded writable", systemImage: "square.and.pencil", color: GorkhColors.warning)
+                        GorkhStatusChip(title: "\(decoded.addressLookupOverview.loadedReadonlyCount) loaded readonly", systemImage: "eye", color: GorkhColors.accent)
+                        if decoded.addressLookupOverview.unresolvedTableCount > 0 {
+                            GorkhStatusChip(title: "\(decoded.addressLookupOverview.unresolvedTableCount) unresolved", systemImage: "questionmark.diamond", color: GorkhColors.warning)
+                        }
+                    }
+                    ForEach(decoded.addressLookupTables) { table in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(table.tableAddress)
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(GorkhColors.primaryText)
+                                .textSelection(.enabled)
+                            Text("Writable indexes: \(table.writableIndexes.map(String.init).joined(separator: ", "))")
+                                .font(.caption)
+                                .foregroundStyle(GorkhColors.secondaryText)
+                            Text("Readonly indexes: \(table.readonlyIndexes.map(String.init).joined(separator: ", "))")
+                                .font(.caption)
+                                .foregroundStyle(GorkhColors.secondaryText)
+                            Text("Status: \(table.resolutionStatus.title)\(table.resolutionReason.map { " - \($0)" } ?? "")")
+                                .font(.caption)
+                                .foregroundStyle(table.resolutionStatus == .loaded ? GorkhColors.secondaryText : GorkhColors.warning)
+                            ForEach(table.loadedWritableAddresses.prefix(6), id: \.self) { address in
+                                Text("Writable: \(address)")
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundStyle(GorkhColors.warning)
+                                    .textSelection(.enabled)
+                            }
+                            ForEach(table.loadedReadonlyAddresses.prefix(6), id: \.self) { address in
+                                Text("Readonly: \(address)")
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundStyle(GorkhColors.secondaryText)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                        .padding(8)
+                        .background(GorkhColors.panel)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                }
+            }
+        } label: {
+            Text("Versioned transaction / ALT review")
+                .font(.headline)
+                .foregroundStyle(GorkhColors.primaryText)
+        }
+    }
+
+    private func accountEnrichmentPanel(_ report: TransactionAccountEnrichmentReport) -> some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    GorkhStatusChip(title: report.status.title, systemImage: "magnifyingglass", color: report.status == .loaded ? GorkhColors.success : GorkhColors.warning)
+                    Text("Requested \(report.requestedCount)/\(report.maxRequestedCount) bounded account(s)")
+                        .font(.caption)
+                        .foregroundStyle(GorkhColors.secondaryText)
+                }
+                if report.truncated {
+                    Text("Watchlist was truncated to avoid heavy RPC usage.")
+                        .font(.caption)
+                        .foregroundStyle(GorkhColors.warning)
+                }
+                if let reason = report.unavailableReason {
+                    Text(reason)
+                        .font(.caption)
+                        .foregroundStyle(GorkhColors.warning)
+                }
+                ForEach(report.accounts.prefix(12)) { account in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(account.address)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(GorkhColors.primaryText)
+                            .textSelection(.enabled)
+                        Text("Owner: \(account.ownerLabel ?? account.ownerProgram ?? "unknown") | Lamports: \(account.lamports.map(String.init) ?? "unknown") | Data: \(account.dataLength.map(String.init) ?? "unknown") bytes")
+                            .font(.caption)
+                            .foregroundStyle(GorkhColors.secondaryText)
+                        if let mint = account.tokenMint {
+                            Text("Token account: mint \(mint), amount \(account.tokenUIAmount ?? account.tokenAmountRaw ?? "unknown")")
+                                .font(.caption)
+                                .foregroundStyle(GorkhColors.secondaryText)
+                        }
+                    }
+                    .padding(8)
+                    .background(GorkhColors.panel)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+            }
+        } label: {
+            Text("Bounded account enrichment")
+                .font(.headline)
+                .foregroundStyle(GorkhColors.primaryText)
         }
     }
 

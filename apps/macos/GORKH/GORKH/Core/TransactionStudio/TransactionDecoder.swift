@@ -12,15 +12,35 @@ enum TransactionDecoder {
         signature: String,
         slot: UInt64?,
         blockTime: Date?,
+        loadedWritableAddresses: [String] = [],
+        loadedReadonlyAddresses: [String] = [],
         network: WalletNetwork
     ) throws -> DecodedTransaction {
         guard let data = Data(base64Encoded: transactionBase64) else {
             throw TransactionStudioDecodeError.invalidRawTransaction("Fetched transaction payload was not valid base64.")
         }
-        return try decode(data: data, inputKind: .signature, fetchedSignature: signature, slot: slot, blockTime: blockTime, network: network)
+        return try decode(
+            data: data,
+            inputKind: .signature,
+            fetchedSignature: signature,
+            slot: slot,
+            blockTime: blockTime,
+            loadedWritableAddresses: loadedWritableAddresses,
+            loadedReadonlyAddresses: loadedReadonlyAddresses,
+            network: network
+        )
     }
 
-    static func decode(data: Data, inputKind: TransactionStudioInputKind, fetchedSignature: String?, slot: UInt64?, blockTime: Date?, network: WalletNetwork) throws -> DecodedTransaction {
+    static func decode(
+        data: Data,
+        inputKind: TransactionStudioInputKind,
+        fetchedSignature: String?,
+        slot: UInt64?,
+        blockTime: Date?,
+        loadedWritableAddresses: [String] = [],
+        loadedReadonlyAddresses: [String] = [],
+        network: WalletNetwork
+    ) throws -> DecodedTransaction {
         var cursor = 0
         let signatureCount = try readShortVector(data, cursor: &cursor)
         let signatureBytes = signatureCount * 64
@@ -75,7 +95,7 @@ enum TransactionDecoder {
         let recentBlockhash = Base58.encode(data.subdata(in: cursor..<(cursor + 32)))
         cursor += 32
 
-        let accountMetas = accountKeys.enumerated().map { index, address in
+        let staticAccountMetas = accountKeys.enumerated().map { index, address in
             let isSigner = index < requiredSignatures
             let isWritable: Bool
             if isSigner {
@@ -85,6 +105,13 @@ enum TransactionDecoder {
             }
             return DecodedAccountMeta(index: index, address: address, isSigner: isSigner, isWritable: isWritable)
         }
+        let loadedWritableMetas = loadedWritableAddresses.enumerated().map { offset, address in
+            DecodedAccountMeta(index: accountKeys.count + offset, address: address, isSigner: false, isWritable: true)
+        }
+        let loadedReadonlyMetas = loadedReadonlyAddresses.enumerated().map { offset, address in
+            DecodedAccountMeta(index: accountKeys.count + loadedWritableAddresses.count + offset, address: address, isSigner: false, isWritable: false)
+        }
+        let allAccountMetas = staticAccountMetas + loadedWritableMetas + loadedReadonlyMetas
 
         let instructionCount = try readShortVector(data, cursor: &cursor)
         var instructions: [DecodedInstruction] = []
@@ -107,13 +134,13 @@ enum TransactionDecoder {
             let instructionData = data.subdata(in: cursor..<(cursor + instructionDataLength))
             cursor += instructionDataLength
 
-            let programID = programIndex < accountKeys.count ? accountKeys[programIndex] : "Address lookup table program"
+            let programID = programIndex < allAccountMetas.count ? allAccountMetas[programIndex].address : "Address lookup table program"
             let label = TransactionInstructionLabeler.label(for: programID)
             let accounts = instructionAccountIndexes.compactMap { accountIndex -> DecodedAccountMeta? in
-                guard accountIndex < accountMetas.count else {
+                guard accountIndex < allAccountMetas.count else {
                     return nil
                 }
-                return accountMetas[accountIndex]
+                return allAccountMetas[accountIndex]
             }
             let parsed = TransactionInstructionParser.parse(
                 programID: programID,
@@ -136,6 +163,8 @@ enum TransactionDecoder {
 
         var addressLookupTables: [AddressLookupTableSummary] = []
         if version == "v0" {
+            var loadedWritableOffset = 0
+            var loadedReadonlyOffset = 0
             let lookupCount = try readShortVector(data, cursor: &cursor)
             for _ in 0..<lookupCount {
                 guard cursor + 32 <= data.count else {
@@ -147,16 +176,29 @@ enum TransactionDecoder {
                 guard cursor + writableCount <= data.count else {
                     throw TransactionStudioDecodeError.invalidRawTransaction("Address lookup table writable indexes are truncated.")
                 }
+                let writableIndexes = data[cursor..<(cursor + writableCount)].map(Int.init)
                 cursor += writableCount
                 let readonlyCount = try readShortVector(data, cursor: &cursor)
                 guard cursor + readonlyCount <= data.count else {
                     throw TransactionStudioDecodeError.invalidRawTransaction("Address lookup table readonly indexes are truncated.")
                 }
+                let readonlyIndexes = data[cursor..<(cursor + readonlyCount)].map(Int.init)
                 cursor += readonlyCount
+                let tableLoadedWritable = Array(loadedWritableAddresses.dropFirst(loadedWritableOffset).prefix(writableCount))
+                let tableLoadedReadonly = Array(loadedReadonlyAddresses.dropFirst(loadedReadonlyOffset).prefix(readonlyCount))
+                loadedWritableOffset += writableCount
+                loadedReadonlyOffset += readonlyCount
+                let hasLoadedAddresses = tableLoadedWritable.isEmpty == false || tableLoadedReadonly.isEmpty == false
                 addressLookupTables.append(AddressLookupTableSummary(
                     tableAddress: tableAddress,
                     writableIndexCount: writableCount,
-                    readonlyIndexCount: readonlyCount
+                    readonlyIndexCount: readonlyCount,
+                    writableIndexes: writableIndexes,
+                    readonlyIndexes: readonlyIndexes,
+                    loadedWritableAddresses: tableLoadedWritable,
+                    loadedReadonlyAddresses: tableLoadedReadonly,
+                    resolutionStatus: hasLoadedAddresses ? .loaded : .unresolved,
+                    resolutionReason: hasLoadedAddresses ? nil : "Loaded ALT addresses were not present in this transaction source."
                 ))
             }
         }
@@ -169,6 +211,12 @@ enum TransactionDecoder {
                 instructionCount: instructions.count
             )
         }.sorted { $0.label < $1.label }
+        let addressLookupOverview = TransactionAddressLookupOverview(
+            tableCount: addressLookupTables.count,
+            loadedWritableCount: loadedWritableAddresses.count,
+            loadedReadonlyCount: loadedReadonlyAddresses.count,
+            unresolvedTableCount: addressLookupTables.filter { $0.resolutionStatus != .loaded }.count
+        )
 
         let messageData = data.subdata(in: messageOffset..<data.count)
         return DecodedTransaction(
@@ -177,14 +225,16 @@ enum TransactionDecoder {
             transactionVersion: version,
             signatureCount: signatureCount,
             signatures: signatures,
-            feePayer: accountMetas.first?.address,
+            feePayer: staticAccountMetas.first?.address,
             recentBlockhash: recentBlockhash,
-            accountMetas: accountMetas,
+            staticAccountCount: staticAccountMetas.count,
+            accountMetas: allAccountMetas,
             instructions: instructions,
             programSummaries: programSummaries,
-            signerSummaries: accountMetas.filter(\.isSigner).map { SignerSummary(address: $0.address, isFeePayer: $0.index == 0) },
-            writableAccounts: accountMetas.filter(\.isWritable).map { WritableAccountSummary(address: $0.address, isSigner: $0.isSigner) },
+            signerSummaries: staticAccountMetas.filter(\.isSigner).map { SignerSummary(address: $0.address, isFeePayer: $0.index == 0) },
+            writableAccounts: allAccountMetas.filter(\.isWritable).map { WritableAccountSummary(address: $0.address, isSigner: $0.isSigner) },
             addressLookupTables: addressLookupTables,
+            addressLookupOverview: addressLookupOverview,
             feeSummary: TransactionFeeSummary(requiredSignatureCount: requiredSignatures, estimatedFeeLamports: nil),
             messageBase64: messageData.base64EncodedString(),
             simulationTransactionBase64: data.base64EncodedString(),

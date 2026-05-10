@@ -57,6 +57,8 @@ History stores only public references, summaries, risk level, simulation status,
 4. `TransactionInstructionLabeler` still labels known programs and provides conservative fallback text.
 5. Unknown data remains `Unknown instruction data`.
 6. Address lookup uses public account info only.
+7. For fetched v0 transactions, `meta.loadedAddresses` is preserved when RPC returns it.
+8. Raw v0 transactions show lookup table references and indexes, but loaded addresses remain unresolved unless provided by the source.
 
 Known labels include System Program, SPL Token, Token-2022, Associated Token Account, Compute Budget, Memo, Address Lookup Table, Jupiter, Orca Whirlpool, Raydium AMM/CPMM/CLMM, Meteora DLMM, Kamino, MarginFi, Cloak, and Unknown Program.
 
@@ -70,11 +72,32 @@ T2 parser coverage includes:
 - Memo: UTF-8 memo text with long memo truncation.
 - Jupiter: route labeling only. Route internals remain opaque unless the layout is confidently known.
 
+T3 versioned transaction review includes:
+
+- transaction version,
+- static account count,
+- lookup table account count,
+- lookup writable/readonly indexes,
+- loaded writable/readonly addresses when RPC provides them,
+- unresolved ALT state when loaded addresses are absent.
+
+Transaction Studio does not create, extend, freeze, deactivate, or close lookup tables.
+
+## Account Enrichment
+
+Decoded transactions build a bounded account watchlist from fee payer, required signers, writable accounts, and writable instruction accounts. The watchlist is capped at 20 accounts and uses only read-only `getParsedAccountInfo`.
+
+Enrichment may show owner program, executable flag, lamports, data length, and token-account hints when RPC returns parsed token data. Failures produce partial or unavailable state instead of blocking decode.
+
+Transaction Studio does not use broad `getProgramAccounts` scanning.
+
 ## Simulation
 
 Simulation uses the existing Solana RPC client with `simulateTransaction`, `sigVerify: false`, and `replaceRecentBlockhash: false`.
 
 Simulation never signs, never mutates signatures, and never submits the transaction. If RPC is unavailable or the transaction cannot be simulated, Studio shows an honest unavailable state.
+
+When a bounded watchlist is available, simulation asks RPC for post-simulation account states and compares them with the pre-simulation enrichment snapshot. Diffs are shown only when both sides are available. If RPC does not return account state, Studio shows `Account diff unavailable from simulation` and does not infer balance changes from instruction names.
 
 ## Risk Review
 
@@ -93,6 +116,8 @@ Risk flags are deterministic. Current flags cover:
 - Token-2022 extension risk,
 - upgradeable loader interaction,
 - address lookup table use,
+- unresolved ALT addresses,
+- many loaded writable ALT addresses,
 - high compute usage,
 - failed or missing simulation,
 - mainnet review,
