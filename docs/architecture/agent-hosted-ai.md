@@ -66,10 +66,26 @@ The hosted response cannot approve, execute, sign, or change deterministic execu
 
 If a hosted response claims approval or execution, GORKH ignores the claim, marks the response degraded, and audits a safe summary.
 
+Phase A9 extends this merge rule to the full app. Hosted AI can enrich full-app explanations, risk summaries, missing-field prompts, and proposal copy. The deterministic full-app intent classifier, tool registry, handoff coordinator, approval queue, and policy engine remain authoritative.
+
 ## Tool Boundary
 
 Allowed AI tool suggestions:
 
+- `getWalletOverviewSummary`
+- `getPortfolioSummary`
+- `getAssetSummary`
+- `getPUSDSummary`
+- `getStakeLstSummary`
+- `getLendingSummary`
+- `getLiquiditySummary`
+- `getYieldSummary`
+- `getPnLSummary`
+- `getActivitySummary`
+- `getSecuritySummary`
+- `getRPCStatus`
+- `getCloakStatus`
+- `getZerionStatus`
 - `summarizePortfolio`
 - `summarizeRisk`
 - `summarizeYield`
@@ -79,6 +95,8 @@ Allowed AI tool suggestions:
 - `draftPUSDPayment`
 - `draftCloakPayment`
 - `draftZerionTinySwap`
+- `draftMainWalletSwap`
+- `draftMainWalletSend`
 
 Execution, shell, secret-export, bridge, send, sign, and arbitrary command suggestions are blocked and audited.
 

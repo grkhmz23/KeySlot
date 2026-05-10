@@ -45,4 +45,8 @@ struct AgentMemoryStore: Codable, Equatable {
         entries.insert(entry, at: 0)
         entries = Array(entries.prefix(limit))
     }
+
+    mutating func clear() {
+        entries.removeAll()
+    }
 }

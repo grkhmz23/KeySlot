@@ -12,14 +12,13 @@ struct AgentChatView: View {
     let isAIResponding: Bool
     let submitAction: () -> Void
     let handoffAction: (AgentProposal) -> Void
+    let clearMemoryAction: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            AgentGuardrailBannerView()
             GorkhPanel("Agent Chat") {
                 VStack(alignment: .leading, spacing: 12) {
-                    Label("Chat can classify, summarize, and prepare proposals. It cannot sign or execute; every executable request is handed off for review.", systemImage: "shield.lefthalf.filled")
-                        .foregroundStyle(GorkhColors.secondaryText)
-
                     HStack(spacing: 8) {
                         GorkhStatusChip(title: safetyPolicy.mainWalletAccess.label, systemImage: "xmark.shield", color: GorkhColors.warning)
                         GorkhStatusChip(title: "Proposals only", systemImage: "doc.badge.gearshape", color: GorkhColors.accent)
@@ -54,6 +53,7 @@ struct AgentChatView: View {
 
                 VStack(alignment: .leading, spacing: 12) {
                     AgentAIStatusView(status: aiStatus, isResponding: isAIResponding)
+                    AgentFullAppHelpView()
 
                     if let lastIntent {
                         AgentIntentCardView(classification: lastIntent)
@@ -76,6 +76,8 @@ struct AgentChatView: View {
                         }
                     }
 
+                    AgentApprovalQueueView(proposals: proposals)
+
                     if memoryEntries.isEmpty == false {
                         GorkhPanel("Recent Agent Context") {
                             VStack(alignment: .leading, spacing: 6) {
@@ -85,6 +87,14 @@ struct AgentChatView: View {
                                         .foregroundStyle(GorkhColors.secondaryText)
                                         .lineLimit(2)
                                 }
+
+                                Button {
+                                    clearMemoryAction()
+                                } label: {
+                                    Label("Clear memory", systemImage: "trash")
+                                }
+                                .buttonStyle(.gorkhSecondary)
+                                .accessibilityIdentifier("agent.memory.clear")
                             }
                         }
                     }

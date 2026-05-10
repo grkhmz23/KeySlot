@@ -20,10 +20,71 @@ struct AgentIntentClassifier {
         let chain = firstChain(in: lower)
         let tokens = tokenSymbols(in: trimmed)
 
+        if lower == "help" || lower.contains("what can you do") || lower.contains("how can you help") {
+            return AgentIntentClassification(input: input, intentType: lower == "help" ? .help : .whatCanYouDo, confidence: 0.92, riskFlags: [.readOnlyOnly])
+        }
+        if containsAny(lower, ["rpc", "rpc fast", "infrastructure", "endpoint status"]) {
+            return AgentIntentClassification(input: input, intentType: .rpcStatus, confidence: 0.88, riskFlags: [.readOnlyOnly])
+        }
+        if containsAny(lower, ["security", "safe for mainnet", "mainnet safe", "wallet safe", "is my wallet safe"]) {
+            return AgentIntentClassification(input: input, intentType: .securityStatus, confidence: 0.88, riskFlags: [.readOnlyOnly])
+        }
+        if containsAny(lower, ["receive address", "receive panel", "copy address", "payment request address"]) && lower.contains("pusd") == false {
+            return AgentIntentClassification(input: input, intentType: .receiveAddress, chain: chain ?? "solana", confidence: 0.86, riskFlags: [.readOnlyOnly])
+        }
+        if containsAny(lower, ["wallet overview", "overview", "what do i own", "what is it worth"]) {
+            return AgentIntentClassification(input: input, intentType: .walletOverview, confidence: 0.86, riskFlags: [.readOnlyOnly])
+        }
+        if containsAny(lower, ["asset breakdown", "assets", "top tokens", "token balances"]) {
+            return AgentIntentClassification(input: input, intentType: .assetBreakdown, sourceAsset: tokens.first, confidence: 0.84, riskFlags: [.readOnlyOnly])
+        }
+        if containsAny(lower, ["wallet breakdown", "wallets", "watch-only", "watch only"]) {
+            return AgentIntentClassification(input: input, intentType: .walletBreakdown, confidence: 0.84, riskFlags: [.readOnlyOnly])
+        }
+        if lower.contains("pusd") && containsAny(lower, ["treasury", "balance", "summary", "circulation", "exposure"]) {
+            return AgentIntentClassification(input: input, intentType: .pusdTreasurySummary, sourceAsset: "PUSD", chain: "solana", confidence: 0.88, riskFlags: [.readOnlyOnly])
+        }
+        if containsAny(lower, ["stake", "lst", "jitosol", "msol", "bsol", "liquid staking"]) {
+            return AgentIntentClassification(input: input, intentType: .stakeLstSummary, sourceAsset: tokens.first, confidence: 0.84, riskFlags: [.readOnlyOnly])
+        }
+        if containsAny(lower, ["lending", "kamino", "marginfi", "borrow status", "supply apy"]) {
+            return AgentIntentClassification(input: input, intentType: .lendingSummary, sourceAsset: tokens.first, confidence: 0.84, riskFlags: [.readOnlyOnly])
+        }
+        if (lower.contains("cloak") || lower.contains("private")) && containsAny(lower, ["status", "scan", "history", "state", "validated"]) {
+            let type: AgentIntentType
+            if lower.contains("scan") || lower.contains("history") {
+                type = .cloakScanSummary
+            } else if lower.contains("state") {
+                type = .explainPrivateState
+            } else {
+                type = .cloakStatus
+            }
+            return AgentIntentClassification(input: input, intentType: type, chain: "solana", confidence: 0.86, riskFlags: [.readOnlyOnly])
+        }
+        if lower.contains("zerion") && containsAny(lower, ["status", "policy", "proposal", "token"]) && (lower.contains("swap") == false && lower.contains("buy") == false) {
+            let type: AgentIntentType
+            if lower.contains("policy") || lower.contains("token") {
+                type = .zerionPolicySummary
+            } else if lower.contains("proposal") {
+                type = .zerionProposalStatus
+            } else {
+                type = .zerionStatus
+            }
+            return AgentIntentClassification(input: input, intentType: type, chain: chain, confidence: 0.86, riskFlags: [.readOnlyOnly])
+        }
         if lower.contains("zerion") || lower.contains("agent wallet") || lower.contains("policy wallet") {
             if lower.contains("swap") || lower.contains("buy") {
-                return swapLike(input: input, type: .zerionTinySwapRequest, amount: amount, recipient: recipient, chain: chain, tokens: tokens, lower: lower)
+                return swapLike(input: input, type: lower.contains("prepare") ? .zerionPrepareTinySwap : .zerionTinySwapRequest, amount: amount, recipient: recipient, chain: chain, tokens: tokens, lower: lower)
             }
+        }
+        if lower.contains("swap") && (lower.contains("explain") || lower.contains("why") || lower.contains("quote")) {
+            return AgentIntentClassification(input: input, intentType: .explainSwap, amount: amount, sourceAsset: tokens.first, targetAsset: tokens.dropFirst().first, chain: chain ?? "solana", confidence: 0.82, riskFlags: [.readOnlyOnly])
+        }
+        if lower.contains("prepare") && lower.contains("swap") {
+            return swapLike(input: input, type: .prepareSwap, amount: amount, recipient: recipient, chain: chain, tokens: tokens, lower: lower)
+        }
+        if lower.contains("prepare") && (lower.contains("send") || lower.contains("transfer")) && lower.contains("pusd") == false {
+            return sendLike(input: input, type: .prepareSend, amount: amount, recipient: recipient, chain: chain, tokens: tokens)
         }
 
         if (lower.contains("private") || lower.contains("cloak")) && (lower.contains("pay") || lower.contains("payment") || lower.contains("send") || lower.contains("prepare")) {
@@ -70,13 +131,17 @@ struct AgentIntentClassifier {
             return AgentIntentClassification(input: input, intentType: .recentActivitySummary, confidence: 0.88, riskFlags: [.readOnlyOnly])
         }
         if lower.contains("pnl") || lower.contains("performance") || lower.contains("cost basis") {
-            return AgentIntentClassification(input: input, intentType: .pnlSummary, confidence: 0.86, riskFlags: [.readOnlyOnly])
+            return AgentIntentClassification(input: input, intentType: lower.contains("cost basis") ? .costBasisHelp : .pnlSummary, confidence: 0.86, riskFlags: [.readOnlyOnly])
+        }
+        if lower.contains("history") || lower.contains("snapshot") {
+            return AgentIntentClassification(input: input, intentType: .portfolioHistorySummary, confidence: 0.82, riskFlags: [.readOnlyOnly])
         }
         if lower.contains("yield") || lower.contains("apy") || lower.contains("safer") {
             return AgentIntentClassification(input: input, intentType: .yieldSearch, sourceAsset: tokens.first, confidence: 0.86, riskFlags: [.readOnlyOnly])
         }
         if lower.contains("lp") || lower.contains("liquidity") || lower.contains("pool") {
-            return AgentIntentClassification(input: input, intentType: .lpPositionReview, sourceAsset: tokens.first, confidence: 0.86, riskFlags: [.readOnlyOnly])
+            let type: AgentIntentType = lower.contains("summary") ? .liquiditySummary : .lpPositionReview
+            return AgentIntentClassification(input: input, intentType: type, sourceAsset: tokens.first, confidence: 0.86, riskFlags: [.readOnlyOnly])
         }
 
         if lower.contains("buy") {
@@ -103,22 +168,7 @@ struct AgentIntentClassifier {
         }
 
         if lower.contains("send") || lower.contains("transfer") {
-            var missing: [String] = []
-            var flags: [AgentRiskFlag] = [.mainWalletApprovalRequired]
-            if amount == nil { missing.append("amount"); flags.append(.missingAmount) }
-            if tokens.first == nil { missing.append("token"); flags.append(.missingToken) }
-            if recipient == nil { missing.append("recipient"); flags.append(.missingRecipient) }
-            return AgentIntentClassification(
-                input: input,
-                intentType: .tokenSendRequest,
-                amount: amount,
-                sourceAsset: tokens.first,
-                chain: chain ?? "solana",
-                recipient: recipient,
-                confidence: missing.isEmpty ? 0.82 : 0.62,
-                missingFields: missing,
-                riskFlags: flags
-            )
+            return sendLike(input: input, type: .tokenSendRequest, amount: amount, recipient: recipient, chain: chain, tokens: tokens)
         }
 
         return AgentIntentClassification(input: input, intentType: .unsupported, confidence: 0.35, riskFlags: [.unsupportedAction])
@@ -154,6 +204,36 @@ struct AgentIntentClassifier {
         )
     }
 
+    private func sendLike(
+        input: String,
+        type: AgentIntentType,
+        amount: Decimal?,
+        recipient: String?,
+        chain: String?,
+        tokens: [String]
+    ) -> AgentIntentClassification {
+        var missing: [String] = []
+        var flags: [AgentRiskFlag] = [.mainWalletApprovalRequired]
+        if amount == nil { missing.append("amount"); flags.append(.missingAmount) }
+        if tokens.first == nil { missing.append("token"); flags.append(.missingToken) }
+        if recipient == nil { missing.append("recipient"); flags.append(.missingRecipient) }
+        return AgentIntentClassification(
+            input: input,
+            intentType: type,
+            amount: amount,
+            sourceAsset: tokens.first,
+            chain: chain ?? "solana",
+            recipient: recipient,
+            confidence: missing.isEmpty ? 0.82 : 0.62,
+            missingFields: missing,
+            riskFlags: flags
+        )
+    }
+
+    private func containsAny(_ lower: String, _ terms: [String]) -> Bool {
+        terms.contains { lower.contains($0) }
+    }
+
     private func containsUnsafeTerm(_ lower: String) -> Bool {
         [
             "private key",
@@ -176,7 +256,9 @@ struct AgentIntentClassifier {
             "bridge",
             "perp",
             "leverage",
-            "borrow",
+            "borrow now",
+            "borrow funds",
+            "open borrow",
             "deposit to lending",
             "add liquidity",
             "remove liquidity",
@@ -218,7 +300,10 @@ struct AgentIntentClassifier {
             "BUY", "SWAP", "SEND", "TO", "FOR", "ON", "FROM", "THIS", "TOKEN", "FIND", "CHECK",
             "MY", "AND", "PRIVATE", "PAYMENT", "PREPARE", "ZERION", "BASE", "SOLANA", "SAFER",
             "BETTER", "YIELD", "APY", "RISK", "PORTFOLIO", "SUMMARY", "ACTIVITY", "RECENT",
-            "TODAY", "POSITION", "POSITIONS", "POOL", "POOLS", "LIQUIDITY", "CHANGED", "WHAT"
+            "TODAY", "POSITION", "POSITIONS", "POOL", "POOLS", "LIQUIDITY", "CHANGED", "WHAT",
+            "OVERVIEW", "ASSETS", "WALLETS", "SECURITY", "RPC", "STATUS", "CLOAK", "HISTORY",
+            "PNL", "PERFORMANCE", "COST", "BASIS", "STAKE", "LST", "LENDING", "KAMINO", "MARGINFI",
+            "HELP", "RECEIVE", "ADDRESS", "QUOTE", "EXPLAIN"
         ]
         let pattern = #"\b[A-Za-z][A-Za-z0-9]{1,9}\b"#
         let regex = try? NSRegularExpression(pattern: pattern)

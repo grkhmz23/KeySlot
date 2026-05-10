@@ -97,10 +97,23 @@ enum AgentProposalStatus: String, Codable, CaseIterable, Identifiable, Equatable
 }
 
 enum AgentHandoffTarget: String, Codable, CaseIterable, Identifiable, Equatable {
+    case walletOverview
+    case walletReceive
     case walletSwap
     case walletSend
     case walletPrivate
     case walletPortfolio
+    case portfolioAssets
+    case portfolioWallets
+    case portfolioPUSD
+    case portfolioStake
+    case portfolioLending
+    case portfolioLiquidity
+    case portfolioYield
+    case portfolioPnL
+    case portfolioHistory
+    case walletSecurity
+    case walletActivity
     case zerionReview
     case none
 
@@ -108,6 +121,10 @@ enum AgentHandoffTarget: String, Codable, CaseIterable, Identifiable, Equatable 
 
     var title: String {
         switch self {
+        case .walletOverview:
+            return "Open Wallet Overview"
+        case .walletReceive:
+            return "Open Receive"
         case .walletSwap:
             return "Open Swap Review"
         case .walletSend:
@@ -116,6 +133,28 @@ enum AgentHandoffTarget: String, Codable, CaseIterable, Identifiable, Equatable 
             return "Open Private"
         case .walletPortfolio:
             return "Open Portfolio"
+        case .portfolioAssets:
+            return "Open Portfolio Assets"
+        case .portfolioWallets:
+            return "Open Portfolio Wallets"
+        case .portfolioPUSD:
+            return "Open PUSD Treasury"
+        case .portfolioStake:
+            return "Open Stake / LST"
+        case .portfolioLending:
+            return "Open Lending"
+        case .portfolioLiquidity:
+            return "Open Liquidity"
+        case .portfolioYield:
+            return "Open Yield"
+        case .portfolioPnL:
+            return "Open PnL"
+        case .portfolioHistory:
+            return "Open Portfolio History"
+        case .walletSecurity:
+            return "Open Security"
+        case .walletActivity:
+            return "Open Activity"
         case .zerionReview:
             return "Open Zerion Review"
         case .none:

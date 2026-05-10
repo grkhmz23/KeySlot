@@ -46,6 +46,16 @@ struct AgentAuditEvent: Codable, Equatable, Identifiable {
         case hostedTimeoutFallback = "hosted_timeout_fallback"
         case hostedUnsafeResponseBlocked = "hosted_unsafe_response_blocked"
         case hostedMalformedResponseBlocked = "hosted_malformed_response_blocked"
+        case fullAppIntentClassified = "full_app_intent_classified"
+        case localToolCalled = "local_tool_called"
+        case localToolBlocked = "local_tool_blocked"
+        case hostedAIUsed = "hosted_ai_used"
+        case hostedAIFallback = "hosted_ai_fallback"
+        case proposalHydrated = "proposal_hydrated"
+        case handoffOpened = "handoff_opened"
+        case approvalQueueViewed = "approval_queue_viewed"
+        case memoryCleared = "memory_cleared"
+        case unsafeRequestBlocked = "unsafe_request_blocked"
 
         var label: String {
             switch self {
@@ -137,6 +147,26 @@ struct AgentAuditEvent: Codable, Equatable, Identifiable {
                 return "Hosted unsafe response blocked"
             case .hostedMalformedResponseBlocked:
                 return "Hosted malformed response blocked"
+            case .fullAppIntentClassified:
+                return "Full-app intent classified"
+            case .localToolCalled:
+                return "Local tool called"
+            case .localToolBlocked:
+                return "Local tool blocked"
+            case .hostedAIUsed:
+                return "Hosted AI used"
+            case .hostedAIFallback:
+                return "Hosted AI fallback"
+            case .proposalHydrated:
+                return "Proposal hydrated"
+            case .handoffOpened:
+                return "Handoff opened"
+            case .approvalQueueViewed:
+                return "Approval queue viewed"
+            case .memoryCleared:
+                return "Memory cleared"
+            case .unsafeRequestBlocked:
+                return "Unsafe request blocked"
             }
         }
     }

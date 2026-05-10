@@ -35,6 +35,8 @@ struct AgentProposalCardView: View {
                 AgentPolicyDecisionView(decision: proposal.policyDecision)
 
                 if proposal.handoffTarget != .none {
+                    AgentHandoffCardView(instruction: AgentHandoffCoordinator.instruction(for: proposal))
+
                     Button {
                         handoffAction(proposal)
                     } label: {

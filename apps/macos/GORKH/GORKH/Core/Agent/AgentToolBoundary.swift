@@ -1,6 +1,20 @@
 import Foundation
 
 enum AgentToolSuggestion: String, Codable, CaseIterable, Identifiable, Equatable {
+    case getWalletOverviewSummary
+    case getPortfolioSummary
+    case getAssetSummary
+    case getPUSDSummary
+    case getStakeLstSummary
+    case getLendingSummary
+    case getLiquiditySummary
+    case getYieldSummary
+    case getPnLSummary
+    case getActivitySummary
+    case getSecuritySummary
+    case getRPCStatus
+    case getCloakStatus
+    case getZerionStatus
     case summarizePortfolio
     case summarizeRisk
     case summarizeYield
@@ -10,6 +24,8 @@ enum AgentToolSuggestion: String, Codable, CaseIterable, Identifiable, Equatable
     case draftPUSDPayment
     case draftCloakPayment
     case draftZerionTinySwap
+    case draftMainWalletSwap
+    case draftMainWalletSend
 
     var id: String { rawValue }
 }
@@ -28,12 +44,15 @@ enum AgentToolBoundary {
 
     private static let allowedNames = Set(AgentToolSuggestion.allCases.map(\.rawValue))
     private static let blockedNames: Set<String> = [
-        "executeSwap",
-        "sendTransaction",
-        "signTransaction",
-        "bridge",
-        "sendToken",
-        "exportSeed",
+            "executeSwap",
+            "executeSend",
+            "executeBridge",
+            "executeCloakPayment",
+            "sendTransaction",
+            "signTransaction",
+            "bridge",
+            "sendToken",
+            "exportSeed",
         "revealPrivateKey",
         "runShell",
         "arbitraryCommand"
@@ -56,4 +75,3 @@ enum AgentToolBoundary {
         return AgentToolBoundaryDecision(allowed: allowed, blocked: blocked)
     }
 }
-

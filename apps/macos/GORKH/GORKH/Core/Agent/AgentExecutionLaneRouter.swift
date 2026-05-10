@@ -7,18 +7,47 @@ enum AgentExecutionLaneRouter {
         }
 
         switch classification.intentType {
-        case .zerionTinySwapRequest:
+        case .zerionTinySwapRequest, .zerionPrepareTinySwap:
             return .zerionAgentWallet
         case .tokenBuyRequest:
             if classification.input.lowercased().contains("zerion") || classification.input.lowercased().contains("agent wallet") {
                 return .zerionAgentWallet
             }
             return .mainWallet
-        case .tokenSwapRequest, .tokenSendRequest, .pusdPaymentRequest:
+        case .prepareSwap, .tokenSwapRequest, .prepareSend, .tokenSendRequest, .pusdPaymentRequest:
             return .mainWallet
-        case .cloakPrivatePaymentRequest:
+        case .prepareCloakDeposit, .cloakPrivatePaymentRequest, .prepareCloakPrivatePayment:
             return .cloakPrivate
-        case .portfolioSummary, .riskSummary, .yieldSearch, .lpPositionReview, .pnlSummary, .recentActivitySummary:
+        case .walletOverview,
+             .receiveAddress,
+             .explainSwap,
+             .securityStatus,
+             .activitySummary,
+             .rpcStatus,
+             .portfolioSummary,
+             .assetBreakdown,
+             .walletBreakdown,
+             .pusdTreasurySummary,
+             .stakeLstSummary,
+             .lendingSummary,
+             .liquiditySummary,
+             .yieldSummary,
+             .costBasisHelp,
+             .portfolioHistorySummary,
+             .riskSummary,
+             .cloakStatus,
+             .cloakScanSummary,
+             .explainPrivateState,
+             .yieldSearch,
+             .lpPositionReview,
+             .pnlSummary,
+             .recentActivitySummary,
+             .zerionStatus,
+             .zerionPolicySummary,
+             .zerionProposalStatus,
+             .help,
+             .whatCanYouDo,
+             .missingFields:
             return .readOnlyAnalysis
         case .unsupported, .unsafe:
             return .unsupported

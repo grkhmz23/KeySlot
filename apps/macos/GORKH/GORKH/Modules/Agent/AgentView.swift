@@ -59,7 +59,8 @@ struct AgentView: View {
                         aiStatus: aiStatus,
                         isAIResponding: isAIResponding,
                         submitAction: submitChatMessage,
-                        handoffAction: handoffAgentProposal
+                        handoffAction: handoffAgentProposal,
+                        clearMemoryAction: clearAgentMemory
                     )
                 case .zerionExecutor:
                     ZerionExecutorView(
@@ -182,8 +183,14 @@ struct AgentView: View {
     }
 
     private func processChatInput(_ input: String) async {
-        let classification = AgentIntentClassifier().classify(input)
+        let fullAppIntent = AgentFullAppIntentClassifier.classify(input)
+        let classification = fullAppIntent.classification
         lastIntent = classification
+        appendAudit(
+            .fullAppIntentClassified,
+            "Full-app intent classified as \(classification.intentType.title).",
+            details: ["area": fullAppIntent.appArea.rawValue, "intent": classification.intentType.rawValue]
+        )
         appendAudit(
             .agentIntentClassified,
             "Intent classified as \(classification.intentType.title).",
@@ -197,16 +204,19 @@ struct AgentView: View {
         let aiResult = await hostedAIResult(for: input, classification: classification)
 
         if lane == .readOnlyAnalysis {
-            let result = AgentDeFiOpportunityAnalyzer.analyze(
+            let result = AgentToolExecutor.execute(
                 classification: classification,
-                portfolioSummary: walletManager.portfolioSummary,
-                pnlSummary: walletManager.portfolioPnLSummary,
-                auditEvents: walletManager.auditEvents
-            )
+                context: toolExecutionContext()
+            ) ?? readOnlyFallbackResult(for: classification)
             toolResults.insert(result, at: 0)
             agentMemory.remember(intent: classification, result: result)
             chatMessages.append(AgentChatMessage(role: .assistant, text: assistantMessage(localMessage: result.summary, aiResult: aiResult)))
             appendAudit(.agentReadOnlyAnalysisPerformed, result.title, details: ["intent": classification.intentType.rawValue])
+            if let toolID = fullAppIntent.defaultToolID {
+                appendAudit(.localToolCalled, "Local read-only tool called.", details: ["tool": toolID.rawValue])
+            } else {
+                appendAudit(.localToolBlocked, "No local tool was required for this read-only intent.", details: ["intent": classification.intentType.rawValue])
+            }
             return
         }
 
@@ -229,6 +239,7 @@ struct AgentView: View {
         let proposal = AgentProposalFactory.makeProposal(classification: classification, lane: lane, decision: decision)
         agentProposals.insert(proposal, at: 0)
         agentMemory.remember(intent: classification, proposal: proposal)
+        appendAudit(.proposalHydrated, "Agent proposal hydrated from deterministic policy.", details: ["type": proposal.type.rawValue, "handoff": proposal.handoffTarget.rawValue])
 
         switch decision.status {
         case .allowed:
@@ -250,7 +261,7 @@ struct AgentView: View {
     private func hostedAIResult(for input: String, classification: AgentIntentClassification) async -> AgentLLMProviderResult? {
         do {
             let redactedInput = try AgentRedactedContextBuilder.redactedUserMessageForAI(input)
-            let context = try AgentRedactedContextBuilder.build(
+            let hydrated = try AgentContextHydrator.hydrate(
                 portfolioSummary: walletManager.portfolioSummary,
                 pnlSummary: walletManager.portfolioPnLSummary,
                 pusdCirculationSnapshot: walletManager.pusdCirculationSnapshot,
@@ -264,7 +275,7 @@ struct AgentView: View {
                 conversationID: conversationID,
                 userMessage: redactedInput.message,
                 deterministicIntent: classification,
-                redactedContext: context,
+                redactedContext: hydrated.redactedContext,
                 enabledLocalTools: AgentToolBoundary.enabledLocalTools,
                 policyState: .current,
                 safetyMode: "hosted_ai_advisory_policy_deterministic"
@@ -284,6 +295,7 @@ struct AgentView: View {
 
             if result.status.mode == .localSafeMode {
                 appendAudit(.hostedAIUnavailableFallback, result.status.message)
+                appendAudit(.hostedAIFallback, result.status.message)
                 appendAudit(.localSafeModeUsed, "Local safe mode used for Agent response.")
                 if result.status.fallbackReason?.lowercased().contains("authentication failed") == true {
                     appendAudit(.hostedAuthFailure, "Hosted AI authentication failed.")
@@ -297,6 +309,7 @@ struct AgentView: View {
                     details["requestId"] = requestID
                 }
                 appendAudit(.hostedAIResponseReceived, "Hosted AI response received.", details: details)
+                appendAudit(.hostedAIUsed, "Hosted AI enriched Agent response.", details: details)
             }
             for blocked in result.toolBoundaryDecision.blocked {
                 appendAudit(.aiToolSuggestionBlocked, "AI tool suggestion blocked.", details: ["tool": blocked])
@@ -341,19 +354,45 @@ struct AgentView: View {
             return
         }
 
+        let instruction = AgentHandoffCoordinator.instruction(for: proposal)
         switch proposal.handoffTarget {
         case .walletSwap:
             markAgentProposalHandedOff(proposal)
+            appendAudit(.handoffOpened, instruction.title, details: ["target": proposal.handoffTarget.rawValue])
             appState.requestWalletSection(.swap)
         case .walletSend:
             markAgentProposalHandedOff(proposal)
+            appendAudit(.handoffOpened, instruction.title, details: ["target": proposal.handoffTarget.rawValue])
             appState.requestWalletSection(.send)
         case .walletPrivate:
             markAgentProposalHandedOff(proposal)
+            appendAudit(.handoffOpened, instruction.title, details: ["target": proposal.handoffTarget.rawValue])
             appState.requestWalletSection(.privateWallet)
-        case .walletPortfolio:
+        case .walletOverview, .walletReceive:
             markAgentProposalHandedOff(proposal)
+            appendAudit(.handoffOpened, instruction.title, details: ["target": proposal.handoffTarget.rawValue])
+            appState.requestWalletSection(.overview)
+        case .walletPortfolio,
+             .portfolioAssets,
+             .portfolioWallets,
+             .portfolioPUSD,
+             .portfolioStake,
+             .portfolioLending,
+             .portfolioLiquidity,
+             .portfolioYield,
+             .portfolioPnL,
+             .portfolioHistory:
+            markAgentProposalHandedOff(proposal)
+            appendAudit(.handoffOpened, instruction.title, details: ["target": proposal.handoffTarget.rawValue])
             appState.requestWalletSection(.portfolio)
+        case .walletSecurity:
+            markAgentProposalHandedOff(proposal)
+            appendAudit(.handoffOpened, instruction.title, details: ["target": proposal.handoffTarget.rawValue])
+            appState.requestWalletSection(.security)
+        case .walletActivity:
+            markAgentProposalHandedOff(proposal)
+            appendAudit(.handoffOpened, instruction.title, details: ["target": proposal.handoffTarget.rawValue])
+            appState.requestWalletSection(.activity)
         case .zerionReview:
             guard let tinySwap = AgentProposalFactory.makeZerionTinySwap(from: proposal) else {
                 appendAudit(.zerionProposalBlocked, "Agent Zerion handoff failed validation.")
@@ -366,6 +405,7 @@ struct AgentView: View {
             unknownValueAcknowledged = false
             executionResult = nil
             markAgentProposalHandedOff(proposal)
+            appendAudit(.handoffOpened, instruction.title, details: ["target": proposal.handoffTarget.rawValue])
         case .none:
             appendAudit(.agentProposalBlocked, "Agent proposal has no destination handoff.")
         }
@@ -471,5 +511,51 @@ struct AgentView: View {
         var events = auditTimeline.events
         events.insert(AgentAuditEvent(kind: kind, message: message, details: details), at: 0)
         auditTimeline = AgentAuditTimeline(events: Array(events.prefix(50)))
+    }
+
+    private func clearAgentMemory() {
+        agentMemory.clear()
+        appendAudit(.memoryCleared, "Agent memory cleared.")
+    }
+
+    private func toolExecutionContext() -> AgentToolExecutionContext {
+        AgentToolExecutionContext(
+            portfolioSummary: walletManager.portfolioSummary,
+            pnlSummary: walletManager.portfolioPnLSummary,
+            pusdCirculationSnapshot: walletManager.pusdCirculationSnapshot,
+            auditEvents: walletManager.auditEvents,
+            selectedProfile: walletManager.selectedProfile,
+            selectedNetwork: walletManager.selectedNetwork,
+            walletBalance: walletManager.balance,
+            vaultState: walletManager.vaultState,
+            rpcSecurityStatus: walletManager.rpcProviderSecurityStatus,
+            cloakAdapterStatus: walletManager.cloakAdapterStatus,
+            cloakVaultStatus: walletManager.cloakVaultStatus,
+            cloakScanSummary: walletManager.cloakScanSummary,
+            zerionStatus: statusSnapshot
+        )
+    }
+
+    private func readOnlyFallbackResult(for classification: AgentIntentClassification) -> AgentToolResult {
+        switch classification.intentType {
+        case .help, .whatCanYouDo:
+            return AgentToolResult(
+                title: "Full-app Agent help",
+                status: .readyForReview,
+                summary: "I can summarize, draft, and hand off across Wallet, Portfolio, Private, Activity, Security, RPC, and Zerion. I cannot execute directly from chat.",
+                bullets: [
+                    "Ask for Wallet overview, security status, RPC status, activity, assets, PUSD, liquidity, yield, PnL, Cloak, or Zerion status.",
+                    "Ask to prepare swaps, sends, PUSD payments, Cloak payments, or Zerion tiny swaps; they become proposals.",
+                    "Every executable request must continue in the destination review flow."
+                ]
+            )
+        default:
+            return AgentDeFiOpportunityAnalyzer.analyze(
+                classification: classification,
+                portfolioSummary: walletManager.portfolioSummary,
+                pnlSummary: walletManager.portfolioPnLSummary,
+                auditEvents: walletManager.auditEvents
+            )
+        }
     }
 }

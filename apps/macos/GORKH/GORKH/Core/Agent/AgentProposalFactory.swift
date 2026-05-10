@@ -66,19 +66,48 @@ enum AgentProposalFactory {
             return .zerionTinySwap
         }
         switch intent {
-        case .tokenBuyRequest, .tokenSwapRequest:
+        case .prepareSwap, .tokenBuyRequest, .tokenSwapRequest:
             return .mainWalletSwapDraft
-        case .tokenSendRequest:
+        case .prepareSend, .tokenSendRequest:
             return .mainWalletSendDraft
         case .pusdPaymentRequest:
             return .pusdPaymentDraft
-        case .cloakPrivatePaymentRequest:
+        case .prepareCloakDeposit, .cloakPrivatePaymentRequest, .prepareCloakPrivatePayment:
             return .cloakPrivatePaymentDraft
-        case .yieldSearch:
+        case .yieldSearch, .yieldSummary:
             return .yieldRecommendation
-        case .lpPositionReview:
+        case .lpPositionReview, .liquiditySummary:
             return .lpReviewRecommendation
-        case .portfolioSummary, .riskSummary, .pnlSummary, .recentActivitySummary, .unsupported, .unsafe, .zerionTinySwapRequest:
+        case .walletOverview,
+             .receiveAddress,
+             .explainSwap,
+             .securityStatus,
+             .activitySummary,
+             .rpcStatus,
+             .portfolioSummary,
+             .assetBreakdown,
+             .walletBreakdown,
+             .pusdTreasurySummary,
+             .stakeLstSummary,
+             .lendingSummary,
+             .costBasisHelp,
+             .portfolioHistorySummary,
+             .riskSummary,
+             .cloakStatus,
+             .cloakScanSummary,
+             .explainPrivateState,
+             .pnlSummary,
+             .recentActivitySummary,
+             .zerionStatus,
+             .zerionPolicySummary,
+             .zerionProposalStatus,
+             .help,
+             .whatCanYouDo,
+             .missingFields,
+             .unsupported,
+             .unsafe,
+             .zerionTinySwapRequest,
+             .zerionPrepareTinySwap:
             return .unsupported
         }
     }
@@ -93,8 +122,10 @@ enum AgentProposalFactory {
             return .walletPrivate
         case .zerionTinySwap:
             return .zerionReview
-        case .yieldRecommendation, .lpReviewRecommendation:
-            return .walletPortfolio
+        case .yieldRecommendation:
+            return .portfolioYield
+        case .lpReviewRecommendation:
+            return .portfolioLiquidity
         case .unsupported:
             return .none
         }
@@ -104,13 +135,15 @@ enum AgentProposalFactory {
         switch classification.intentType {
         case .tokenBuyRequest:
             return "Prepare a wallet swap draft to buy \(classification.targetAsset ?? "token") using \(classification.sourceAsset ?? "source asset")."
-        case .tokenSwapRequest, .zerionTinySwapRequest:
+        case .prepareSwap, .tokenSwapRequest, .zerionTinySwapRequest, .zerionPrepareTinySwap:
             return "Prepare a \(lane.title) swap proposal from \(classification.sourceAsset ?? "source") to \(classification.targetAsset ?? "target")."
-        case .tokenSendRequest:
+        case .prepareSend, .tokenSendRequest:
             return "Prepare a wallet send draft. The Wallet module must simulate and approve it."
         case .pusdPaymentRequest:
             return "Prepare a PUSD payment handoff through the existing Wallet send/receive flow."
-        case .cloakPrivatePaymentRequest:
+        case .prepareCloakDeposit:
+            return "Prepare a Cloak SOL shield/deposit draft for Wallet -> Private review."
+        case .cloakPrivatePaymentRequest, .prepareCloakPrivatePayment:
             return "Prepare a Cloak private payment draft for Wallet -> Private review."
         default:
             return classification.summary

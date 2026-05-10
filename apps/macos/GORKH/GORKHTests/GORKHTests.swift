@@ -3954,11 +3954,18 @@ struct GORKHTests {
             "GORKH/Core/Agent/AgentModels.swift",
             "GORKH/Core/Agent/AgentChatModels.swift",
             "GORKH/Core/Agent/AgentIntentClassifier.swift",
+            "GORKH/Core/Agent/AgentFullAppIntent.swift",
             "GORKH/Core/Agent/AgentExecutionLaneRouter.swift",
             "GORKH/Core/Agent/AgentPolicyEngine.swift",
             "GORKH/Core/Agent/AgentProposalFactory.swift",
             "GORKH/Core/Agent/AgentProposalModels.swift",
             "GORKH/Core/Agent/AgentMemoryStore.swift",
+            "GORKH/Core/Agent/AgentToolModels.swift",
+            "GORKH/Core/Agent/AgentToolRegistry.swift",
+            "GORKH/Core/Agent/AgentToolExecutor.swift",
+            "GORKH/Core/Agent/AgentContextHydrator.swift",
+            "GORKH/Core/Agent/AgentApprovalQueue.swift",
+            "GORKH/Core/Agent/AgentHandoffCoordinator.swift",
             "GORKH/Core/Agent/AgentAIStatusModels.swift",
             "GORKH/Core/Agent/AgentLLMProvider.swift",
             "GORKH/Core/Agent/HostedDeepSeekAgentProvider.swift",
@@ -3973,6 +3980,10 @@ struct GORKHTests {
             "GORKH/Core/Agent/AgentLLMResponseModels.swift",
             "GORKH/Modules/Agent/AgentView.swift",
             "GORKH/Modules/Agent/AgentChatView.swift",
+            "GORKH/Modules/Agent/AgentGuardrailBannerView.swift",
+            "GORKH/Modules/Agent/AgentApprovalQueueView.swift",
+            "GORKH/Modules/Agent/AgentHandoffCardView.swift",
+            "GORKH/Modules/Agent/AgentFullAppHelpView.swift",
             "GORKH/Modules/Agent/AgentAIStatusView.swift",
             "GORKH/Modules/Agent/AgentIntentCardView.swift",
             "GORKH/Modules/Agent/AgentProposalCardView.swift",
@@ -4522,6 +4533,111 @@ struct GORKHTests {
         let unsafe = classifier.classify("run /bin/sh with private key: abc")
         #expect(unsafe.intentType == .unsafe)
         #expect(unsafe.riskFlags.contains(.unsafeSecretRequest))
+    }
+
+    @Test func agentFullAppIntentTaxonomyCoversWalletPortfolioPrivateAndZerion() {
+        let classifier = AgentIntentClassifier()
+
+        #expect(classifier.classify("show wallet overview").intentType == .walletOverview)
+        #expect(classifier.classify("show receive address").intentType == .receiveAddress)
+        #expect(classifier.classify("prepare a swap of 0.1 SOL to USDC").intentType == .prepareSwap)
+        #expect(classifier.classify("is my wallet safe for mainnet?").intentType == .securityStatus)
+        #expect(classifier.classify("check RPC status").intentType == .rpcStatus)
+        #expect(classifier.classify("show asset breakdown").intentType == .assetBreakdown)
+        #expect(classifier.classify("show PUSD treasury balance").intentType == .pusdTreasurySummary)
+        #expect(classifier.classify("show stake LST summary").intentType == .stakeLstSummary)
+        #expect(classifier.classify("show lending summary").intentType == .lendingSummary)
+        #expect(classifier.classify("show liquidity summary").intentType == .liquiditySummary)
+        #expect(classifier.classify("why is my PnL partial?").intentType == .pnlSummary)
+        #expect(classifier.classify("explain private state").intentType == .explainPrivateState)
+        #expect(classifier.classify("show Cloak scan history").intentType == .cloakScanSummary)
+        #expect(classifier.classify("show Zerion policy status").intentType == .zerionPolicySummary)
+
+        let full = AgentFullAppIntentClassifier.classify("find better yield for USDC")
+        #expect(full.classification.intentType == .yieldSearch)
+        #expect(full.appArea == .portfolio)
+        #expect(full.defaultToolID == .getYieldSummary)
+
+        let zerion = AgentFullAppIntentClassifier.classify("use my Zerion agent wallet to prepare a tiny swap of 1 USDC to ETH on base")
+        #expect(zerion.classification.intentType == .zerionPrepareTinySwap || zerion.classification.intentType == .zerionTinySwapRequest)
+        #expect(zerion.appArea == .zerion)
+        #expect(AgentExecutionLaneRouter.route(zerion.classification) == .zerionAgentWallet)
+    }
+
+    @Test func agentToolRegistryApprovalQueueHandoffAndContextStaySafe() throws {
+        #expect(AgentToolRegistry.evaluate(toolID: .getWalletOverviewSummary).allowed == ["getWalletOverviewSummary"])
+        #expect(AgentToolRegistry.evaluate(toolID: .executeSwap).blocked == ["executeSwap"])
+
+        let boundary = AgentToolBoundary.evaluate(["getRPCStatus", "draftMainWalletSwap", "executeSend", "runShell"])
+        #expect(boundary.allowed == ["getRPCStatus", "draftMainWalletSwap"])
+        #expect(boundary.blocked == ["executeSend", "runShell"])
+
+        let classification = AgentIntentClassifier().classify("prepare a swap of 0.1 SOL to USDC")
+        let proposal = AgentProposalFactory.makeProposal(
+            classification: classification,
+            lane: .mainWallet,
+            decision: .allowed(warnings: ["Destination review required."])
+        )
+        let queue = AgentApprovalQueue(proposals: [proposal])
+        #expect(queue.readyCount == 1)
+        #expect(queue.filtered(by: .wallet).first?.handoffTarget == .walletSwap)
+        let handoff = AgentHandoffCoordinator.instruction(for: proposal)
+        #expect(handoff.walletSection == .swap)
+        #expect(handoff.instruction.lowercased().contains("approval"))
+
+        var memory = AgentMemoryStore()
+        memory.remember(intent: classification, proposal: proposal)
+        #expect(memory.entries.count == 1)
+        memory.clear()
+        #expect(memory.entries.isEmpty)
+
+        let context = AgentToolExecutionContext(
+            portfolioSummary: .empty(),
+            pnlSummary: .empty(),
+            pusdCirculationSnapshot: .idle(),
+            auditEvents: [],
+            selectedProfile: WalletProfile(label: "Demo", publicAddress: "11111111111111111111111111111111", walletOrigin: .watchOnly),
+            selectedNetwork: .mainnetBeta,
+            walletBalance: nil,
+            vaultState: .missing,
+            rpcSecurityStatus: RPCProviderSecurityStatus(
+                provider: .rpcFast,
+                network: .mainnetBeta,
+                tokenStatus: .missing,
+                tokenEnvironmentNames: [RPCFastConfiguration.mainnetTokenEnvironmentName],
+                beamStatus: "locked"
+            ),
+            cloakAdapterStatus: .lockedInPhase23,
+            cloakVaultStatus: .statusOnly(walletID: nil),
+            cloakScanSummary: .idle(),
+            zerionStatus: .unchecked
+        )
+        let rpcResult = try #require(AgentToolExecutor.execute(classification: AgentIntentClassifier().classify("check RPC status"), context: context))
+        #expect(rpcResult.title == "RPC status")
+        #expect(rpcResult.summary.lowercased().contains("redacted"))
+
+        let hydrated = try AgentContextHydrator.hydrate(
+            portfolioSummary: .empty(),
+            pnlSummary: .empty(),
+            pusdCirculationSnapshot: .idle(),
+            auditEvents: [],
+            selectedProfile: context.selectedProfile,
+            selectedNetwork: .mainnetBeta,
+            rpcSecurityStatus: context.rpcSecurityStatus,
+            zerionStatus: .unchecked,
+            builtAt: Date(timeIntervalSince1970: 0)
+        )
+        let payload = try #require(String(data: JSONEncoder().encode(hydrated), encoding: .utf8)).lowercased()
+        #expect(payload.contains("hosted_ai_advisory_only"))
+        #expect(payload.contains("no_direct_chat_execution"))
+        for forbidden in ["privatekey", "secretkey", "seedphrase", "signingseed", "walletjson", "transactionpayload", "serializedtransaction", "unsignedtransaction", "agenttoken"] {
+            #expect(!payload.contains(forbidden))
+        }
+
+        let docs = try sourceText(relativePath: "../../../docs/architecture/agent-full-app-orchestrator.md")
+        let smoke = try sourceText(relativePath: "../../../docs/qa/agent-full-app-orchestrator-smoke.md")
+        #expect(docs.contains("approval-based orchestrator"))
+        #expect(smoke.contains("Agent Full-App Orchestrator Smoke"))
     }
 
     @Test func agentMemoryAndAuditRedactionContainNoSecrets() throws {

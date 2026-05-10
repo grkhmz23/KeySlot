@@ -21,18 +21,47 @@ struct AgentChatMessage: Codable, Equatable, Identifiable {
 }
 
 enum AgentIntentType: String, Codable, CaseIterable, Identifiable, Equatable {
+    case walletOverview
+    case receiveAddress
+    case prepareSend
+    case prepareSwap
+    case explainSwap
+    case securityStatus
+    case activitySummary
+    case rpcStatus
     case portfolioSummary
+    case assetBreakdown
+    case walletBreakdown
+    case pusdTreasurySummary
+    case stakeLstSummary
+    case lendingSummary
+    case liquiditySummary
+    case yieldSummary
+    case costBasisHelp
+    case portfolioHistorySummary
     case riskSummary
     case tokenBuyRequest
     case tokenSwapRequest
     case tokenSendRequest
     case pusdPaymentRequest
+    case cloakStatus
+    case prepareCloakDeposit
     case cloakPrivatePaymentRequest
+    case prepareCloakPrivatePayment
+    case cloakScanSummary
+    case explainPrivateState
     case yieldSearch
     case lpPositionReview
     case pnlSummary
     case recentActivitySummary
+    case zerionStatus
+    case zerionPolicySummary
     case zerionTinySwapRequest
+    case zerionPrepareTinySwap
+    case zerionProposalStatus
+    case help
+    case whatCanYouDo
+    case missingFields
     case unsupported
     case unsafe
 
@@ -40,8 +69,42 @@ enum AgentIntentType: String, Codable, CaseIterable, Identifiable, Equatable {
 
     var title: String {
         switch self {
+        case .walletOverview:
+            return "Wallet overview"
+        case .receiveAddress:
+            return "Receive address"
+        case .prepareSend:
+            return "Prepare send"
+        case .prepareSwap:
+            return "Prepare swap"
+        case .explainSwap:
+            return "Swap explanation"
+        case .securityStatus:
+            return "Security status"
+        case .activitySummary:
+            return "Activity summary"
+        case .rpcStatus:
+            return "RPC status"
         case .portfolioSummary:
             return "Portfolio summary"
+        case .assetBreakdown:
+            return "Asset breakdown"
+        case .walletBreakdown:
+            return "Wallet breakdown"
+        case .pusdTreasurySummary:
+            return "PUSD Treasury"
+        case .stakeLstSummary:
+            return "Stake / LST summary"
+        case .lendingSummary:
+            return "Lending summary"
+        case .liquiditySummary:
+            return "Liquidity summary"
+        case .yieldSummary:
+            return "Yield summary"
+        case .costBasisHelp:
+            return "Cost basis help"
+        case .portfolioHistorySummary:
+            return "Portfolio history"
         case .riskSummary:
             return "Risk summary"
         case .tokenBuyRequest:
@@ -52,8 +115,18 @@ enum AgentIntentType: String, Codable, CaseIterable, Identifiable, Equatable {
             return "Token send request"
         case .pusdPaymentRequest:
             return "PUSD payment request"
+        case .cloakStatus:
+            return "Cloak status"
+        case .prepareCloakDeposit:
+            return "Prepare Cloak deposit"
         case .cloakPrivatePaymentRequest:
             return "Private payment request"
+        case .prepareCloakPrivatePayment:
+            return "Prepare private payment"
+        case .cloakScanSummary:
+            return "Cloak scan summary"
+        case .explainPrivateState:
+            return "Private state explanation"
         case .yieldSearch:
             return "Yield search"
         case .lpPositionReview:
@@ -62,8 +135,22 @@ enum AgentIntentType: String, Codable, CaseIterable, Identifiable, Equatable {
             return "Performance summary"
         case .recentActivitySummary:
             return "Recent activity"
+        case .zerionStatus:
+            return "Zerion status"
+        case .zerionPolicySummary:
+            return "Zerion policy summary"
         case .zerionTinySwapRequest:
             return "Zerion tiny swap"
+        case .zerionPrepareTinySwap:
+            return "Prepare Zerion tiny swap"
+        case .zerionProposalStatus:
+            return "Zerion proposal status"
+        case .help:
+            return "Help"
+        case .whatCanYouDo:
+            return "What Agent can do"
+        case .missingFields:
+            return "Missing fields"
         case .unsupported:
             return "Unsupported"
         case .unsafe:
@@ -73,9 +160,50 @@ enum AgentIntentType: String, Codable, CaseIterable, Identifiable, Equatable {
 
     var isExecutableIntent: Bool {
         switch self {
-        case .tokenBuyRequest, .tokenSwapRequest, .tokenSendRequest, .pusdPaymentRequest, .cloakPrivatePaymentRequest, .zerionTinySwapRequest:
+        case .prepareSend,
+             .prepareSwap,
+             .tokenBuyRequest,
+             .tokenSwapRequest,
+             .tokenSendRequest,
+             .pusdPaymentRequest,
+             .prepareCloakDeposit,
+             .cloakPrivatePaymentRequest,
+             .prepareCloakPrivatePayment,
+             .zerionTinySwapRequest,
+             .zerionPrepareTinySwap:
             return true
-        case .portfolioSummary, .riskSummary, .yieldSearch, .lpPositionReview, .pnlSummary, .recentActivitySummary, .unsupported, .unsafe:
+        case .walletOverview,
+             .receiveAddress,
+             .explainSwap,
+             .securityStatus,
+             .activitySummary,
+             .rpcStatus,
+             .portfolioSummary,
+             .assetBreakdown,
+             .walletBreakdown,
+             .pusdTreasurySummary,
+             .stakeLstSummary,
+             .lendingSummary,
+             .liquiditySummary,
+             .yieldSummary,
+             .costBasisHelp,
+             .portfolioHistorySummary,
+             .riskSummary,
+             .cloakStatus,
+             .cloakScanSummary,
+             .explainPrivateState,
+             .yieldSearch,
+             .lpPositionReview,
+             .pnlSummary,
+             .recentActivitySummary,
+             .zerionStatus,
+             .zerionPolicySummary,
+             .zerionProposalStatus,
+             .help,
+             .whatCanYouDo,
+             .missingFields,
+             .unsupported,
+             .unsafe:
             return false
         }
     }

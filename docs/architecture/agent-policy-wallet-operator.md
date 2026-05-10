@@ -36,6 +36,10 @@ Cloak Private:
 
 `AgentIntentClassifier` maps plain-language requests to local intent types:
 
+- Wallet overview, receive address, prepare send, prepare swap, swap explanation, security status, activity summary, and RPC status
+- Portfolio assets, wallets, PUSD Treasury, Stake/LST, lending, liquidity, yield, PnL/cost basis, and history
+- Cloak status, deposit/private-payment drafts, scan summary, and private-state explanation
+- Zerion status, policy summary, tiny-swap preparation, and proposal status
 - portfolio summary
 - risk summary
 - token buy request
@@ -54,6 +58,8 @@ Cloak Private:
 The classifier extracts amount, source asset, target asset, chain, recipient, confidence, missing fields, and risk flags. Low-confidence or incomplete executable requests become missing-field proposals, not executable requests.
 
 Hosted AI may improve the explanation or wording after this classifier runs, but it cannot override the local classification or approve execution.
+
+Phase A9 adds `AgentFullAppIntentClassifier`, `AgentToolRegistry`, `AgentToolExecutor`, `AgentApprovalQueue`, and `AgentHandoffCoordinator`. These components make Agent Chat a full-app orchestrator while preserving the same policy boundary: read-only tools return summaries, draft tools create proposal cards, and all executable flows continue through the destination module.
 
 ## Policy Engine
 
@@ -76,11 +82,15 @@ The policy decision is stored with every proposal and shown in chat.
 - Wallet -> Swap,
 - Wallet -> Send,
 - Wallet -> Private,
-- Wallet -> Portfolio,
+- Wallet -> Portfolio sections,
+- Wallet -> Security,
+- Wallet -> Activity,
 - Agent -> Zerion review,
 - none for blocked/unsupported requests.
 
 The handoff changes UI navigation only. It does not build, sign, submit, or confirm a transaction.
+
+The approval queue lists draft, blocked, ready-for-review, and handed-off proposals. It is not an execution surface.
 
 ## Hosted AI Boundary
 
@@ -104,7 +114,7 @@ It uses cautious language such as candidate, review, reported APY, higher risk, 
 
 ## Memory and Audit
 
-Agent memory is in-memory only and stores safe summaries of recent intents, proposals, and handoff targets. It stores no keys, tokens, raw transaction payloads, or wallet secrets.
+Agent memory is in-memory only and stores safe summaries of recent intents, proposals, handoff targets, and local tool results. It stores no keys, tokens, raw transaction payloads, private wallet data, or wallet secrets. Users can clear memory from Agent Chat.
 
 Audit events include:
 

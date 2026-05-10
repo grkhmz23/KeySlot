@@ -52,6 +52,14 @@ struct AgentRedactedContext: Codable, Equatable {
         let recentEvents: [String]
     }
 
+    struct SecurityContext: Codable, Equatable {
+        let walletLockStatus: String
+        let mainnetProtection: String
+        let signingGuard: String
+        let agentMainWalletAccess: String
+        let rpcProviderStatus: String
+    }
+
     struct ZerionContext: Codable, Equatable {
         let cliStatus: String
         let apiCredentialStatus: String
@@ -67,6 +75,7 @@ struct AgentRedactedContext: Codable, Equatable {
     let liquidity: LPContext
     let pnl: PnLContext
     let activity: ActivityContext
+    let security: SecurityContext
     let zerion: ZerionContext
     let safetyMetadata: [String]
     let builtAt: Date
@@ -135,6 +144,13 @@ enum AgentRedactedContextBuilder {
                 recentEvents: auditEvents.prefix(5).map { event in
                     AgentSafetyRedactor.redact("\(event.kind.rawValue): \(event.message)")
                 }
+            ),
+            security: .init(
+                walletLockStatus: selectedProfile?.canSign == true ? "local signer selected" : "no local signer selected",
+                mainnetProtection: "exact confirmation required for mainnet execution flows",
+                signingGuard: "native approval guards remain active",
+                agentMainWalletAccess: AgentMainWalletAccess.disabled.rawValue,
+                rpcProviderStatus: "\(rpcSecurityStatus.provider.displayName):\(rpcSecurityStatus.tokenStatus.displayName)"
             ),
             zerion: .init(
                 cliStatus: zerionStatus.cliStatus.label,
