@@ -6,8 +6,11 @@ struct DeveloperWorkstationView: View {
     @State private var activeProject: WorkstationProject?
     @State private var toolchainSnapshot: WorkstationToolchainSnapshot = .unchecked
     @State private var toolchainPlans: [WorkstationToolchainInstallPlan] = []
+    @State private var anchorInstallPlan: WorkstationAnchorInstallPlan = WorkstationAnchorInstaller.plan(snapshot: .unchecked)
     @State private var developerWallet: DeveloperWalletMetadata = .missing
     @State private var localValidatorStatus: WorkstationLocalValidatorStatus = .unchecked
+    @State private var localValidatorResetPhrase = ""
+    @State private var localnetSmokePreflight: WorkstationLocalnetSmokePreflight?
     @State private var activity: [WorkstationActivityEvent] = [
         WorkstationActivityEvent(kind: .workstationOpened, message: "Developer Workstation opened.")
     ]
@@ -265,6 +268,30 @@ struct DeveloperWorkstationView: View {
             Text("Install buttons stay disabled until manifest entries include verified HTTPS sources and sha256 values. No unverified installer execution is available.")
                 .font(.caption)
                 .foregroundStyle(GorkhColors.warning)
+
+            Divider().overlay(GorkhColors.border)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Anchor / AVM Install Wizard")
+                    .font(.headline)
+                WorkstationStatusChip(
+                    title: anchorInstallPlan.status.title,
+                    systemImage: anchorInstallPlan.canProceedWithApproval ? "hammer.circle" : "lock",
+                    color: anchorInstallPlan.canProceedWithApproval || anchorInstallPlan.status == .anchorAlreadyAvailable ? GorkhColors.success : GorkhColors.warning
+                )
+                Text(anchorInstallPlan.message)
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.secondaryText)
+                ForEach(anchorInstallPlan.commandPreviews, id: \.self) { preview in
+                    Text(preview)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(GorkhColors.secondaryText)
+                        .textSelection(.enabled)
+                }
+                Text("AVM/Anchor install is never automatic. Cargo-based AVM install is treated as a trusted tooling install and must be explicitly approved before running.")
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.warning)
+            }
         }
     }
 
@@ -373,9 +400,35 @@ struct DeveloperWorkstationView: View {
                 .foregroundStyle(GorkhColors.secondaryText)
                 .textSelection(.enabled)
 
-            Text("Command preview is generated only from fixed builders. No raw terminal input or arbitrary flags are accepted in D2.")
+            Text("Command preview is generated only from fixed builders. No raw terminal input or arbitrary flags are accepted.")
                 .font(.caption)
                 .foregroundStyle(GorkhColors.secondaryText)
+
+            Divider().overlay(GorkhColors.border)
+
+            Text("Sample Localnet Smoke")
+                .font(.headline)
+            Button("Run Sample Localnet Smoke Preflight") {
+                prepareLocalnetSmokePreflight()
+            }
+            .buttonStyle(.bordered)
+            if let localnetSmokePreflight {
+                WorkstationStatusChip(
+                    title: localnetSmokePreflight.status.title,
+                    systemImage: localnetSmokePreflight.status == .ready ? "checkmark.circle" : "lock",
+                    color: localnetSmokePreflight.status == .ready ? GorkhColors.success : GorkhColors.warning
+                )
+                Text(localnetSmokePreflight.summary)
+                    .font(.caption)
+                    .foregroundStyle(localnetSmokePreflight.status == .ready ? GorkhColors.success : GorkhColors.warning)
+                DisclosureGroup("Fixed smoke steps") {
+                    ForEach(localnetSmokePreflight.steps, id: \.self) { step in
+                        Text(step)
+                            .font(.caption)
+                            .foregroundStyle(GorkhColors.secondaryText)
+                    }
+                }
+            }
         }
     }
 
@@ -518,17 +571,16 @@ struct DeveloperWorkstationView: View {
                     .font(.caption)
                     .foregroundStyle(GorkhColors.secondaryText)
                 if let validatorPath = WorkstationToolchainResolver().companionExecutablePath(named: "solana-test-validator", nextTo: .solana) {
-                    let ledger = FileManager.default
-                        .urls(for: .applicationSupportDirectory, in: .userDomainMask)
-                        .first!
-                        .appendingPathComponent("GORKH/Localnet/ledger", isDirectory: true)
-                        .path
+                    let ledger = WorkstationLocalValidatorLifecycle.ledgerPath()
                     let plan = WorkstationLocalValidatorCommandBuilder.start(
                         validatorPath: validatorPath,
                         ledgerPath: ledger,
                         reset: false
                     )
                     keyValue("Start preview", plan.redactedPreview)
+                    labeledTextField("Reset phrase", text: $localValidatorResetPhrase, prompt: WorkstationLocalValidatorResetPolicy.requiredPhrase)
+                    keyValue("Reset allowed", WorkstationLocalValidatorResetPolicy.canReset(phrase: localValidatorResetPhrase) ? "Yes" : "No")
+                    keyValue("Stop policy", WorkstationLocalValidatorLifecycle.stopMessage(status: localValidatorStatus))
                 } else {
                     Text("solana-test-validator was not found next to a validated Solana CLI executable.")
                         .font(.caption)
@@ -639,12 +691,15 @@ struct DeveloperWorkstationView: View {
     private func refreshToolchain() {
         let resolver = WorkstationToolchainResolver()
         toolchainSnapshot = resolver.resolveAll()
-        let installer = WorkstationToolchainInstaller(manifest: .d2Placeholder)
-        toolchainPlans = WorkstationToolchainComponent.allCases.map { component in
-            installer.plan(component: component, resolution: toolchainSnapshot.resolution(for: component))
-        }
+        let wizard = WorkstationToolchainInstallWizardSnapshot.build(
+            manifest: .d3Default,
+            snapshot: toolchainSnapshot
+        )
+        toolchainPlans = wizard.plans
+        anchorInstallPlan = wizard.anchorPlan
         appendActivity(.toolchainChecked, "Toolchain status checked.")
         appendActivity(.toolchainInstallPlanCreated, "Managed toolchain install plans refreshed.")
+        appendActivity(.avmInstallPlanCreated, "Anchor/AVM install plan refreshed.")
     }
 
     private func filteredInstructions(_ idl: WorkstationIDL) -> [WorkstationIDLInstruction] {
@@ -747,6 +802,19 @@ struct DeveloperWorkstationView: View {
             programCommandPreview = error.localizedDescription
             appendActivity(.commandBlocked, "Command preview blocked: \(error.localizedDescription)")
         }
+    }
+
+    private func prepareLocalnetSmokePreflight() {
+        let sampleProject = WorkstationSampleProject.anchorHelloWorld
+        let sampleTrusted = activeProject?.localPath == sampleProject.path && activeProject?.trustStatus == .trusted
+        localnetSmokePreflight = WorkstationLocalnetSmokeRunner.preflight(
+            sampleProjectPath: sampleProject.path,
+            snapshot: toolchainSnapshot,
+            developerWallet: developerWallet,
+            projectTrusted: sampleTrusted,
+            startValidator: true
+        )
+        appendActivity(.sampleSmokeStarted, "Sample localnet smoke preflight prepared.")
     }
 
     private func generateDeveloperWallet() {

@@ -74,4 +74,11 @@ Expected:
 - tool availability is reported
 - no build or deploy runs in check mode
 
-Use `--live` only when Solana CLI, solana-test-validator, and Anchor CLI are installed locally and localnet use is intentional. The live path creates a temporary keypair file, starts a validator if needed, builds the sample, deploys to localnet, and deletes temporary files on exit.
+Staged live modes:
+
+- `scripts/workstation-localnet-smoke.sh --start-validator`
+- `scripts/workstation-localnet-smoke.sh --build-sample`
+- `scripts/workstation-localnet-smoke.sh --deploy-sample --skip-start-validator`
+- `scripts/workstation-localnet-smoke.sh --full-localnet`
+
+Use live modes only when Solana CLI, solana-test-validator, and Anchor CLI are installed locally and localnet use is intentional. The full path creates a temporary keypair file, starts a validator if needed, builds the sample, deploys to localnet with fixed `solana program deploy`, verifies with `solana program show`, and deletes temporary files on exit.

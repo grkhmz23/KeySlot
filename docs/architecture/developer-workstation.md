@@ -6,7 +6,7 @@ Developer Workstation is a native Solana builder workspace for inspecting projec
 
 - Top-level app section: `Developer Workstation`
 - Internal sections: Overview, Projects, Toolchain, IDL Browser, Program Manager, Logs, Account Decoder, RPC Playground, Compute Lab, Localnet, Offline Signing, Activity
-- D1/D2 program operations are localnet/devnet only
+- D1-D3 program operations are localnet/devnet only
 - Mainnet program ops locked is the default state for deploy, upgrade, close, and authority mutation
 - Mainnet program deploy, upgrade, close, and authority mutation are locked pending a reviewed future phase
 - Transaction signing and broadcast remain outside Transaction Studio and Workstation review surfaces
@@ -65,7 +65,7 @@ Allowed RPC methods are read-only. `requestAirdrop` is available only through th
 
 ## Managed Toolchain Install
 
-D2 adds an explicit managed toolchain manifest at `docs/toolchains/gorkh-toolchain-manifest.json`.
+D2 added an explicit managed toolchain manifest at `docs/toolchains/gorkh-toolchain-manifest.json`; D3 adds explicit install statuses and an Anchor/AVM install plan.
 
 Managed installs are allowed only when a manifest entry has:
 
@@ -77,17 +77,25 @@ Managed installs are allowed only when a manifest entry has:
 
 Entries with missing source or checksum are shown as blocked. This repository does not commit toolchain binaries and does not claim bundled Solana, Anchor, Rust, Node, npm, or Git binaries unless app resources actually contain them.
 
+Anchor/AVM follows a separate verified-tooling path:
+
+- existing `anchor` is detected and verified with `anchor --version`
+- existing `avm` can run fixed `avm install 0.30.1` / `avm use 0.30.1`
+- Cargo can prepare a fixed AVM install command from the official Anchor repository only after explicit tooling approval
+- no Cargo/AVM command runs automatically
+
 Archive extraction must reject absolute paths, parent traversal, backslashes, and null bytes. No unverified installer execution is allowed.
 
 ## Local Validator
 
-D2 defines a fixed local validator lifecycle:
+D3 keeps a fixed local validator lifecycle:
 
 - detect localnet RPC health at `http://127.0.0.1:8899`
 - start `solana-test-validator` only from a validated executable path
 - use an Application Support ledger path
 - stream bounded redacted logs
 - stop only a validator process started by GORKH
+- never stop an externally running validator
 
 The fixed start command uses `solana-test-validator` with explicit ledger, RPC port, faucet port, and ledger size arguments. Reset is a gated option.
 
@@ -104,11 +112,11 @@ Developer Workstation exposes policy evaluation and fixed command previews for:
 
 Build/deploy/close/authority operations require a trusted project, required toolchain, separate developer wallet, explicit approval, and localnet/devnet cluster. Mainnet is locked.
 
-D2 can prepare fixed localnet build/deploy command previews from the selected trusted project and toolchain snapshot. Actual live smoke remains manual and localnet-only through `scripts/workstation-localnet-smoke.sh --live`.
+D3 can prepare fixed localnet build/deploy command previews from the selected trusted project and toolchain snapshot. Localnet smoke is staged through `scripts/workstation-localnet-smoke.sh --check`, `--build-sample`, `--deploy-sample`, and `--full-localnet`.
 
 ## IDL and Account Decode
 
-D2 deepens IDL parsing by showing instruction accounts, signer/writable counts, account discriminators, types, events, and errors.
+D2/D3 deepen IDL parsing by showing instruction accounts, signer/writable counts, account discriminators, types, events, and errors.
 
 The account decoder can match Anchor account discriminators and decode simple primitive Borsh fields:
 

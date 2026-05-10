@@ -18,7 +18,7 @@ enum WorkstationProgramOpsRunnerError: LocalizedError, Equatable {
         case .missingTemporaryKeypair:
             return "A temporary developer keypair file is required."
         case .unsupportedOperation:
-            return "This program operation is not supported in D2."
+            return "This program operation is not supported in this Workstation phase."
         }
     }
 }

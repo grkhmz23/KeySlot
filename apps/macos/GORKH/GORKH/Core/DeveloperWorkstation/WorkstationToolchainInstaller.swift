@@ -6,7 +6,10 @@ enum WorkstationToolchainInstallStatus: String, Codable, Equatable {
     case managedInstalled = "managed_installed"
     case systemDetected = "system_detected"
     case installAvailable = "install_available"
+    case installBlockedMissingArtifact = "install_blocked_missing_artifact"
     case installBlockedMissingChecksum = "install_blocked_missing_checksum"
+    case detectedOnly = "detected_only"
+    case unsupported
     case installFailed = "install_failed"
     case missing
 
@@ -20,8 +23,14 @@ enum WorkstationToolchainInstallStatus: String, Codable, Equatable {
             return "System detected"
         case .installAvailable:
             return "Install available"
+        case .installBlockedMissingArtifact:
+            return "Blocked: artifact required"
         case .installBlockedMissingChecksum:
             return "Blocked: checksum required"
+        case .detectedOnly:
+            return "Detected only"
+        case .unsupported:
+            return "Unsupported"
         case .installFailed:
             return "Install failed"
         case .missing:
@@ -47,6 +56,7 @@ enum WorkstationToolchainVerificationStatus: String, Codable, Equatable {
 
 enum WorkstationToolchainInstallError: LocalizedError, Equatable {
     case missingManifestEntry
+    case missingVerifiedArtifact
     case missingVerifiedChecksum
     case unsafeInstallRoot
     case unsafeArchiveEntry(String)
@@ -56,6 +66,8 @@ enum WorkstationToolchainInstallError: LocalizedError, Equatable {
         switch self {
         case .missingManifestEntry:
             return "No managed toolchain manifest entry exists for this component."
+        case .missingVerifiedArtifact:
+            return "Managed install is blocked until the manifest includes a verified official artifact."
         case .missingVerifiedChecksum:
             return "Managed install is blocked until the manifest includes a verified HTTPS source and sha256."
         case .unsafeInstallRoot:
@@ -172,14 +184,39 @@ struct WorkstationToolchainInstaller {
         }
 
         guard entry.hasVerifiedDownload else {
+            let status: WorkstationToolchainInstallStatus
+            let verificationStatus: WorkstationToolchainVerificationStatus
+            let message: String
+            switch entry.installStatus {
+            case .detectedOnly:
+                status = .detectedOnly
+                verificationStatus = .notChecked
+                message = "\(entry.toolID.displayName) is resolved from bundled, managed, or trusted system paths only. Managed install is not enabled for this entry."
+            case .plannedBlockedMissingArtifact:
+                status = .installBlockedMissingArtifact
+                verificationStatus = .notChecked
+                message = "Managed install is unavailable until this manifest entry has an official artifact URL."
+            case .plannedBlockedMissingChecksum:
+                status = .installBlockedMissingChecksum
+                verificationStatus = .missingChecksum
+                message = "Managed install is unavailable until this manifest entry has a verified sha256."
+            case .unsupported:
+                status = .unsupported
+                verificationStatus = .notChecked
+                message = "Managed install is unsupported for this entry."
+            case .verifiedInstallAvailable:
+                status = .installBlockedMissingChecksum
+                verificationStatus = .missingChecksum
+                message = "Managed install claims availability but the URL or sha256 is incomplete."
+            }
             return WorkstationToolchainInstallPlan(
                 component: component,
-                status: .installBlockedMissingChecksum,
+                status: status,
                 downloadStatus: .blocked,
-                verificationStatus: .missingChecksum,
+                verificationStatus: verificationStatus,
                 installDirectory: installDirectory.path,
                 executablePath: executablePath,
-                message: "Managed install is unavailable until this manifest entry has a verified HTTPS source and sha256.",
+                message: message,
                 commandPreview: nil
             )
         }

@@ -6,7 +6,7 @@ Developer Workstation resolves tools in this order:
 2. Managed installs under `~/Library/Application Support/GORKH/Toolchains/`.
 3. Validated absolute system paths such as Homebrew and `/usr/bin`.
 
-D2 does not commit toolchain binaries. The manifest in this directory is an install contract, not a binary package.
+D3 does not commit toolchain binaries. The manifest in this directory is an install contract, not a binary package.
 
 ## Manifest Requirements
 
@@ -21,13 +21,23 @@ Every installable entry must include:
 - install strategy
 - license/source note
 
-Entries without a verified source and sha256 are shown as blocked. GORKH must not run unverified installers or bootstrap scripts.
+Entries without a verified source and sha256 are shown as blocked. GORKH must not run unverified installers, bootstrap scripts, or curl-pipe-sh flows.
+
+Anchor is handled separately from archive downloads:
+
+- if `anchor` already resolves from a trusted path, GORKH verifies it with `anchor --version`
+- if `avm` already resolves, GORKH can prepare fixed `avm install 0.30.1` and `avm use 0.30.1` commands
+- if `avm` is missing but Cargo resolves, GORKH can prepare a fixed Cargo command to install AVM from the official Anchor repository after explicit tooling-install approval
+- if Cargo is missing, Anchor install is blocked
+
+No Anchor/AVM install command runs automatically.
 
 ## Install Location
 
 Managed tools install into versioned directories:
 
 - `solana/<version>/`
+- `avm/<version>/`
 - `anchor/<version>/`
 - `rustc/<version>/`
 - `cargo/<version>/`
@@ -37,6 +47,11 @@ Managed tools install into versioned directories:
 
 Archive extraction must reject absolute paths, parent traversal, backslashes, and null bytes. Executables are validated after install before they can be used.
 
-## Current D2 State
+## Current D3 State
 
-The manifest intentionally uses blocked placeholder entries until release packaging provides audited sources and hashes. The app still detects bundled, managed, and system tools honestly.
+The manifest is explicit and honest:
+
+- Solana, Node, and future archive installs remain blocked until official artifact URLs and sha256 hashes are pinned.
+- Rust/Cargo, npm, and Git are detected-only unless packaged later.
+- Anchor is installed through AVM when AVM/Cargo are present and the user approves the fixed tooling operation.
+- Bundled tools are not claimed unless app resources actually contain validated executables.

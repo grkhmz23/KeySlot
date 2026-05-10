@@ -118,4 +118,43 @@ enum WorkstationCommandBuilders {
             writesToCluster: false
         )
     }
+
+    static func cargoInstallAVM(cargoPath: String, anchorVersion: String) -> WorkstationCommandPlan {
+        WorkstationCommandPlan(
+            name: "Install AVM",
+            executablePath: cargoPath,
+            arguments: [
+                "install",
+                "--git",
+                "https://github.com/coral-xyz/anchor",
+                "avm",
+                "--tag",
+                "v\(anchorVersion)",
+                "--locked",
+                "--force"
+            ],
+            requiresTrustedProject: false,
+            writesToCluster: false
+        )
+    }
+
+    static func avmInstallAnchor(avmPath: String, anchorVersion: String) -> WorkstationCommandPlan {
+        WorkstationCommandPlan(
+            name: "Install Anchor with AVM",
+            executablePath: avmPath,
+            arguments: ["install", anchorVersion],
+            requiresTrustedProject: false,
+            writesToCluster: false
+        )
+    }
+
+    static func avmUseAnchor(avmPath: String, anchorVersion: String) -> WorkstationCommandPlan {
+        WorkstationCommandPlan(
+            name: "Use Anchor with AVM",
+            executablePath: avmPath,
+            arguments: ["use", anchorVersion],
+            requiresTrustedProject: false,
+            writesToCluster: false
+        )
+    }
 }

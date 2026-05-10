@@ -6993,14 +6993,16 @@ struct GORKHTests {
         let manifest = try WorkstationToolchainManifestLoader.parse(string: manifestText)
         #expect(manifest.tools.count >= WorkstationToolchainComponent.allCases.count)
         #expect(manifest.entry(for: .solana)?.hasVerifiedDownload == false)
+        #expect(manifest.entry(for: .anchor)?.installStrategy == .avmManagedAnchor)
+        #expect(manifest.entry(for: .avm)?.installStatus == .detectedOnly)
 
         let installer = WorkstationToolchainInstaller(
             manifest: manifest,
             managedRoot: FileManager.default.temporaryDirectory.appendingPathComponent("gorkh-managed-\(UUID().uuidString)", isDirectory: true)
         )
         let blockedSolanaPlan = installer.plan(component: .solana, resolution: .missing(.solana))
-        #expect(blockedSolanaPlan.status == .installBlockedMissingChecksum)
-        #expect(blockedSolanaPlan.verificationStatus == .missingChecksum)
+        #expect(blockedSolanaPlan.status == .installBlockedMissingArtifact)
+        #expect(blockedSolanaPlan.verificationStatus == .notChecked)
         #expect(!blockedSolanaPlan.canInstall)
 
         let verified = WorkstationToolchainVerifier.verify(data: Data("hello".utf8), expectedSHA256: WorkstationToolchainVerifier.sha256Hex(data: Data("hello".utf8)))
@@ -7040,6 +7042,8 @@ struct GORKHTests {
         try WorkstationCommandRunner().validate(localValidatorPlan)
         #expect(localValidatorPlan.arguments.contains("--reset"))
         #expect(!localValidatorPlan.redactedPreview.contains(";"))
+        #expect(WorkstationLocalValidatorResetPolicy.canReset(phrase: WorkstationLocalValidatorResetPolicy.requiredPhrase))
+        #expect(!WorkstationLocalValidatorLifecycle.canStop(status: .stopped(message: "external not started by GORKH")))
 
         let sampleProject = try WorkstationProjectImporter().inspectFolder(URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -7055,6 +7059,36 @@ struct GORKHTests {
         let trusted = WorkstationTrustPolicy.trustedCopy(of: sampleProject, phrase: WorkstationTrustPolicy.requiredPhrase)
         let vault = InMemoryDeveloperKeyVault()
         let devWallet = try vault.generateDeveloperWallet()
+        let anchorInstallPlan = WorkstationAnchorInstaller.plan(snapshot: WorkstationToolchainSnapshot(resolutions: [
+            WorkstationToolchainResolution(
+                component: .cargo,
+                source: .system,
+                status: .available,
+                executablePath: "/usr/bin/cargo",
+                version: nil,
+                lastCheckedAt: nil,
+                message: "fixture"
+            )
+        ]))
+        #expect(anchorInstallPlan.status == .readyToInstallAVMWithCargo)
+        #expect(anchorInstallPlan.commandPreviews.joined(separator: " ").contains("cargo install"))
+        let avmInstall = WorkstationCommandBuilders.cargoInstallAVM(cargoPath: "/usr/bin/cargo", anchorVersion: WorkstationAnchorInstaller.pinnedAnchorVersion)
+        try WorkstationCommandRunner().validate(avmInstall)
+        #expect(avmInstall.arguments == ["install", "--git", "https://github.com/coral-xyz/anchor", "avm", "--tag", "v0.30.1", "--locked", "--force"])
+
+        let smokePreflight = WorkstationLocalnetSmokeRunner.preflight(
+            sampleProjectPath: WorkstationSampleProject.anchorHelloWorld.path,
+            snapshot: WorkstationToolchainSnapshot(resolutions: [
+                WorkstationToolchainResolution(component: .solana, source: .system, status: .available, executablePath: "/usr/bin/solana", version: nil, lastCheckedAt: nil, message: "fixture"),
+                WorkstationToolchainResolution(component: .anchor, source: .missing, status: .missing, executablePath: nil, version: nil, lastCheckedAt: nil, message: "fixture")
+            ]),
+            developerWallet: devWallet,
+            projectTrusted: true,
+            startValidator: true
+        )
+        #expect(smokePreflight.status == .blocked)
+        #expect(smokePreflight.blockers.contains("Anchor CLI is required for sample build."))
+
         let allowedBuild = WorkstationProgramManager.evaluate(
             WorkstationProgramOperationRequest(
                 operation: .anchorBuild,
@@ -7155,6 +7189,7 @@ struct GORKHTests {
             "sample anchor project",
             "mainnet program ops locked",
             "no arbitrary shell",
+            "avm",
             "offline signing"
         ] {
             #expect(docs.contains(required))
@@ -7162,15 +7197,19 @@ struct GORKHTests {
         #expect(!docs.contains("nft"))
 
         let script = try sourceText(relativePath: "../../../scripts/workstation-localnet-smoke.sh")
-        #expect(script.contains("--live"))
-        #expect(script.contains("anchor deploy"))
-        #expect(!script.contains("mainnet"))
+        #expect(script.contains("--full-localnet"))
+        #expect(script.contains("--build-sample"))
+        #expect(script.contains("solana program deploy"))
+        #expect(!script.contains("mainnet-beta"))
+        #expect(!script.contains("api.mainnet"))
         #expect(!script.contains("/bin/sh"))
         #expect(!script.contains("sh -"))
         #expect(!script.lowercased().contains("curl"))
 
         let workstationSource = try [
             "GORKH/Core/DeveloperWorkstation/WorkstationToolchainInstaller.swift",
+            "GORKH/Core/DeveloperWorkstation/WorkstationAVMInstaller.swift",
+            "GORKH/Core/DeveloperWorkstation/WorkstationLocalnetSmokeRunner.swift",
             "GORKH/Core/DeveloperWorkstation/WorkstationLocalValidator.swift",
             "GORKH/Core/DeveloperWorkstation/WorkstationProgramOpsRunner.swift",
             "GORKH/Modules/DeveloperWorkstation/DeveloperWorkstationView.swift"

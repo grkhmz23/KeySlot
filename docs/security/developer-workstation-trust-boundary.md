@@ -33,9 +33,9 @@ Command previews must show what will run before any approved operation starts.
 
 Toolchain install is separate from project trust. Managed installs require a manifest entry with HTTPS source, sha256, executable relative path, and license/source note.
 
-Missing hashes block install. GORKH must not run unverified bootstrap scripts. Archive entries are rejected if they are absolute, traverse parents, contain backslashes, or contain null bytes.
+Missing hashes block install. GORKH must not run unverified bootstrap scripts or curl-pipe-sh flows. Archive entries are rejected if they are absolute, traverse parents, contain backslashes, or contain null bytes.
 
-If Anchor or Rust tooling must be built through a package manager in a future package, that is treated as trusted tooling install risk and requires explicit confirmation.
+If AVM must be installed through Cargo, that is treated as trusted tooling install risk and requires explicit confirmation. GORKH prepares only fixed Cargo arguments for the official Anchor repository; it does not run arbitrary package-manager commands or project scripts.
 
 ## Key Boundary
 
@@ -60,6 +60,10 @@ Mainnet program deploy, upgrade, close, and authority mutation are locked.
 Local validator start/stop is localnet-only. GORKH may start a validator process through a fixed command builder and may stop only the validator process it started.
 
 Validator logs are bounded and redacted. Ledger data belongs under Application Support, not inside the repository.
+
+Resetting the local validator ledger requires the exact phrase:
+
+`Reset local validator ledger`
 
 ## Redaction
 

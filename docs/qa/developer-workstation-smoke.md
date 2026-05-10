@@ -1,6 +1,6 @@
 # Developer Workstation Smoke
 
-Use this checklist for D2 local QA. Do not run untrusted project commands.
+Use this checklist for D3 local QA. Do not run untrusted project commands.
 
 ## App Navigation
 
@@ -27,9 +27,10 @@ Use this checklist for D2 local QA. Do not run untrusted project commands.
 ## Toolchain
 
 - Click Check Toolchain.
-- Expected: Solana CLI, Anchor, Rust, Cargo, Node, npm, and Git show available/missing states honestly.
+- Expected: Solana CLI, AVM, Anchor, Rust, Cargo, Node, npm, and Git show available/missing states honestly.
 - Expected: managed install plan appears for each tool.
-- Expected: placeholder manifest entries are blocked until verified source and sha256 are filled.
+- Expected: archive manifest entries are blocked until verified source and sha256 are filled.
+- Expected: Anchor/AVM wizard shows detected Anchor, detected AVM, Cargo-backed AVM install plan, or Cargo missing blocker.
 - Expected: bundled availability is not claimed unless app resources contain binaries.
 - Missing tools should disable dependent program operations.
 
@@ -78,8 +79,18 @@ Use this checklist for D2 local QA. Do not run untrusted project commands.
 
 - Check Localnet.
 - Expected: local validator status and fixed start-command preview are visible when `solana-test-validator` is discoverable.
+- Expected: reset ledger requires `Reset local validator ledger`.
+- Expected: external validators are not stopped by GORKH.
 - Expected: logs are bounded and redacted.
 - Do not reset the ledger unless explicitly testing destructive localnet behavior.
+
+## Sample Localnet Smoke
+
+- Open Program Manager.
+- Run Sample Localnet Smoke Preflight.
+- Expected: preflight lists fixed steps and blockers.
+- Expected: Anchor missing blocks live sample build/deploy.
+- Expected: no live action runs automatically from preflight.
 
 ## Compute Lab
 

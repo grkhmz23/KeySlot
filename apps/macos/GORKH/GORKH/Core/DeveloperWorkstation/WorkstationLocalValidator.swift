@@ -49,6 +49,45 @@ struct WorkstationLocalValidatorStatus: Codable, Equatable {
         lastCheckedAt: nil,
         message: "Local validator has not been checked."
     )
+
+    static func stopped(message: String = "Local validator is not running.") -> WorkstationLocalValidatorStatus {
+        WorkstationLocalValidatorStatus(
+            state: .stopped,
+            health: nil,
+            slot: nil,
+            version: nil,
+            ledgerPath: nil,
+            startedByGORKH: false,
+            lastCheckedAt: Date(),
+            message: message
+        )
+    }
+}
+
+enum WorkstationLocalValidatorResetPolicy {
+    static let requiredPhrase = "Reset local validator ledger"
+
+    static func canReset(phrase: String) -> Bool {
+        phrase == requiredPhrase
+    }
+}
+
+enum WorkstationLocalValidatorLifecycle {
+    static func ledgerPath(fileManager: FileManager = .default) -> String {
+        fileManager
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first!
+            .appendingPathComponent("GORKH/Localnet/ledger", isDirectory: true)
+            .path
+    }
+
+    static func canStop(status: WorkstationLocalValidatorStatus) -> Bool {
+        status.startedByGORKH && (status.state == .running || status.state == .starting)
+    }
+
+    static func stopMessage(status: WorkstationLocalValidatorStatus) -> String {
+        canStop(status: status) ? "GORKH-started local validator can be stopped." : "External validators are not stopped by GORKH."
+    }
 }
 
 enum WorkstationLocalValidatorCommandBuilder {

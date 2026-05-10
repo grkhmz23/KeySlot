@@ -8,6 +8,3 @@ hello_world = "11111111111111111111111111111111"
 [provider]
 cluster = "localnet"
 wallet = "~/.config/solana/id.json"
-
-[scripts]
-test = "echo \"sample smoke uses GORKH fixed command runners\""

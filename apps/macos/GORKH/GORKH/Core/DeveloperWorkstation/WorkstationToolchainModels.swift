@@ -2,6 +2,7 @@ import Foundation
 
 enum WorkstationToolchainComponent: String, Codable, CaseIterable, Identifiable {
     case solana
+    case avm
     case anchor
     case rustc
     case cargo
@@ -15,6 +16,8 @@ enum WorkstationToolchainComponent: String, Codable, CaseIterable, Identifiable 
         switch self {
         case .solana:
             return "Solana CLI"
+        case .avm:
+            return "Anchor Version Manager"
         case .anchor:
             return "Anchor CLI"
         case .rustc:
