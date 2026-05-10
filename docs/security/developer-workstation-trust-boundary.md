@@ -35,7 +35,9 @@ Toolchain install is separate from project trust. Managed installs require a man
 
 Missing hashes block install. GORKH must not run unverified bootstrap scripts or curl-pipe-sh flows. Archive entries are rejected if they are absolute, traverse parents, contain backslashes, or contain null bytes.
 
-If AVM must be installed through Cargo, that is treated as trusted tooling install risk and requires explicit confirmation. GORKH prepares only fixed Cargo arguments for the official Anchor repository; it does not run arbitrary package-manager commands or project scripts.
+If AVM must be installed through Cargo, that is treated as trusted tooling install risk and requires explicit confirmation. GORKH prepares only fixed Cargo arguments for the official Anchor repository: `cargo install --git https://github.com/solana-foundation/anchor avm --force`. It does not run arbitrary package-manager commands or project scripts.
+
+D7 also models fixed `avm self-update`, but old AVM `0.30.1` did not support that subcommand locally. Official prebuilt Anchor binary install stays blocked until an official release asset URL and SHA-256 are pinned; no unverified binary download path exists.
 
 Rust compatibility pinning is also explicit and fixed. GORKH may prepare `rustup toolchain install stable` or `rustup toolchain install 1.95.0` when rustup is already present, and may scope `RUSTUP_TOOLCHAIN=stable` or `RUSTUP_TOOLCHAIN=1.95.0` to approved AVM/Cargo commands. It must not run `rustup default`, install rustup through a bootstrap script, or accept arbitrary Rust version strings.
 

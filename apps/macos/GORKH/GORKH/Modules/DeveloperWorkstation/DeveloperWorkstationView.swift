@@ -9,6 +9,8 @@ struct DeveloperWorkstationView: View {
     @State private var anchorInstallPlan: WorkstationAnchorInstallPlan = WorkstationAnchorInstaller.plan(snapshot: .unchecked)
     @State private var compatibilityMatrix: WorkstationCompatibilityMatrix = .unchecked
     @State private var anchorStrategy: WorkstationAnchorStrategyDecision = WorkstationAnchorStrategySelector.select(matrix: .unchecked, avmPath: nil, rustupPath: nil)
+    @State private var avmUpdatePlan: WorkstationAVMUpdatePlan = WorkstationAVMModernizationPlanner.avmUpdatePlan(snapshot: .unchecked)
+    @State private var anchorBinaryPlan: WorkstationAnchorBinaryInstallPlan = WorkstationAVMModernizationPlanner.anchorBinaryInstallPlan(manifest: .d3Default)
     @State private var developerWallet: DeveloperWalletMetadata = .missing
     @State private var localValidatorStatus: WorkstationLocalValidatorStatus = .unchecked
     @State private var localValidatorResetPhrase = ""
@@ -316,6 +318,31 @@ struct DeveloperWorkstationView: View {
                     .font(.caption)
                     .foregroundStyle(GorkhColors.warning)
             }
+
+            Divider().overlay(GorkhColors.border)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Modern AVM / Binary Path")
+                    .font(.headline)
+                WorkstationStatusChip(
+                    title: avmUpdatePlan.status.title,
+                    systemImage: avmUpdatePlan.canRunWithApproval ? "arrow.triangle.2.circlepath" : "lock",
+                    color: avmUpdatePlan.canRunWithApproval ? GorkhColors.success : GorkhColors.warning
+                )
+                Text(avmUpdatePlan.message)
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.secondaryText)
+                ForEach(avmUpdatePlan.commandPreviews, id: \.self) { preview in
+                    Text(preview)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(GorkhColors.secondaryText)
+                        .textSelection(.enabled)
+                }
+                keyValue("Binary artifact", anchorBinaryPlan.verification.title)
+                Text(anchorBinaryPlan.message)
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.secondaryText)
+            }
         }
     }
 
@@ -380,6 +407,34 @@ struct DeveloperWorkstationView: View {
                         .textSelection(.enabled)
                 }
                 Text("Preparation remains explicit. These previews do not run automatically and do not change the global Rust default.")
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.warning)
+            }
+
+            GorkhPanel("AVM Modernization / Binary Fallback") {
+                WorkstationStatusChip(
+                    title: avmUpdatePlan.status.title,
+                    systemImage: avmUpdatePlan.canRunWithApproval ? "arrow.triangle.2.circlepath.circle" : "lock",
+                    color: avmUpdatePlan.canRunWithApproval ? GorkhColors.success : GorkhColors.warning
+                )
+                keyValue("Current AVM", avmUpdatePlan.currentVersion ?? "Unavailable")
+                keyValue("Update strategy", avmUpdatePlan.strategy.rawValue.replacingOccurrences(of: "_", with: " "))
+                Text(avmUpdatePlan.message)
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.secondaryText)
+                ForEach(avmUpdatePlan.commandPreviews, id: \.self) { preview in
+                    Text(preview)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(GorkhColors.secondaryText)
+                        .textSelection(.enabled)
+                }
+                Divider().overlay(GorkhColors.border)
+                keyValue("Anchor binary", anchorBinaryPlan.verification.title)
+                keyValue("Install root", anchorBinaryPlan.installDirectory)
+                Text(anchorBinaryPlan.message)
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.secondaryText)
+                Text("Verified binary install remains disabled until the official release asset URL and SHA-256 are pinned. Source compile failures do not enable unverified downloads.")
                     .font(.caption)
                     .foregroundStyle(GorkhColors.warning)
             }
@@ -857,9 +912,13 @@ struct DeveloperWorkstationView: View {
         )
         toolchainPlans = wizard.plans
         anchorInstallPlan = wizard.anchorPlan
+        avmUpdatePlan = WorkstationAVMModernizationPlanner.avmUpdatePlan(snapshot: toolchainSnapshot)
+        anchorBinaryPlan = WorkstationAVMModernizationPlanner.anchorBinaryInstallPlan(manifest: .d3Default)
         appendActivity(.toolchainChecked, "Toolchain status checked.")
         appendActivity(.toolchainInstallPlanCreated, "Managed toolchain install plans refreshed.")
         appendActivity(.avmInstallPlanCreated, "Anchor/AVM install plan refreshed.")
+        appendActivity(.avmUpdatePlanCreated, "AVM modernization plan refreshed.")
+        appendActivity(.anchorBinaryInstallPlanCreated, "Anchor binary artifact plan refreshed.")
     }
 
     private func refreshCompatibility() {
@@ -872,6 +931,8 @@ struct DeveloperWorkstationView: View {
         )
         toolchainPlans = wizard.plans
         anchorInstallPlan = wizard.anchorPlan
+        avmUpdatePlan = WorkstationAVMModernizationPlanner.avmUpdatePlan(snapshot: toolchainSnapshot)
+        anchorBinaryPlan = WorkstationAVMModernizationPlanner.anchorBinaryInstallPlan(manifest: .d3Default)
         let probe = WorkstationCompatibilityProbe().probe(snapshot: toolchainSnapshot)
         compatibilityMatrix = WorkstationCompatibilityMatrix.build(probe: probe)
         anchorStrategy = WorkstationAnchorStrategySelector.select(

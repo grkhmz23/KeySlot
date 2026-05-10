@@ -143,3 +143,27 @@ D6 result:
 - Full localnet deploy remains blocked by Anchor activation.
 - Program id: none.
 - Mainnet program operations remain locked.
+
+## D7 Modern AVM Path
+
+Phase D7 adds the modern AVM activation path:
+
+- `avm self-update` when supported by the installed AVM
+- fixed fallback `cargo install --git https://github.com/solana-foundation/anchor avm --force`
+- fixed `avm install latest`
+- fixed `avm use latest` when usable
+- `anchor --version`
+- official prebuilt Anchor binary install remains blocked unless a release asset URL and SHA-256 are pinned
+
+D7 result:
+
+- old AVM `0.30.1` did not support `self-update`.
+- fixed Cargo reinstall from the official Anchor repository installed AVM `1.0.2`.
+- `avm install latest` activated `anchor-cli 1.0.2`.
+- `avm use latest` still hit a local AVM runtime panic, but `anchor --version` remained active.
+- sample Anchor project was updated for Anchor `1.0.2`.
+- full localnet smoke succeeded after allowing localhost validator port binding.
+- Localnet program id: `9aR9XnArCREYz86Y7kqy2W9iKYnWT8CSbEjnBTAQLvsJ`.
+- Deploy signature: `5FS38zAwXX4SP3VVRi1r1ubHHXYFdsv7S9WBYCdFbG4uR8ANWTyy6u9jAqt1Bq8YNby61xTu4DE94eQ8KA6Ed2To`.
+- Temporary keypair files were created only inside the smoke temp directory and cleanup was confirmed.
+- Mainnet program operations remain locked.

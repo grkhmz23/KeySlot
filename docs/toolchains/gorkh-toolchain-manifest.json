@@ -25,7 +25,7 @@
     {
       "toolID": "avm",
       "version": "latest-tooling",
-      "versionPolicy": "Install AVM from the official Anchor repository using a fixed Cargo command when Cargo is already available.",
+      "versionPolicy": "Modernize AVM through fixed avm self-update when supported, otherwise install AVM from the official Anchor repository using a fixed Cargo command when Cargo is already available.",
       "platform": "macos",
       "architecture": "arm64",
       "sourceType": "official_source_build",
@@ -35,11 +35,11 @@
       "executableRelativePath": "bin/avm",
       "installStrategy": "avm_cargo_install",
       "installStatus": "detected_only",
-      "compatibilityStrategy": "fixed_cargo_install_from_official_anchor_repo_with_explicit_approval",
+      "compatibilityStrategy": "try_fixed_avm_self_update_then_fixed_cargo_install_from_official_anchor_repo_with_explicit_approval",
       "recommendedAnchorCandidates": ["latest", "1.0.2"],
       "rustToolchainPinningNote": "Use Rust stable, expected 1.95.0, or explicit RUSTUP_TOOLCHAIN=1.95.0 for fixed AVM/Cargo commands only.",
       "prebuiltArtifactStatus": "not_applicable_source_build",
-      "notes": "No archive download is enabled. AVM is detected locally, but D6 Anchor latest activation failed during native linking. If Cargo is present, GORKH can prepare fixed AVM install commands for explicit approval.",
+      "notes": "No archive download is enabled. D7 proved local AVM 0.30.1 does not support self-update, then the fixed Cargo reinstall from the official Anchor repository activated AVM 1.0.2.",
       "licenseNote": "Package according to upstream Anchor license terms."
     },
     {
@@ -49,7 +49,7 @@
       "platform": "macos",
       "architecture": "arm64",
       "sourceType": "official_source_build",
-      "officialSourceNote": "Official Anchor install path through AVM. Verify anchor --version after install.",
+      "officialSourceNote": "Official Anchor install path through AVM. Verify anchor --version after install. Official GitHub release binary path remains blocked until an asset URL and SHA-256 are pinned.",
       "sourceURL": null,
       "sha256": null,
       "executableRelativePath": "bin/anchor",
@@ -59,7 +59,7 @@
       "recommendedAnchorCandidates": ["latest", "1.0.2"],
       "rustToolchainPinningNote": "Do not mutate the global Rust default. Use Rust stable or RUSTUP_TOOLCHAIN=1.95.0 only for fixed AVM/Cargo commands when explicitly approved.",
       "prebuiltArtifactStatus": "blocked_without_official_artifact_and_sha256",
-      "notes": "Anchor managed install is driven by AVM, not an unverified archive. D6 avm install latest resolved Anchor CLI 1.0.2 but failed during native linking on this machine, so anchor --version remains inactive and localnet Anchor smoke skips safely.",
+      "notes": "Anchor managed install is driven by AVM, not an unverified archive. D7 fixed Cargo AVM reinstall activated AVM 1.0.2; avm install latest activated anchor-cli 1.0.2, and the full localnet sample smoke deployed successfully.",
       "licenseNote": "Package according to upstream Anchor license terms."
     },
     {

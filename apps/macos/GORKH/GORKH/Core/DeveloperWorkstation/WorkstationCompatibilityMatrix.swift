@@ -242,6 +242,7 @@ enum WorkstationAnchorVersionPolicy {
 
 enum WorkstationAnchorActivationStrategy: String, Codable, Equatable {
     case useExistingAnchor = "use_existing_anchor"
+    case avmModernization = "avm_modernization"
     case avmCurrentRust = "avm_current_rust"
     case avmPinnedRust = "avm_pinned_rust"
     case verifiedPrebuiltArtifactBlocked = "verified_prebuilt_artifact_blocked"
@@ -283,6 +284,7 @@ enum WorkstationAnchorStrategySelector {
                 rustupPath: rustupPath,
                 rustToolchain: WorkstationRustToolchainPolicy.compatibilityPinnedToolchain
               ) else {
+            let avmUpdate = WorkstationCommandBuilders.avmSelfUpdate(avmPath: avmPath)
             let avmInstall = WorkstationCommandBuilders.avmInstallAnchor(
                 avmPath: avmPath,
                 anchorVersion: WorkstationAnchorVersionPolicy.recommendedCandidate
@@ -294,12 +296,13 @@ enum WorkstationAnchorStrategySelector {
             return WorkstationAnchorStrategyDecision(
                 strategy: .avmCurrentRust,
                 status: .blocked,
-                message: "AVM is present, but stable Rust cannot be prepared. Use only the fixed latest/1.0.2 Anchor candidates.",
-                commandPreviews: [avmInstall.redactedPreview, avmUse.redactedPreview],
+                message: "AVM is present, but stable Rust cannot be prepared. Try fixed AVM self-update or fixed latest/1.0.2 Anchor activation only; use verified binary install only after URL and SHA-256 are pinned.",
+                commandPreviews: [avmUpdate.redactedPreview, avmInstall.redactedPreview, avmUse.redactedPreview],
                 environmentPreview: nil
             )
         }
 
+        let avmUpdate = WorkstationCommandBuilders.avmSelfUpdate(avmPath: avmPath)
         let avmInstall = WorkstationCommandBuilders.avmInstallAnchor(
             avmPath: avmPath,
             anchorVersion: WorkstationAnchorVersionPolicy.recommendedCandidate,
@@ -310,10 +313,10 @@ enum WorkstationAnchorStrategySelector {
             anchorVersion: WorkstationAnchorVersionPolicy.recommendedCandidate
         )
         return WorkstationAnchorStrategyDecision(
-            strategy: .avmPinnedRust,
+            strategy: .avmModernization,
             status: .installPlanAvailable,
-            message: "Recommended: prepare Rust \(WorkstationRustToolchainPolicy.compatibilityPinnedToolchain) (expected \(WorkstationRustToolchainPolicy.expectedStableVersion)), run fixed AVM install/use for Anchor \(WorkstationAnchorVersionPolicy.recommendedCandidate) (expected \(WorkstationAnchorVersionPolicy.explicitStableCandidate)), then verify anchor --version. This does not change the global Rust default.",
-            commandPreviews: [rustInstall.redactedPreview, avmInstall.redactedPreview, avmUse.redactedPreview, "Verify anchor --version"],
+            message: "Recommended: prepare Rust \(WorkstationRustToolchainPolicy.compatibilityPinnedToolchain) (expected \(WorkstationRustToolchainPolicy.expectedStableVersion)), try fixed AVM modernization, run fixed AVM install/use for Anchor \(WorkstationAnchorVersionPolicy.recommendedCandidate) (expected \(WorkstationAnchorVersionPolicy.explicitStableCandidate)), then verify anchor --version. This does not change the global Rust default.",
+            commandPreviews: [rustInstall.redactedPreview, avmUpdate.redactedPreview, avmInstall.redactedPreview, avmUse.redactedPreview, "Verify anchor --version"],
             environmentPreview: "RUSTUP_TOOLCHAIN=\(WorkstationRustToolchainPolicy.compatibilityPinnedToolchain)"
         )
     }

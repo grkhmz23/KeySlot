@@ -61,6 +61,16 @@ enum WorkstationCommandBuilders {
         )
     }
 
+    static func avmSelfUpdate(avmPath: String) -> WorkstationCommandPlan {
+        WorkstationCommandPlan(
+            name: "AVM self-update",
+            executablePath: avmPath,
+            arguments: ["self-update"],
+            requiresTrustedProject: false,
+            writesToCluster: false
+        )
+    }
+
     static func gitClone(url: String, destination: String, gitPath: String = "/usr/bin/git") -> WorkstationCommandPlan {
         WorkstationCommandPlan(
             name: "Git clone",
@@ -161,9 +171,6 @@ enum WorkstationCommandBuilders {
     }
 
     static func cargoInstallAVM(cargoPath: String, anchorVersion: String) -> WorkstationCommandPlan {
-        let tagVersion = anchorVersion == WorkstationAnchorVersionPolicy.latestChannel
-            ? WorkstationAnchorVersionPolicy.explicitStableCandidate
-            : anchorVersion
         return WorkstationCommandPlan(
             name: "Install AVM",
             executablePath: cargoPath,
@@ -172,9 +179,6 @@ enum WorkstationCommandBuilders {
                 "--git",
                 "https://github.com/solana-foundation/anchor",
                 "avm",
-                "--tag",
-                "v\(tagVersion)",
-                "--locked",
                 "--force"
             ],
             requiresTrustedProject: false,

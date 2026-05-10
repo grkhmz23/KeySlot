@@ -18,6 +18,10 @@ Expected:
 ## Staged Modes
 
 - `scripts/workstation-localnet-smoke.sh --start-validator`
+- `scripts/workstation-localnet-smoke.sh --check-avm`
+- `scripts/workstation-localnet-smoke.sh --update-avm`
+- `scripts/workstation-localnet-smoke.sh --activate-anchor-latest`
+- `scripts/workstation-localnet-smoke.sh --activate-anchor-1-0-2`
 - `scripts/workstation-localnet-smoke.sh --build-sample`
 - `scripts/workstation-localnet-smoke.sh --deploy-sample --skip-start-validator`
 - `scripts/workstation-localnet-smoke.sh --full-localnet`
@@ -35,6 +39,7 @@ Expected:
 - local validator is reused or started with fixed arguments unless `--skip-start-validator` is set
 - temporary developer authority file is created under a temp directory
 - file mode is `0600`
+- the sample program keypair is generated only in the temp smoke copy so source and program id match Anchor 1.0.2 checks
 - sample Anchor project builds
 - sample deploys to localnet with `solana program deploy`
 - program id is verified with `solana program show`
@@ -149,6 +154,50 @@ D6 full localnet smoke result:
 Current blocker:
 
 - Anchor `1.0.2` cannot be activated from AVM source on this machine until the Rust 1.95 / local Apple linker bitcode compatibility issue is resolved or an official verified prebuilt Anchor artifact with SHA-256 is pinned.
+
+## D7 Modern AVM / Anchor Activation
+
+Recorded during Phase D7 on 2026-05-10:
+
+- `rustc --version`: `rustc 1.95.0 (59807616e 2026-04-14)`
+- `cargo --version`: `cargo 1.95.0 (f2d3ce0bd 2026-03-21)`
+- `rustup --version`: `rustup 1.29.0`
+- initial `avm --version`: `avm 0.30.1`
+- initial `anchor --version`: failed with `Anchor version not set`
+- `solana --version`: `solana-cli 3.1.10`
+- `solana-test-validator --version`: `solana-test-validator 3.1.10`
+
+Activation commands:
+
+- `avm self-update`: unsupported by AVM `0.30.1`
+- `cargo install --git https://github.com/solana-foundation/anchor avm --force`: succeeded from the official Anchor repository
+- post-update `avm --version`: `avm 1.0.2`
+- `avm install latest`: succeeded and selected Anchor `1.0.2`
+- `avm use latest`: failed with a local AVM runtime panic, but did not make Anchor unusable
+- post-activation `anchor --version`: `anchor-cli 1.0.2`
+
+Sample fixture fixes:
+
+- sample `anchor-lang` dependency was updated to `1.0.2`
+- sample IDL fixture was updated to the Anchor 1.0 IDL shape with `address`, `metadata`, and discriminators
+- sample program id is prepared in a temporary copy during smoke so no program keypair is committed
+- `idl-build` feature is enabled for the sample program
+
+Full localnet smoke result:
+
+- command: `scripts/workstation-localnet-smoke.sh --full-localnet`
+- validator: started locally with fixed args
+- Anchor build: succeeded with `anchor-cli 1.0.2`
+- deploy: succeeded with fixed `solana program deploy`
+- localnet program id: `9aR9XnArCREYz86Y7kqy2W9iKYnWT8CSbEjnBTAQLvsJ`
+- deploy signature: `5FS38zAwXX4SP3VVRi1r1ubHHXYFdsv7S9WBYCdFbG4uR8ANWTyy6u9jAqt1Bq8YNby61xTu4DE94eQ8KA6Ed2To`
+- temp keypair cleanup: confirmed; the smoke temp directory was removed after exit
+
+Notes:
+
+- The first sandboxed validator attempt could not bind the local faucet port; the successful full smoke was run with permission to bind localhost-only validator ports.
+- Anchor build may fetch upstream SBPF platform tools as part of the trusted tooling/build process. This remains behind explicit trust and command approval.
+- Mainnet program operations remain locked.
 
 ## Boundaries
 

@@ -80,12 +80,14 @@ Entries with missing source or checksum are shown as blocked. This repository do
 Anchor/AVM follows a separate verified-tooling path:
 
 - existing `anchor` is detected and verified with `anchor --version`
+- existing `avm` can try fixed `avm self-update` when supported
 - existing `avm` can run fixed `avm install latest` / `avm use latest` or `avm install 1.0.2` / `avm use 1.0.2`
-- Cargo can prepare a fixed AVM install command from the official Anchor repository only after explicit tooling approval
+- Cargo can prepare fixed `cargo install --git https://github.com/solana-foundation/anchor avm --force` from the official Anchor repository only after explicit tooling approval
 - if current Rust cannot compile the chosen Anchor candidate, `rustup toolchain install stable` or `rustup toolchain install 1.95.0` can be prepared as fixed commands when rustup is present
 - AVM/Cargo commands may use `RUSTUP_TOOLCHAIN=stable` or `RUSTUP_TOOLCHAIN=1.95.0` as a scoped command environment override
 - GORKH does not run `rustup default` and does not mutate the global Rust default
 - no Cargo/AVM command runs automatically
+- official prebuilt Anchor binary install is blocked until an official release asset URL and SHA-256 are pinned
 
 Archive extraction must reject absolute paths, parent traversal, backslashes, and null bytes. No unverified installer execution is allowed.
 
@@ -99,7 +101,7 @@ The compatibility panel records current versions, fixed candidates, and blockers
 - arbitrary Anchor or Rust version strings are rejected
 - prebuilt Anchor artifacts stay blocked until official source URL and SHA-256 are pinned
 
-D4 proved that Anchor `0.30.1` does not activate under local Rust/Cargo `1.94.0`; D6 supersedes the old D5 `0.31.1` / `1.79.0` plan with latest stable Anchor/Rust targets.
+D4 proved that Anchor `0.30.1` does not activate under local Rust/Cargo `1.94.0`; D6 superseded the old D5 `0.31.1` / `1.79.0` plan with latest stable Anchor/Rust targets. D7 replaced local AVM `0.30.1` with AVM `1.0.2` through the fixed official Cargo reinstall command, activated `anchor-cli 1.0.2`, and completed the sample localnet deploy smoke. `avm use latest` still has a local runtime panic, so the UI continues to show the AVM update state separately from Anchor CLI readiness.
 
 ## Local Validator
 

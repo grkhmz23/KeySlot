@@ -160,6 +160,17 @@ struct WorkstationCommandRunner {
     }
 
     private func validateFixedToolchainArguments(_ plan: WorkstationCommandPlan) throws {
+        if URL(fileURLWithPath: plan.executablePath).lastPathComponent == "avm" {
+            let allowedSimple = [["--version"], ["list"], ["self-update"]]
+            let isAllowedSimple = allowedSimple.contains(plan.arguments)
+            let isAllowedAnchorVersionCommand = plan.arguments.count == 2 &&
+                ["install", "use"].contains(plan.arguments[0]) &&
+                WorkstationAnchorVersionPolicy.isFixedCandidate(plan.arguments[1])
+            if !isAllowedSimple && !isAllowedAnchorVersionCommand {
+                throw WorkstationCommandValidationError.unsafeArgument(plan.arguments.joined(separator: " "))
+            }
+        }
+
         if plan.arguments.count == 3,
            plan.arguments[0] == "toolchain",
            plan.arguments[1] == "install",
@@ -183,14 +194,21 @@ struct WorkstationCommandRunner {
             }
         }
 
-        if plan.name == "Install AVM",
-           let tagIndex = plan.arguments.firstIndex(of: "--tag"),
-           plan.arguments.indices.contains(tagIndex + 1) {
-            let tag = plan.arguments[tagIndex + 1]
-            let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
-            if version == WorkstationAnchorVersionPolicy.latestChannel ||
-                !WorkstationAnchorVersionPolicy.isFixedCandidate(version) {
-                throw WorkstationCommandValidationError.unsafeArgument(tag)
+        if plan.name == "AVM self-update",
+           plan.arguments != ["self-update"] {
+            throw WorkstationCommandValidationError.unsafeArgument(plan.arguments.joined(separator: " "))
+        }
+
+        if plan.name == "Install AVM" {
+            let allowed = [
+                "install",
+                "--git",
+                "https://github.com/solana-foundation/anchor",
+                "avm",
+                "--force"
+            ]
+            if plan.arguments != allowed {
+                throw WorkstationCommandValidationError.unsafeArgument(plan.arguments.joined(separator: " "))
             }
         }
     }

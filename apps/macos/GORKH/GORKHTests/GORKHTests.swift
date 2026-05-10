@@ -7077,10 +7077,13 @@ struct GORKHTests {
         #expect(anchorInstallPlan.commandPreviews.joined(separator: " ").contains("cargo install"))
         let avmInstall = WorkstationCommandBuilders.cargoInstallAVM(cargoPath: "/usr/bin/cargo", anchorVersion: WorkstationAnchorInstaller.pinnedAnchorVersion)
         try WorkstationCommandRunner().validate(avmInstall)
-        #expect(avmInstall.arguments == ["install", "--git", "https://github.com/solana-foundation/anchor", "avm", "--tag", "v1.0.2", "--locked", "--force"])
+        #expect(avmInstall.arguments == ["install", "--git", "https://github.com/solana-foundation/anchor", "avm", "--force"])
         let avmInstallFromLatest = WorkstationCommandBuilders.cargoInstallAVM(cargoPath: "/usr/bin/cargo", anchorVersion: "latest")
         try WorkstationCommandRunner().validate(avmInstallFromLatest)
-        #expect(avmInstallFromLatest.arguments.contains("v1.0.2"))
+        #expect(avmInstallFromLatest.arguments == avmInstall.arguments)
+        let avmSelfUpdate = WorkstationCommandBuilders.avmSelfUpdate(avmPath: "/usr/bin/avm")
+        try WorkstationCommandRunner().validate(avmSelfUpdate)
+        #expect(avmSelfUpdate.arguments == ["self-update"])
         let unsafeAVMTag = WorkstationCommandPlan(
             name: "Install AVM",
             executablePath: "/usr/bin/cargo",
@@ -7106,6 +7109,14 @@ struct GORKHTests {
         let unsafeAVMInstall = WorkstationCommandBuilders.avmInstallAnchor(avmPath: "/usr/bin/avm", anchorVersion: "1.0.3")
         #expect(throws: WorkstationCommandValidationError.self) {
             try WorkstationCommandRunner().validate(unsafeAVMInstall)
+        }
+        let unsafeAVMCommand = WorkstationCommandPlan(
+            name: "Unsafe AVM command",
+            executablePath: "/usr/bin/avm",
+            arguments: ["install", "1.0.3"]
+        )
+        #expect(throws: WorkstationCommandValidationError.self) {
+            try WorkstationCommandRunner().validate(unsafeAVMCommand)
         }
         let unsafeRustEnv = WorkstationCommandPlan(
             name: "Unsafe Rust pin",
@@ -7140,10 +7151,28 @@ struct GORKHTests {
         #expect(!decodedMatrix.anchorCandidates.contains { $0.version == "0.31.1" && $0.recommended })
         #expect(decodedMatrix.result.status == .installPlanAvailable)
         let strategy = WorkstationAnchorStrategySelector.select(matrix: decodedMatrix, avmPath: "/usr/bin/avm", rustupPath: "/usr/bin/rustup")
-        #expect(strategy.strategy == .avmPinnedRust)
+        #expect(strategy.strategy == .avmModernization)
         #expect(strategy.commandPreviews.joined(separator: " ").contains("rustup toolchain install stable"))
+        #expect(strategy.commandPreviews.joined(separator: " ").contains("avm self-update"))
         #expect(strategy.commandPreviews.joined(separator: " ").contains("avm install latest"))
         #expect(!strategy.commandPreviews.joined(separator: " ").contains("rustup default"))
+
+        let avmPlan = WorkstationAVMModernizationPlanner.avmUpdatePlan(snapshot: WorkstationToolchainSnapshot(resolutions: [
+            WorkstationToolchainResolution(component: .avm, source: .system, status: .available, executablePath: "/usr/bin/avm", version: "avm 0.30.1", lastCheckedAt: nil, message: "fixture"),
+            WorkstationToolchainResolution(component: .cargo, source: .system, status: .available, executablePath: "/usr/bin/cargo", version: "cargo 1.95.0", lastCheckedAt: nil, message: "fixture")
+        ]))
+        #expect(avmPlan.status == .selfUpdateAvailable)
+        #expect(avmPlan.commandPreviews.joined(separator: " ").contains("avm self-update"))
+        #expect(avmPlan.commandPreviews.joined(separator: " ").contains("cargo install --git https://github.com/solana-foundation/anchor avm --force"))
+
+        let binaryPlan = WorkstationAVMModernizationPlanner.anchorBinaryInstallPlan(
+            manifest: manifest,
+            managedRoot: FileManager.default.temporaryDirectory.appendingPathComponent("gorkh-anchor-binary-\(UUID().uuidString)", isDirectory: true)
+        )
+        #expect(binaryPlan.verification == .blockedMissingURL)
+        #expect(!binaryPlan.canInstall)
+        #expect(binaryPlan.installDirectory.contains("anchor"))
+        #expect(binaryPlan.installDirectory.contains("1.0.2"))
 
         let smokePreflight = WorkstationLocalnetSmokeRunner.preflight(
             sampleProjectPath: WorkstationSampleProject.anchorHelloWorld.path,
@@ -7264,10 +7293,13 @@ struct GORKHTests {
             "anchor activation",
             "no localnet program id was recorded",
             "d6 latest stable",
+            "d7 modern avm",
             "rustup toolchain install stable",
             "anchor latest",
             "1.0.2",
-            "1.95.0"
+            "1.95.0",
+            "anchor-cli 1.0.2",
+            "full localnet smoke"
         ] {
             #expect(docs.contains(required))
         }
@@ -7275,11 +7307,15 @@ struct GORKHTests {
 
         let script = try sourceText(relativePath: "../../../scripts/workstation-localnet-smoke.sh")
         #expect(script.contains("--full-localnet"))
+        #expect(script.contains("--check-avm"))
+        #expect(script.contains("--update-avm"))
+        #expect(script.contains("--activate-anchor-latest"))
         #expect(script.contains("--build-sample"))
         #expect(script.contains("anchor --version"))
         #expect(script.contains("found but unusable"))
         #expect(script.contains("GORKH_WORKSTATION_RUST_TOOLCHAIN"))
         #expect(script.contains("stable|1.95.0"))
+        #expect(script.contains("cargo install --git https://github.com/solana-foundation/anchor avm --force"))
         #expect(script.contains("solana program deploy"))
         #expect(!script.contains("mainnet-beta"))
         #expect(!script.contains("api.mainnet"))
@@ -7289,13 +7325,15 @@ struct GORKHTests {
 
         let releaseEvidence = try sourceText(relativePath: "../../../docs/qa/release-evidence-matrix.md").lowercased()
         #expect(releaseEvidence.contains("developer workstation"))
-        #expect(releaseEvidence.contains("anchor remains inactive"))
+        #expect(releaseEvidence.contains("anchor cli `1.0.2` is active"))
+        #expect(releaseEvidence.contains("full localnet sample deploy succeeded"))
         #expect(releaseEvidence.contains("1.0.2"))
         #expect(releaseEvidence.contains("1.95.0"))
-        #expect(releaseEvidence.contains("live-blocked"))
+        #expect(releaseEvidence.contains("local/live"))
 
         let workstationSource = try [
             "GORKH/Core/DeveloperWorkstation/WorkstationToolchainInstaller.swift",
+            "GORKH/Core/DeveloperWorkstation/WorkstationAVMModernization.swift",
             "GORKH/Core/DeveloperWorkstation/WorkstationAVMInstaller.swift",
             "GORKH/Core/DeveloperWorkstation/WorkstationLocalnetSmokeRunner.swift",
             "GORKH/Core/DeveloperWorkstation/WorkstationLocalValidator.swift",

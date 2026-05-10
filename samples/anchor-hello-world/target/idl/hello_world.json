@@ -1,9 +1,11 @@
 {
+  "address": "11111111111111111111111111111111",
   "version": "0.1.0",
   "name": "hello_world",
   "instructions": [
     {
       "name": "initialize",
+      "discriminator": [175, 175, 109, 31, 13, 152, 155, 237],
       "accounts": [
         { "name": "state", "isMut": true, "isSigner": true },
         { "name": "authority", "isMut": true, "isSigner": true },
@@ -17,6 +19,7 @@
   "accounts": [
     {
       "name": "HelloState",
+      "discriminator": [232, 42, 134, 76, 92, 238, 90, 241],
       "type": {
         "kind": "struct",
         "fields": [
@@ -28,5 +31,10 @@
   ],
   "types": [],
   "events": [],
-  "errors": []
+  "errors": [],
+  "metadata": {
+    "name": "hello_world",
+    "version": "0.1.0",
+    "spec": "0.1.0"
+  }
 }

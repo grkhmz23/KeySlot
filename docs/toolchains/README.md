@@ -89,3 +89,23 @@ The manifest is explicit and honest:
 - `anchor --version` still reports `Anchor version not set`.
 - Full localnet deploy smoke remains blocked until Anchor activates.
 - Anchor activation and localnet smoke evidence are recorded in `docs/qa/developer-workstation-localnet-smoke.md`.
+
+## D7 Modern AVM / Anchor Activation
+
+D7 keeps the same official latest targets and adds a modern AVM path:
+
+- try fixed `avm self-update` when AVM supports it
+- if self-update is unsupported, use fixed `cargo install --git https://github.com/solana-foundation/anchor avm --force`
+- run fixed `avm install latest` and verify the resolved `anchor --version`
+- keep official prebuilt Anchor binary install blocked until a release asset URL and SHA-256 are pinned
+
+Local evidence:
+
+- `avm self-update` was unsupported by the old local AVM `0.30.1`.
+- the fixed Cargo reinstall from the official Anchor repository succeeded and installed AVM `1.0.2`.
+- `avm install latest` activated `anchor-cli 1.0.2`.
+- `avm use latest` still reported an AVM runtime panic in the local system-configuration/reqwest path, but `anchor --version` remained usable.
+- full localnet smoke built the sample project and deployed a temporary localnet program.
+- no bundled binaries are claimed and no official prebuilt binary install is enabled without SHA-256.
+
+Anchor build uses upstream Solana/Anchor build tooling and may download SBPF platform tooling during the build. This is why project trust and explicit command approval remain required before any build or deploy operation.

@@ -63,14 +63,15 @@ enum WorkstationAnchorInstaller {
         }
 
         if let avmPath = snapshot.resolution(for: .avm)?.executablePath {
+            let selfUpdate = WorkstationCommandBuilders.avmSelfUpdate(avmPath: avmPath)
             let install = WorkstationCommandBuilders.avmInstallAnchor(avmPath: avmPath, anchorVersion: pinnedVersion)
             let use = WorkstationCommandBuilders.avmUseAnchor(avmPath: avmPath, anchorVersion: pinnedVersion)
             return WorkstationAnchorInstallPlan(
                 id: "anchor-\(pinnedVersion)",
                 pinnedAnchorVersion: pinnedVersion,
                 status: .readyWithAVM,
-                message: "AVM is available. Anchor install is a fixed, explicit tooling operation and must be verified with anchor --version.",
-                commandPreviews: [install.redactedPreview, use.redactedPreview]
+                message: "AVM is available. Try fixed AVM modernization when needed, then run fixed Anchor install/use and verify with anchor --version.",
+                commandPreviews: [selfUpdate.redactedPreview, install.redactedPreview, use.redactedPreview]
             )
         }
 
