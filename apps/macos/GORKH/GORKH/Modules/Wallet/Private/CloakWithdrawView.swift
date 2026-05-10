@@ -33,6 +33,11 @@ struct CloakWithdrawView: View {
 
                     if let record = selectedRecord {
                         recordSummary(record)
+                        let shieldReview = ShieldReviewService.reviewCloakFullWithdraw(
+                            record: record,
+                            recipientAddress: recipientAddress
+                        )
+                        ShieldReviewCard(summary: shieldReview)
                     }
 
                     TextField("Recipient public address", text: $recipientAddress)

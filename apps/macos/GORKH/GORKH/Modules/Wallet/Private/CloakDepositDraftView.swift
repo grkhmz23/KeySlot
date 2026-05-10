@@ -39,6 +39,8 @@ struct CloakDepositDraftView: View {
 
                 if let draft = walletManager.currentCloakDepositDraft {
                     draftSummary(draft)
+                    let shieldReview = ShieldReviewService.reviewCloakDeposit(draft: draft)
+                    ShieldReviewCard(summary: shieldReview)
                     approvalControls
                     Button {
                         Task {
@@ -53,7 +55,7 @@ struct CloakDepositDraftView: View {
                         Label("Approve, Authenticate, Sign, and Shield SOL", systemImage: "lock.shield")
                     }
                     .buttonStyle(.gorkhPrimary)
-                    .disabled(!canExecuteDeposit)
+                    .disabled(!canExecuteDeposit || ShieldReviewPolicy.requiresBlockingReview(shieldReview))
                 } else {
                     Text("Prepare a SOL amount to preview Cloak minimums, fixed fee, variable fee, and estimated private net amount.")
                         .font(.caption)

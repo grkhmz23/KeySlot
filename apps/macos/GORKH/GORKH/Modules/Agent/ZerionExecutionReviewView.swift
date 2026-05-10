@@ -40,6 +40,13 @@ struct ZerionExecutionReviewView: View {
                     }
                 }
 
+                let shieldReview = ShieldReviewService.reviewZerionTinySwap(
+                    proposal: proposal,
+                    decision: decision,
+                    commandPlan: commandPlan
+                )
+                ShieldReviewCard(summary: shieldReview)
+
                 if proposal.estimatedNotionalUSD == nil {
                     Toggle("I understand the USD value is unavailable and the amount is still intentionally tiny.", isOn: Binding(
                         get: { unknownValueAcknowledged },

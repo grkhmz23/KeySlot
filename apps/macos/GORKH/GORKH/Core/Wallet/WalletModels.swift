@@ -401,6 +401,12 @@ struct AuditEvent: Codable, Equatable, Identifiable {
         case transactionStudioRiskReviewGenerated = "transaction_studio_risk_review_generated"
         case transactionStudioExplanationGenerated = "transaction_studio_explanation_generated"
         case transactionStudioHandoffCreated = "transaction_studio_handoff_created"
+        case shieldReviewGenerated = "shield_review_generated"
+        case shieldReviewUnavailable = "shield_review_unavailable"
+        case shieldReviewRiskHigh = "shield_review_risk_high"
+        case shieldReviewOpenedInStudio = "shield_review_opened_in_studio"
+        case shieldReviewApprovalBlocked = "shield_review_approval_blocked"
+        case shieldReviewApprovalContinued = "shield_review_approval_continued"
     }
 
     let id: UUID

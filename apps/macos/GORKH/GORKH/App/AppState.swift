@@ -6,6 +6,7 @@ final class AppState: ObservableObject {
     @Published var selectedModule: GORKHModule = .wallet
     @Published var requestedWalletSection: WalletSection?
     @Published var pendingAgentMessage: String?
+    @Published var pendingTransactionStudioSummary: String?
 
     let walletManager: WalletManager
 
@@ -25,6 +26,11 @@ final class AppState: ObservableObject {
     func requestAgentMessage(_ message: String) {
         pendingAgentMessage = message
         selectedModule = .agent
+    }
+
+    func requestTransactionStudioSummary(_ summary: String) {
+        pendingTransactionStudioSummary = summary
+        selectedModule = .transactionStudio
     }
 }
 

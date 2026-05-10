@@ -5160,6 +5160,207 @@ struct GORKHTests {
         #expect(!fixtures.contains("nft"))
     }
 
+    @Test func shieldReviewSummarizesApprovalsWithoutSigningOrPersistingPayloads() throws {
+        let recipient = Base58.encode(Data(repeating: 8, count: 32))
+        let sender = Base58.encode(Data(repeating: 9, count: 32))
+        let solDraft = TransactionDraft(
+            network: .mainnetBeta,
+            fromAddress: sender,
+            toAddress: recipient,
+            amountLamports: 1_000_000
+        )
+        let failedSimulation = SimulationResult(
+            status: .failed,
+            logs: ["Program failed"],
+            estimatedFeeLamports: 5_000,
+            errorMessage: "unit simulation failed",
+            simulatedAt: Date(timeIntervalSince1970: 1)
+        )
+        let solReview = ShieldReviewService.reviewSOLTransfer(draft: solDraft, simulation: failedSimulation)
+        #expect(solReview.title.contains("SOL"))
+        #expect(solReview.programLabels.contains("System Program"))
+        #expect(solReview.parsedActions.contains { $0.label.contains("System transfer") })
+        #expect(solReview.riskFlags.contains { $0.kind == TransactionRiskFlagKind.nativeSOLTransfer.rawValue })
+        #expect(solReview.riskFlags.contains { $0.kind == TransactionRiskFlagKind.simulationFailed.rawValue })
+        #expect(!ShieldReviewPolicy.canContinueAfterReview(summary: solReview, simulationRequired: true))
+
+        let ataPlan = AssociatedTokenAccountPlan(
+            recipientOwnerAddress: recipient,
+            mintAddress: Base58.encode(Data(repeating: 10, count: 32)),
+            tokenProgramKind: .token2022,
+            associatedTokenAddress: Base58.encode(Data(repeating: 11, count: 32)),
+            recipientTokenAccountExists: false,
+            shouldCreateAssociatedTokenAccount: true,
+            creationSupported: true,
+            rentExemptLamports: 2_039_280,
+            message: "Create recipient ATA."
+        )
+        let tokenDraft = TokenTransferDraft(
+            network: .mainnetBeta,
+            ownerAddress: sender,
+            sourceTokenAccount: Base58.encode(Data(repeating: 12, count: 32)),
+            mintAddress: ataPlan.mintAddress,
+            tokenProgramKind: .token2022,
+            recipientOwnerAddress: recipient,
+            recipientTokenAccount: ataPlan.associatedTokenAddress,
+            amountRaw: 1_234_500,
+            amountText: "1.2345",
+            decimals: 6,
+            availableAmountRaw: 2_000_000,
+            ataPlan: ataPlan,
+            tokenSymbol: "UNIT",
+            tokenName: "Unit Token"
+        )
+        let tokenReview = ShieldReviewService.reviewTokenTransfer(
+            draft: tokenDraft,
+            simulation: SimulationResult(status: .success, logs: [], estimatedFeeLamports: 6_000, errorMessage: nil, simulatedAt: Date(timeIntervalSince1970: 2))
+        )
+        #expect(tokenReview.programLabels.contains("Token-2022"))
+        #expect(tokenReview.programLabels.contains("Associated Token Account"))
+        #expect(tokenReview.parsedActions.contains { $0.label.contains("Token transferChecked") })
+        #expect(tokenReview.riskFlags.contains { $0.kind == TransactionRiskFlagKind.token2022TransferHook.rawValue })
+        #expect(tokenReview.riskFlags.contains { $0.kind == TransactionRiskFlagKind.token2022TransferFee.rawValue })
+
+        let quote = JupiterQuoteSummary(
+            inputMint: SwapConstants.nativeSolMint,
+            outputMint: ataPlan.mintAddress,
+            inAmount: 100_000_000,
+            outAmount: 99_000,
+            otherAmountThreshold: 98_000,
+            swapMode: "ExactIn",
+            slippageBps: 50,
+            priceImpactPct: Decimal(string: "0.01"),
+            routePlan: [
+                SwapRouteLeg(
+                    ammKey: "unit-amm",
+                    label: "Jupiter",
+                    inputMint: SwapConstants.nativeSolMint,
+                    outputMint: ataPlan.mintAddress,
+                    inAmount: 100_000_000,
+                    outAmount: 99_000,
+                    feeAmount: nil,
+                    feeMint: nil,
+                    percent: 100,
+                    bps: nil
+                )
+            ],
+            contextSlot: nil,
+            timeTaken: nil,
+            rawQuoteJSON: Data("{}".utf8)
+        )
+        let swapReview = SwapTransactionReview(
+            transactionVersion: "v0",
+            feePayer: sender,
+            signerAccounts: [sender],
+            writableAccounts: [sender, recipient],
+            programSummaries: [
+                SwapInstructionProgramSummary(programID: TransactionInstructionLabeler.jupiterV6ProgramID, label: "Jupiter", instructionCount: 1)
+            ],
+            accountSummaries: [],
+            requiredSignatureCount: 1,
+            messageBase64: "safe-message-summary",
+            transactionFingerprint: "unit-swap",
+            addressLookupTableCount: 1,
+            riskWarnings: [
+                SwapRouteRiskWarning(severity: .warning, message: "Unit route warning.")
+            ],
+            warnings: [],
+            blockingReasons: []
+        )
+        let swapShield = ShieldReviewService.reviewSwap(
+            quote: quote,
+            review: swapReview,
+            simulation: failedSimulation,
+            network: .mainnetBeta
+        )
+        #expect(swapShield.programLabels.contains("Jupiter"))
+        #expect(swapShield.riskFlags.contains { $0.kind == TransactionRiskFlagKind.addressLookupTableUse.rawValue })
+        #expect(swapShield.riskFlags.contains { $0.message.contains("Unit route warning") })
+
+        let orcaPlan = OrcaHarvestPlan(
+            walletPublicAddress: sender,
+            positionMint: Base58.encode(Data(repeating: 13, count: 32)),
+            positionAddress: Base58.encode(Data(repeating: 14, count: 32)),
+            poolAddress: Base58.encode(Data(repeating: 15, count: 32)),
+            tokenAMint: Base58.encode(Data(repeating: 16, count: 32)),
+            tokenBMint: Base58.encode(Data(repeating: 17, count: 32)),
+            feeOwedA: nil,
+            feeOwedB: nil,
+            rewardOwed: nil,
+            instructionCount: 1,
+            writableAccountCount: 3,
+            signerAccounts: [sender],
+            programIDs: [OrcaHarvestConstants.whirlpoolProgramID],
+            instructions: [],
+            source: OrcaHarvestConstants.source,
+            expiresAt: Date(timeIntervalSince1970: 300),
+            warning: "unit warning"
+        )
+        let orcaDraft = OrcaHarvestDraft(
+            walletID: UUID(),
+            walletPublicAddress: sender,
+            network: .mainnetBeta,
+            positionMint: orcaPlan.positionMint,
+            positionAddress: orcaPlan.positionAddress ?? "",
+            poolAddress: orcaPlan.poolAddress ?? "",
+            plan: orcaPlan,
+            createdAt: Date(timeIntervalSince1970: 3)
+        )
+        let orcaShield = ShieldReviewService.reviewOrcaHarvest(draft: orcaDraft, review: nil, simulation: failedSimulation)
+        #expect(orcaShield.programLabels.contains("Orca Whirlpool"))
+        #expect(orcaShield.riskFlags.contains { $0.kind == TransactionRiskFlagKind.defiProtocolInteraction.rawValue })
+
+        let cloakDraft = try CloakDepositDraft(network: .mainnetBeta, sourceWalletAddress: sender, grossLamports: 20_000_000)
+        let cloakShield = ShieldReviewService.reviewCloakDeposit(draft: cloakDraft)
+        #expect(cloakShield.riskLevel == .high)
+        #expect(cloakShield.explanation.lowercased().contains("private proof") == false)
+        #expect(cloakShield.explanation.lowercased().contains("raw cloak transaction bytes are not exposed"))
+
+        let zerionShield = ShieldReviewService.reviewZerionTinySwap(
+            proposal: .sampleBaseTinySwap,
+            decision: .blocked(["unit policy missing"], cap: 5),
+            commandPlan: .unavailable(reason: "command unavailable")
+        )
+        #expect(zerionShield.status == .externalSummary)
+        #expect(zerionShield.explanation.contains("raw transaction decode unavailable"))
+        #expect(zerionShield.explanation.contains("GORKH main wallet") == false || zerionShield.riskFlags.contains { $0.message.contains("main-wallet") || $0.message.contains("main wallet") })
+
+        let unavailable = ShieldReviewSummary.unavailable(title: "Unit unavailable", reason: "internal decode error", requirements: [.review])
+        #expect(ShieldReviewPolicy.requiresBlockingReview(unavailable))
+
+        let handoff = ShieldReviewHandoffBuilder.safeSummary(for: tokenReview).lowercased()
+        #expect(handoff.contains("no raw transaction payload"))
+        #expect(!handoff.contains("serializedtransaction"))
+        #expect(!handoff.contains("transactionpayload"))
+
+        let encoded = try #require(String(data: JSONEncoder().encode(tokenReview), encoding: .utf8)).lowercased()
+        for forbidden in ["privatekey", "secretkey", "seedphrase", "mnemonic", "walletjson", "signingseed", "serializedtransaction", "transactionpayload"] {
+            #expect(!encoded.contains(forbidden))
+        }
+
+        let shieldSource = try [
+            "GORKH/Core/ShieldReview/ShieldReviewModels.swift",
+            "GORKH/Core/ShieldReview/ShieldReviewService.swift",
+            "GORKH/Core/ShieldReview/ShieldReviewPolicy.swift",
+            "GORKH/Core/ShieldReview/ShieldReviewHandoff.swift",
+            "GORKH/Modules/ShieldReview/ShieldReviewCard.swift",
+            "GORKH/Modules/ShieldReview/ShieldReviewDetailView.swift"
+        ].map { try sourceText(relativePath: $0) }.joined(separator: "\n").lowercased()
+        for forbidden in ["sendtransaction(", "requestairdrop(", "signtransaction(", "broadcast(", "buildbundle", "/bin/sh", "eval("] {
+            #expect(!shieldSource.contains(forbidden))
+        }
+        #expect(!shieldSource.contains("nft"))
+
+        let architecture = try sourceText(relativePath: "../../../docs/architecture/shield-review-integration.md").lowercased()
+        let smoke = try sourceText(relativePath: "../../../docs/qa/shield-review-approval-smoke.md").lowercased()
+        #expect(architecture.contains("review-only"))
+        #expect(architecture.contains("no external dapp signing"))
+        #expect(smoke.contains("sol send"))
+        #expect(smoke.contains("zerion"))
+        #expect(!architecture.contains("nft"))
+        #expect(!smoke.contains("nft"))
+    }
+
     @Test func agentMemoryAndAuditRedactionContainNoSecrets() throws {
         let sensitive = "ZERION_API_KEY=zk_unit_test_secret agent token: spend-power private key: abc"
         let message = AgentChatMessage(role: .user, text: sensitive)

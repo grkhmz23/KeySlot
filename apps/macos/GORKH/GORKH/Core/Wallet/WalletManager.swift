@@ -3723,6 +3723,26 @@ final class WalletManager: ObservableObject {
         auditEvents.insert(event, at: 0)
     }
 
+    func recordShieldReviewEvent(
+        kind: AuditEvent.Kind,
+        summary: ShieldReviewSummary,
+        message: String
+    ) {
+        record(
+            kind: kind,
+            walletID: selectedWalletID,
+            publicAddress: selectedProfile?.publicAddress,
+            message: message,
+            details: [
+                "risk": summary.riskLevel.rawValue,
+                "status": summary.status.rawValue,
+                "programs": summary.programLabels.prefix(6).joined(separator: ", "),
+                "unknown_instruction_count": "\(summary.unknownInstructionCount)",
+                "payload": "safe_summary_only"
+            ]
+        )
+    }
+
     private func recordFailure(message: String) {
         record(
             kind: .transactionFailed,

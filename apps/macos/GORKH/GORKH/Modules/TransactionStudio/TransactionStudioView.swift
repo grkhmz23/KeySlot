@@ -101,6 +101,10 @@ struct TransactionStudioView: View {
         .onAppear {
             history = historyStore.load()
             record(.studioOpened, "Transaction Studio opened.")
+            consumePendingShieldReviewSummaryIfNeeded()
+        }
+        .onChange(of: appState.pendingTransactionStudioSummary) { _, _ in
+            consumePendingShieldReviewSummaryIfNeeded()
         }
         .accessibilityIdentifier("transactionStudio.root")
     }
@@ -352,6 +356,38 @@ struct TransactionStudioView: View {
     private func openWalletActivity() {
         appState.requestWalletSection(.activity)
         record(.handoffCreated, "Transaction Studio opened Wallet Activity.")
+    }
+
+    private func consumePendingShieldReviewSummaryIfNeeded() {
+        guard let summary = appState.pendingTransactionStudioSummary else {
+            return
+        }
+        inputText = summary
+        detectedInput = TransactionStudioInput(
+            rawValue: "shield-review-summary",
+            kind: .importHandoff,
+            encoding: .plain
+        )
+        decodedTransaction = nil
+        addressSummary = nil
+        accountEnrichment = .notRun
+        simulation = .notRun
+        riskReview = .empty
+        explanation = TransactionExplanation(
+            summary: summary,
+            reviewChecklist: [
+                "This is a safe Shield Review summary from an approval screen.",
+                "Paste a raw transaction or signature for full Transaction Studio decode.",
+                "Transaction Studio cannot sign or broadcast."
+            ],
+            source: "shield review handoff",
+            generatedAt: Date()
+        )
+        selectedTab = .explanation
+        status = .decoded
+        statusMessage = "Opened safe Shield Review summary. No raw transaction payload was persisted."
+        appState.pendingTransactionStudioSummary = nil
+        record(.handoffCreated, "Shield Review safe summary opened in Transaction Studio.", details: ["payload": "safe_summary_only"])
     }
 
     private func record(_ kind: TransactionStudioAuditEventKind, _ message: String, details: [String: String] = [:]) {

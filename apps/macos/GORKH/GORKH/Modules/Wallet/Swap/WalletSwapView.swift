@@ -149,6 +149,7 @@ struct WalletSwapView: View {
                 review: walletManager.currentSwapReview,
                 simulation: walletManager.swapSimulationResult,
                 approvalState: walletManager.swapApprovalState,
+                network: walletManager.selectedNetwork,
                 mainnetConfirmation: $mainnetConfirmation,
                 completedDevnetSmoke: $completedDevnetSmoke,
                 approveAction: {

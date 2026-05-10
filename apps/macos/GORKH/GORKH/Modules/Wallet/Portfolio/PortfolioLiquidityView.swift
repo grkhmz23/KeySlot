@@ -189,6 +189,13 @@ private struct OrcaHarvestApprovalPanel: View {
                 row("Estimated fee", simulation?.estimatedFeeLamports.map { "\($0) lamports" } ?? "Unavailable")
                 row("Review", review?.canApprove == true ? "passed" : "missing or blocked")
 
+                let shieldReview = ShieldReviewService.reviewOrcaHarvest(
+                    draft: draft,
+                    review: review,
+                    simulation: simulation
+                )
+                ShieldReviewCard(summary: shieldReview)
+
                 if let warning = draft.plan.warning {
                     Text(warning)
                         .font(.caption)
@@ -239,7 +246,7 @@ private struct OrcaHarvestApprovalPanel: View {
                         Label("Approve, Authenticate, Sign Locally, and Send", systemImage: "signature")
                     }
                     .buttonStyle(.gorkhPrimary)
-                    .disabled(!(review?.canApprove == true && simulation?.status == .success))
+                    .disabled(!(review?.canApprove == true && simulation?.status == .success) || ShieldReviewPolicy.requiresBlockingReview(shieldReview))
 
                     Button(action: resetAction) {
                         Label("Clear", systemImage: "xmark.circle")

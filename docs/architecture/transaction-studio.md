@@ -138,3 +138,11 @@ Allowed handoffs:
 Handoffs do not create an executable transaction path.
 
 The Agent handoff sends a safe parsed summary, risk flags, simulation status, and public reference only. It does not include raw transaction bytes, serialized payloads, or secret fields.
+
+## Shield Review Integration
+
+Wallet approval screens reuse Transaction Studio review concepts through Shield Review. Shield Review can summarize programs, parsed actions, signers, writable accounts, risk flags, and simulation status before a destination flow signs.
+
+Execution still belongs to the destination approval flow. Transaction Studio and Shield Review do not sign, broadcast, or bypass mainnet phrase, LocalAuthentication, simulation, or fingerprint checks.
+
+If raw transaction bytes are unavailable, Shield Review shows a safe external or unavailable summary instead of faking a decode.

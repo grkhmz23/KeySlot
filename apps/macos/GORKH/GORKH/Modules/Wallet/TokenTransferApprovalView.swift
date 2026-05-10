@@ -66,6 +66,12 @@ struct TokenTransferApprovalView: View {
                 )
             }
 
+            let shieldReview = ShieldReviewService.reviewTokenTransfer(
+                draft: draft,
+                simulation: walletManager.tokenSimulationResult
+            )
+            ShieldReviewCard(summary: shieldReview)
+
             if draft.network.isMainnet {
                 VStack(alignment: .leading, spacing: 8) {
                     GorkhStatusChip(title: "Real mainnet token transfer", systemImage: "exclamationmark.triangle.fill", color: GorkhColors.warning)
@@ -118,7 +124,7 @@ struct TokenTransferApprovalView: View {
                 )
             }
             .buttonStyle(.gorkhPrimary)
-            .disabled(!canApprove || walletManager.vaultState != .unlocked || walletManager.isBusy || draft.recipientTokenAccount == nil)
+            .disabled(!canApprove || ShieldReviewPolicy.requiresBlockingReview(shieldReview) || walletManager.vaultState != .unlocked || walletManager.isBusy || draft.recipientTokenAccount == nil)
 
             if let signature = walletManager.lastTransactionSignature {
                 VStack(alignment: .leading, spacing: 6) {

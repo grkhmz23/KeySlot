@@ -32,6 +32,12 @@ struct TransactionApprovalView: View {
                     approvalRow("Simulation", walletManager.simulationResult?.status.rawValue ?? "missing")
                 }
 
+                let shieldReview = ShieldReviewService.reviewSOLTransfer(
+                    draft: draft,
+                    simulation: walletManager.simulationResult
+                )
+                ShieldReviewCard(summary: shieldReview)
+
                 if draft.network.isMainnet {
                     VStack(alignment: .leading, spacing: 8) {
                         GorkhStatusChip(title: "Real mainnet transaction", systemImage: "exclamationmark.triangle.fill", color: GorkhColors.warning)
@@ -81,7 +87,7 @@ struct TransactionApprovalView: View {
                     )
                 }
                 .buttonStyle(.gorkhPrimary)
-                .disabled(!canApprove(draft: draft) || walletManager.vaultState != .unlocked || walletManager.isBusy)
+                .disabled(!canApprove(draft: draft) || ShieldReviewPolicy.requiresBlockingReview(shieldReview) || walletManager.vaultState != .unlocked || walletManager.isBusy)
 
                 if let signature = walletManager.lastTransactionSignature {
                     VStack(alignment: .leading, spacing: 6) {

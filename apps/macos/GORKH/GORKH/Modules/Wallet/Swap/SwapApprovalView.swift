@@ -5,6 +5,7 @@ struct SwapApprovalView: View {
     let review: SwapTransactionReview?
     let simulation: SimulationResult?
     let approvalState: ApprovalState
+    let network: WalletNetwork
     @Binding var mainnetConfirmation: String
     @Binding var completedDevnetSmoke: Bool
     let approveAction: () -> Void
@@ -29,6 +30,14 @@ struct SwapApprovalView: View {
                     approvalRow("Route", quote.routeLabel)
                     approvalRow("Review", review?.canApprove == true ? "passed" : "missing or blocked")
                     approvalRow("Estimated fee", simulation?.estimatedFeeLamports.map { "\($0) lamports" } ?? "Unavailable")
+
+                    let shieldReview = ShieldReviewService.reviewSwap(
+                        quote: quote,
+                        review: review,
+                        simulation: simulation,
+                        network: network
+                    )
+                    ShieldReviewCard(summary: shieldReview)
 
                     Text("Mainnet swaps are irreversible and can permanently move real funds. Verify tokens, route, minimum received, fee payer, programs, and simulation before approving.")
                         .font(.caption)
@@ -58,7 +67,7 @@ struct SwapApprovalView: View {
                         Label("Approve Mainnet, Authenticate, Sign Locally, and Send", systemImage: "signature")
                     }
                     .buttonStyle(.gorkhPrimary)
-                    .disabled(!canApprove)
+                    .disabled(!canApprove || ShieldReviewPolicy.requiresBlockingReview(shieldReview))
                 }
             } else {
                 Text("Quote, build, review, and simulate before approval.")
