@@ -53,4 +53,20 @@ Expected:
 
 ## D8 Status
 
-Devnet certification path exists and is gated. A live devnet deploy was not run in D8. The blocker is intentional: devnet deploy requires explicit local funding and `GORKH_WORKSTATION_DEVNET_DEPLOY=1`.
+Devnet certification path exists and is gated. A live devnet deploy was not run during the initial D8 commit because it required explicit local funding and `GORKH_WORKSTATION_DEVNET_DEPLOY=1`.
+
+## D8 Follow-Up Live Devnet Evidence
+
+After the D8 commit, a separate Developer Workstation dev wallet was funded on devnet and used for a manual, explicit devnet-only sample deploy.
+
+- Developer wallet public key: `6iiYaBaxJStXt3BQhfjNTBo81S1f6fxAwfYtjYvNM98k`
+- Toolchain: Anchor CLI `1.0.2`, Solana CLI `3.1.10`, Cargo `1.95.0`
+- Program id: `9jZcQzNhUkXpEdyUGN4xsTnJ1N2xdaSWwkQiTDQtHncV`
+- Deploy signature: `3PnyFV1G7whcj6291xf7BWMeXoqhy3s5mE5LdjKCRoT3TAacQnbuVAzuJ5TzK72xZQsnh4kZx8TXqR4fWRUoQieE`
+- ProgramData address: `FLfM6b2QhjrmanjZ4aJhJ7H37Nbt3skGxEP9uxS2vEHX`
+- Last deployed slot: `461478156`
+- Upgrade authority: `6iiYaBaxJStXt3BQhfjNTBo81S1f6fxAwfYtjYvNM98k`
+- Remaining developer wallet balance after deploy: `9.12077332 SOL`
+- Disposable sample build directory cleanup: confirmed
+
+No mainnet operation was run. No keypair contents, private keys, seed phrases, or wallet JSON were recorded.

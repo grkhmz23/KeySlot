@@ -200,4 +200,12 @@ D8 smoke result:
 - Deploy signature: `3UwxdFwWT3WhLfKT5Gssf3Z19pawgA4x5KwWbXqNzUJAyeSmiU7LHWBhWuTr363QjvDivfxSoheVbF883foX9r8r`.
 - Temp keypair cleanup: confirmed by successful smoke exit.
 
+D8 follow-up devnet certification:
+
+- Manual funded devnet deploy succeeded using a separate Developer Workstation dev wallet.
+- Program id: `9jZcQzNhUkXpEdyUGN4xsTnJ1N2xdaSWwkQiTDQtHncV`.
+- Deploy signature: `3PnyFV1G7whcj6291xf7BWMeXoqhy3s5mE5LdjKCRoT3TAacQnbuVAzuJ5TzK72xZQsnh4kZx8TXqR4fWRUoQieE`.
+- Program show verified owner `BPFLoaderUpgradeab1e11111111111111111111111` and upgrade authority `6iiYaBaxJStXt3BQhfjNTBo81S1f6fxAwfYtjYvNM98k`.
+- Disposable sample build directory cleanup: confirmed.
+
 Mainnet program operations remain locked.

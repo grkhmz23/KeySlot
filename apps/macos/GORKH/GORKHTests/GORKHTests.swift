@@ -7505,6 +7505,9 @@ struct GORKHTests {
             "d8 program ops certification",
             "devnet certification",
             "program-operation evidence",
+            "d8 follow-up live devnet evidence",
+            "manual funded devnet deploy",
+            "9jzcqznhukxpedyugn4xstnj1n2xdaswwkqitdqthncv",
             "i understand this closes a solana program and may be irreversible",
             "i understand this revokes upgrade authority and may be irreversible"
         ] {
@@ -7547,6 +7550,7 @@ struct GORKHTests {
         #expect(releaseEvidence.contains("anchor cli `1.0.2` is active"))
         #expect(releaseEvidence.contains("full localnet sample deploy succeeded"))
         #expect(releaseEvidence.contains("devnet certification path exists"))
+        #expect(releaseEvidence.contains("follow-up devnet deploy succeeded"))
         #expect(releaseEvidence.contains("1.0.2"))
         #expect(releaseEvidence.contains("1.95.0"))
         #expect(releaseEvidence.contains("local/live"))
