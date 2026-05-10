@@ -7190,7 +7190,10 @@ struct GORKHTests {
             "mainnet program ops locked",
             "no arbitrary shell",
             "avm",
-            "offline signing"
+            "offline signing",
+            "d4 evidence",
+            "anchor activation",
+            "no localnet program id was recorded"
         ] {
             #expect(docs.contains(required))
         }
@@ -7199,12 +7202,19 @@ struct GORKHTests {
         let script = try sourceText(relativePath: "../../../scripts/workstation-localnet-smoke.sh")
         #expect(script.contains("--full-localnet"))
         #expect(script.contains("--build-sample"))
+        #expect(script.contains("anchor --version"))
+        #expect(script.contains("found but unusable"))
         #expect(script.contains("solana program deploy"))
         #expect(!script.contains("mainnet-beta"))
         #expect(!script.contains("api.mainnet"))
         #expect(!script.contains("/bin/sh"))
         #expect(!script.contains("sh -"))
         #expect(!script.lowercased().contains("curl"))
+
+        let releaseEvidence = try sourceText(relativePath: "../../../docs/qa/release-evidence-matrix.md").lowercased()
+        #expect(releaseEvidence.contains("developer workstation"))
+        #expect(releaseEvidence.contains("anchor activation failed"))
+        #expect(releaseEvidence.contains("live-blocked"))
 
         let workstationSource = try [
             "GORKH/Core/DeveloperWorkstation/WorkstationToolchainInstaller.swift",

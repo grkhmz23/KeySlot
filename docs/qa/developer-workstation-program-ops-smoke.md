@@ -82,3 +82,21 @@ Staged live modes:
 - `scripts/workstation-localnet-smoke.sh --full-localnet`
 
 Use live modes only when Solana CLI, solana-test-validator, and Anchor CLI are installed locally and localnet use is intentional. The full path creates a temporary keypair file, starts a validator if needed, builds the sample, deploys to localnet with fixed `solana program deploy`, verifies with `solana program show`, and deletes temporary files on exit.
+
+## D4 Anchor Activation Evidence
+
+Phase D4 attempted the approved Anchor activation path:
+
+- Cargo was available: `cargo 1.94.0`.
+- AVM was installed and available: `avm 0.30.1`.
+- Anchor remained unavailable because `anchor --version` returned `Anchor version not set`.
+- `avm install 0.30.1` failed while compiling `anchor-cli 0.30.1`; dependency `time 0.3.29` failed under the local Rust/Cargo 1.94 toolchain.
+
+The localnet program deploy smoke did not deploy a sample program in D4. The smoke script now validates `anchor --version` before starting a local validator, so `scripts/workstation-localnet-smoke.sh --full-localnet` skips safely when the Anchor shim exists but is not usable.
+
+Recorded D4 result:
+
+- Build/deploy status: blocked by Anchor activation.
+- Program id: none.
+- Temporary keypair: not created by the final full-localnet smoke path.
+- Mainnet program operations: still locked.

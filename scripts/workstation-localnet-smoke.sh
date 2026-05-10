@@ -93,12 +93,28 @@ tool_status() {
   return 1
 }
 
+anchor_status() {
+  if ! have_tool anchor; then
+    echo "anchor: missing"
+    return 1
+  fi
+
+  local version_output
+  if version_output="$(anchor --version 2>&1)"; then
+    echo "anchor: ready ($version_output)"
+    return 0
+  fi
+
+  echo "anchor: found but unusable ($(printf '%s' "$version_output" | head -n 1))"
+  return 1
+}
+
 SOLANA_OK=0
 VALIDATOR_OK=0
 ANCHOR_OK=0
 tool_status solana || SOLANA_OK=1
 tool_status solana-test-validator || VALIDATOR_OK=1
-tool_status anchor || ANCHOR_OK=1
+anchor_status || ANCHOR_OK=1
 
 if [[ "$MODE" == "check" ]]; then
   echo "check mode complete; live localnet build/deploy skipped"
@@ -112,7 +128,7 @@ fi
 
 if [[ "$MODE" == "build-sample" || "$MODE" == "deploy-sample" || "$MODE" == "full-localnet" ]]; then
   if [[ "$ANCHOR_OK" -ne 0 ]]; then
-    echo "localnet smoke skipped because Anchor CLI is missing"
+    echo "localnet smoke skipped because Anchor CLI is missing or unusable"
     exit 0
   fi
 fi
