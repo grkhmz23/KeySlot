@@ -63,6 +63,8 @@ The app validates outbound requests before sending:
 
 All response fields are advisory. The backend cannot approve execution, cannot bypass policy, and cannot change a proposal into an approved state. If a response claims approval or execution, the app ignores that claim and treats the response as degraded.
 
+`requestId` should be returned whenever possible. If it is missing, the app treats the response as degraded metadata, not as execution authority.
+
 ## Tool Boundary
 
 Allowed tool suggestions:
@@ -84,3 +86,20 @@ Blocked suggestions include execution, signing, shell, secret export, bridge, di
 The hosted API has no execution authority.
 
 Main Wallet actions remain handoff-only into Wallet modules. Zerion actions remain routed through the existing policy-scoped Zerion tiny-swap review. Cloak actions remain routed to Wallet -> Private. Every execution path still requires the destination module's review, simulation where applicable, explicit approval, and existing security gates.
+
+## Error Normalization
+
+The app normalizes hosted backend failures before falling back to local safe mode:
+
+- missing endpoint,
+- unauthorized,
+- forbidden,
+- rate limited,
+- server error,
+- timeout,
+- malformed response,
+- unsafe response blocked,
+- local validation failure,
+- transport failure.
+
+The normalized message is safe for UI and audit. It must not include prompt bodies, API keys, authorization headers, raw model payloads, or local file paths.

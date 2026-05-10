@@ -92,9 +92,11 @@ Agent Chat shows:
 - endpoint configured/missing,
 - auth configured/missing with redacted status,
 - backend contract version when returned,
+- safe model/provider label when returned,
+- last request id when returned,
 - last smoke status when available,
-- "No secrets sent" indicator,
-- fallback reason when the hosted endpoint is unavailable.
+- fallback reason,
+- "No secrets sent" indicator.
 
 ## Audit
 

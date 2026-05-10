@@ -80,6 +80,9 @@ struct AgentAIStatus: Codable, Equatable {
     let authStatus: AgentHostedAPIKeyStatus
     let lastSmokeStatus: String?
     let backendContractVersion: String?
+    let backendModelLabel: String?
+    let lastRequestID: String?
+    let fallbackReason: String?
     let noSecretsSent: Bool
     let updatedAt: Date
     let message: String
@@ -101,6 +104,9 @@ struct AgentAIStatus: Codable, Equatable {
             authStatus: authStatus,
             lastSmokeStatus: lastSmokeStatus,
             backendContractVersion: nil,
+            backendModelLabel: nil,
+            lastRequestID: nil,
+            fallbackReason: AgentSafetyRedactor.redact(reason),
             noSecretsSent: true,
             updatedAt: updatedAt,
             message: AgentSafetyRedactor.redact(reason)
@@ -116,6 +122,9 @@ struct AgentAIStatus: Codable, Equatable {
         message: String,
         lastSmokeStatus: String? = "Not run",
         backendContractVersion: String? = nil,
+        backendModelLabel: String? = nil,
+        lastRequestID: String? = nil,
+        fallbackReason: String? = nil,
         updatedAt: Date = Date()
     ) -> AgentAIStatus {
         AgentAIStatus(
@@ -128,6 +137,9 @@ struct AgentAIStatus: Codable, Equatable {
             authStatus: authStatus,
             lastSmokeStatus: lastSmokeStatus,
             backendContractVersion: backendContractVersion.map(AgentSafetyRedactor.redact),
+            backendModelLabel: backendModelLabel.map(AgentSafetyRedactor.redact),
+            lastRequestID: lastRequestID.map(AgentSafetyRedactor.redact),
+            fallbackReason: fallbackReason.map(AgentSafetyRedactor.redact),
             noSecretsSent: redactionStatus != .blocked,
             updatedAt: updatedAt,
             message: AgentSafetyRedactor.redact(message)

@@ -39,6 +39,13 @@ struct AgentAuditEvent: Codable, Equatable, Identifiable {
         case hostedSmokeFailed = "hosted_smoke_failed"
         case unsafeBackendSuggestionBlocked = "unsafe_backend_suggestion_blocked"
         case malformedBackendResponseIgnored = "malformed_backend_response_ignored"
+        case remoteHostedSmokeStarted = "remote_hosted_smoke_started"
+        case remoteHostedSmokeSucceeded = "remote_hosted_smoke_succeeded"
+        case remoteHostedSmokeFailed = "remote_hosted_smoke_failed"
+        case hostedAuthFailure = "hosted_auth_failure"
+        case hostedTimeoutFallback = "hosted_timeout_fallback"
+        case hostedUnsafeResponseBlocked = "hosted_unsafe_response_blocked"
+        case hostedMalformedResponseBlocked = "hosted_malformed_response_blocked"
 
         var label: String {
             switch self {
@@ -116,6 +123,20 @@ struct AgentAuditEvent: Codable, Equatable, Identifiable {
                 return "Unsafe backend suggestion blocked"
             case .malformedBackendResponseIgnored:
                 return "Malformed backend response ignored"
+            case .remoteHostedSmokeStarted:
+                return "Remote hosted smoke started"
+            case .remoteHostedSmokeSucceeded:
+                return "Remote hosted smoke succeeded"
+            case .remoteHostedSmokeFailed:
+                return "Remote hosted smoke failed"
+            case .hostedAuthFailure:
+                return "Hosted auth failure"
+            case .hostedTimeoutFallback:
+                return "Hosted timeout fallback"
+            case .hostedUnsafeResponseBlocked:
+                return "Hosted unsafe response blocked"
+            case .hostedMalformedResponseBlocked:
+                return "Hosted malformed response blocked"
             }
         }
     }

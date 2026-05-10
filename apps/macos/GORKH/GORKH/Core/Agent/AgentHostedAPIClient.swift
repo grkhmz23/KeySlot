@@ -10,8 +10,15 @@ struct AgentHostedAPIConfiguration: Equatable {
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment) {
         let rawBaseURL = environment[Self.baseURLEnvironmentName]?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let rawBaseURL, rawBaseURL.isEmpty == false, let url = URL(string: rawBaseURL), url.scheme?.lowercased() == "https" {
-            baseURL = url
+        if let rawBaseURL, rawBaseURL.isEmpty == false,
+           let url = URL(string: rawBaseURL),
+           url.scheme?.lowercased() == "https",
+           var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+           components.host != nil {
+            components.path = ""
+            components.query = nil
+            components.fragment = nil
+            baseURL = components.url
         } else {
             baseURL = nil
         }

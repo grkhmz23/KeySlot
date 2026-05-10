@@ -11,10 +11,10 @@ struct HostedDeepSeekProvider: AgentLLMProvider {
                 state: .available,
                 redactionStatus: .clean,
                 endpointHost: endpointHost,
-                authStatus: client.configuration.apiKeyStatus,
-                responseStatus: "ready",
-                message: "Hosted AI configured.",
-                backendContractVersion: AgentHostedAPIContract.version
+                    authStatus: client.configuration.apiKeyStatus,
+                    responseStatus: "ready",
+                    message: "Hosted AI configured.",
+                    backendContractVersion: AgentHostedAPIContract.version
             )
     }
 
@@ -38,21 +38,37 @@ struct HostedDeepSeekProvider: AgentLLMProvider {
                     authStatus: client.configuration.apiKeyStatus,
                     responseStatus: "received",
                     message: boundary.hasBlockedTools || validated.ignoredProposalSuggestion ? "Hosted AI response received with blocked advisory content." : "Hosted AI response received.",
-                    backendContractVersion: response.modelInfo?.contractVersion ?? AgentHostedAPIContract.version
+                    backendContractVersion: response.modelInfo?.contractVersion ?? AgentHostedAPIContract.version,
+                    backendModelLabel: modelLabel(response.modelInfo),
+                    lastRequestID: response.requestID
                 ),
                 toolBoundaryDecision: boundary
             )
         } catch {
+            let normalized = AgentHostedErrorNormalizer.normalize(error)
             return AgentLLMProviderResult(
                 response: AgentLLMChatResponse(
                     assistantMessage: "Hosted AI unavailable; using local safe mode. \(request.deterministicIntent.summary)",
                     suggestedIntent: request.deterministicIntent.intentType.rawValue,
                     missingFields: request.deterministicIntent.missingFields,
-                    safetyWarnings: ["Hosted response failed: \(AgentSafetyRedactor.redact(String(describing: error)))"]
+                    safetyWarnings: ["Hosted response failed: \(normalized.message)"]
                 ),
-                status: .localSafeMode(reason: "Hosted AI unavailable; using local safe mode."),
+                status: .localSafeMode(
+                    reason: "Hosted AI unavailable; using local safe mode. \(normalized.category.safeMessage)",
+                    endpointConfigured: client.configuration.endpointHost != nil,
+                    authStatus: client.configuration.apiKeyStatus
+                ),
                 toolBoundaryDecision: .init(allowed: [], blocked: [])
             )
         }
+    }
+
+    private func modelLabel(_ modelInfo: AgentHostedModelInfo?) -> String? {
+        guard let modelInfo else {
+            return nil
+        }
+        return [modelInfo.provider, modelInfo.model]
+            .compactMap { $0?.isEmpty == false ? $0 : nil }
+            .joined(separator: " / ")
     }
 }

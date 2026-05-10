@@ -38,6 +38,14 @@ Allowed context is limited to:
 4. Response sanitization blocks unsafe tool suggestions and ignores backend approval claims.
 5. Deterministic policy validation remains authoritative before any proposal handoff.
 
+## Remote Smoke Boundary
+
+`scripts/agent-hosted-ai-smoke.sh --remote` sends only a fixture context with a watch-only display wallet, empty portfolio summary, empty activity list, and allowed advisory tool names. It does not read the real app wallet store, Keychain, private vault, Xcode schemes, shell history, or local project paths.
+
+The script reports endpoint host and auth presence as redacted status only. If `GORKH_AGENT_API_KEY` is present, the value is passed through a temporary curl config file and removed after the request; it is not printed.
+
+Failure-mode fixtures verify that authentication failures, rate limits, server errors, timeouts, malformed responses, unsafe tool suggestions, approval claims, missing request ids, and oversized responses all remain non-executing states.
+
 ## Audit Boundary
 
 Audit events store only safe summaries:

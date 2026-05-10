@@ -28,7 +28,7 @@ scripts/agent-hosted-ai-smoke.sh --mock
 
 Expected:
 
-- portfolio, clarification, PUSD draft, unsafe-tool, and malformed fixtures pass schema checks,
+- portfolio, clarification, PUSD draft, unsafe-tool, backend-approval, malformed, missing-request-id, malformed JSON, oversized response, auth, rate-limit, server-error, and timeout fixtures pass expected checks,
 - unsafe tools are detected as blocked,
 - backend approval claims are treated as ignored advisory content,
 - no API key value is printed.
@@ -37,10 +37,22 @@ To test a configured hosted endpoint with the same safe fixture context:
 
 ```sh
 export GORKH_AGENT_API_BASE_URL=https://your-gorkh-agent.example
-scripts/agent-hosted-ai-smoke.sh
+scripts/agent-hosted-ai-smoke.sh --remote
 ```
 
 If backend auth is required, set `GORKH_AGENT_API_KEY` only in the local shell. The script reports `present-redacted` and never prints the value.
+
+Remote smoke supports:
+
+```sh
+scripts/agent-hosted-ai-smoke.sh --remote --endpoint https://your-gorkh-agent.example
+scripts/agent-hosted-ai-smoke.sh --remote --fixture clarification
+scripts/agent-hosted-ai-smoke.sh --remote --fixture unsafe
+scripts/agent-hosted-ai-smoke.sh --remote --expect-auth-failure
+scripts/agent-hosted-ai-smoke.sh --remote --expect-timeout
+```
+
+Use `--expect-auth-failure` only when intentionally testing a missing or invalid backend auth setup. Use `--expect-timeout` only against a known timeout fixture or unreachable test endpoint.
 
 ## Local Safe Mode
 
@@ -104,6 +116,33 @@ It should return:
 - `requestId`
 
 All returned fields are advisory. The app still validates tools, ignores execution approval claims, and runs local policy before creating or hydrating proposals.
+
+## Failure Modes
+
+Expected local fallback behavior:
+
+- 401: authentication failed
+- 403: access forbidden
+- 429: rate limited
+- 500+: server error
+- timeout: request timed out
+- malformed JSON: malformed response blocked
+- unsafe tool suggestion: response degraded and tool blocked
+- backend approval claim: approval ignored
+- missing request id: degraded but not unsafe
+- oversized response: blocked by smoke validation
+
+None of these states should execute a Wallet, Zerion, or Cloak action.
+
+## Production Backend Checklist
+
+- The backend stores the model-provider secret server-side only.
+- The backend accepts the `2026-05-10.a5` contract.
+- The backend returns `requestId` for every response.
+- The backend never returns direct execution approval.
+- The backend keeps model responses advisory.
+- The backend does not require users to bring model API keys.
+- The macOS app falls back to Local Safe Mode on auth, timeout, rate-limit, malformed, or unsafe responses.
 
 ## Proposal Safety
 

@@ -39,8 +39,17 @@ struct AgentAIStatusView: View {
                     if let backendContractVersion = status.backendContractVersion {
                         statusRow("Contract", backendContractVersion)
                     }
+                    if let backendModelLabel = status.backendModelLabel {
+                        statusRow("Model", backendModelLabel)
+                    }
+                    if let lastRequestID = status.lastRequestID {
+                        statusRow("Request", lastRequestID)
+                    }
                     if let lastSmokeStatus = status.lastSmokeStatus {
                         statusRow("Smoke", lastSmokeStatus)
+                    }
+                    if let fallbackReason = status.fallbackReason {
+                        statusRow("Fallback", fallbackReason)
                     }
                 }
 

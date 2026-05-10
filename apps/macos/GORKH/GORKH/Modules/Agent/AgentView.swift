@@ -285,15 +285,27 @@ struct AgentView: View {
             if result.status.mode == .localSafeMode {
                 appendAudit(.hostedAIUnavailableFallback, result.status.message)
                 appendAudit(.localSafeModeUsed, "Local safe mode used for Agent response.")
+                if result.status.fallbackReason?.lowercased().contains("authentication failed") == true {
+                    appendAudit(.hostedAuthFailure, "Hosted AI authentication failed.")
+                }
+                if result.status.fallbackReason?.lowercased().contains("timed out") == true {
+                    appendAudit(.hostedTimeoutFallback, "Hosted AI timeout fallback.")
+                }
             } else {
-                appendAudit(.hostedAIResponseReceived, "Hosted AI response received.", details: ["state": result.status.providerState.rawValue])
+                var details = ["state": result.status.providerState.rawValue]
+                if let requestID = result.status.lastRequestID {
+                    details["requestId"] = requestID
+                }
+                appendAudit(.hostedAIResponseReceived, "Hosted AI response received.", details: details)
             }
             for blocked in result.toolBoundaryDecision.blocked {
                 appendAudit(.aiToolSuggestionBlocked, "AI tool suggestion blocked.", details: ["tool": blocked])
                 appendAudit(.unsafeBackendSuggestionBlocked, "Unsafe backend suggestion blocked.", details: ["tool": blocked])
+                appendAudit(.hostedUnsafeResponseBlocked, "Hosted unsafe response blocked.", details: ["tool": blocked])
             }
             if result.response.safetyWarnings.contains(where: { $0.lowercased().contains("execution approval was ignored") }) {
                 appendAudit(.malformedBackendResponseIgnored, "Backend execution approval was ignored.")
+                appendAudit(.hostedMalformedResponseBlocked, "Hosted malformed response blocked.")
             }
             return result
         } catch {

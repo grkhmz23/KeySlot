@@ -3967,6 +3967,7 @@ struct GORKHTests {
             "GORKH/Core/Agent/AgentHostedAPIValidator.swift",
             "GORKH/Core/Agent/AgentHostedResponseSanitizer.swift",
             "GORKH/Core/Agent/AgentHostedAISmokeModels.swift",
+            "GORKH/Core/Agent/AgentHostedErrorNormalizer.swift",
             "GORKH/Core/Agent/AgentRedactedContextBuilder.swift",
             "GORKH/Core/Agent/AgentToolBoundary.swift",
             "GORKH/Core/Agent/AgentLLMResponseModels.swift",
@@ -4127,6 +4128,44 @@ struct GORKHTests {
         let fallback = await failingProvider.respond(to: try sampleAgentLLMRequest(message: "summarize my portfolio"), redactionStatus: .clean)
         #expect(fallback.status.mode == .localSafeMode)
         #expect(fallback.response.assistantMessage.lowercased().contains("local safe mode"))
+    }
+
+    @Test func agentHostedRemoteSmokeAndErrorNormalizationStayRedacted() throws {
+        let configuration = AgentHostedAPIConfiguration(environment: [
+            AgentHostedAPIConfiguration.baseURLEnvironmentName: "https://agent.gorkh.example/path?token=do-not-show",
+            AgentHostedAPIConfiguration.apiKeyEnvironmentName: "local-only-placeholder"
+        ])
+        #expect(configuration.endpointHost == "agent.gorkh.example")
+        #expect(configuration.endpointURL?.absoluteString.contains("token=do-not-show") == false)
+        #expect(configuration.apiKeyStatus == .presentRedacted)
+
+        let cases: [(AgentHostedAPIError, AgentHostedBackendErrorCategory)] = [
+            (.missingEndpoint, .missingEndpoint),
+            (.httpStatus(401, "redacted body"), .unauthorized),
+            (.httpStatus(403, "redacted body"), .forbidden),
+            (.httpStatus(429, "redacted body"), .rateLimited),
+            (.httpStatus(500, "redacted body"), .serverError),
+            (.transport("request timed out"), .timeout),
+            (.transport("The data could not be decoded"), .malformedResponse),
+            (.validation("forbiddenInboundField(sendTransaction)"), .unsafeResponseBlocked)
+        ]
+        for (error, category) in cases {
+            #expect(AgentHostedErrorNormalizer.normalize(error).category == category)
+        }
+
+        let script = try sourceText(relativePath: "../../../scripts/agent-hosted-ai-smoke.sh")
+        #expect(script.contains("--remote"))
+        #expect(script.contains("--endpoint"))
+        #expect(script.contains("--expect-auth-failure"))
+        #expect(script.contains("--expect-timeout"))
+        #expect(script.contains("present-redacted"))
+        #expect(script.contains("Authorization: Bearer"))
+        #expect(!script.contains("echo ${GORKH_AGENT_API_KEY}"))
+        #expect(!script.contains("echo \"$GORKH_AGENT_API_KEY\""))
+        #expect(script.contains("unsafe"))
+        #expect(script.contains("approval"))
+        #expect(script.contains("malformed_json"))
+        #expect(script.contains("oversized"))
     }
 
     @Test func agentHostedAIRequestRedactionBlocksForbiddenFieldsAndMinimizesContext() throws {
