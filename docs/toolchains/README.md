@@ -26,29 +26,34 @@ Entries without a verified source and sha256 are shown as blocked. GORKH must no
 Anchor is handled separately from archive downloads:
 
 - if `anchor` already resolves from a trusted path, GORKH verifies it with `anchor --version`
-- if `avm` already resolves, GORKH can prepare fixed `avm install 0.31.1` / `avm use 0.31.1` or `avm install 0.30.1` / `avm use 0.30.1` commands
+- if `avm` already resolves, GORKH can prepare fixed `avm install latest` / `avm use latest` or `avm install 1.0.2` / `avm use 1.0.2` commands
 - if `avm` is missing but Cargo resolves, GORKH can prepare a fixed Cargo command to install AVM from the official Anchor repository after explicit tooling-install approval
 - if Cargo is missing, Anchor install is blocked
 
 No Anchor/AVM install command runs automatically.
 
-## D5 Compatibility Strategy
+## D6 Latest Stable Strategy
 
-D4 showed that `avm install 0.30.1` fails under the local Rust/Cargo 1.94 toolchain while compiling `time 0.3.29`. D5 records a fixed compatibility matrix rather than using arbitrary version input:
+D4 showed that `avm install 0.30.1` fails under the local Rust/Cargo 1.94 toolchain while compiling `time 0.3.29`. D5 recorded a fixed compatibility matrix; D6 supersedes that older path with the latest stable targets from official upstream docs and releases:
 
-- Anchor candidates: `0.31.1`, `0.30.1`
-- recommended candidate: `0.31.1`
-- Rust candidates: current detected stable and pinned `1.79.0`
-- Rust pinning must use `RUSTUP_TOOLCHAIN=1.79.0` only for approved AVM/Cargo commands
+- Anchor candidates: `latest`, `1.0.2`
+- recommended candidate: AVM `latest`, expected resolved Anchor CLI `1.0.2`
+- Rust candidates: `stable`, `1.95.0`
+- Rust pinning must use `RUSTUP_TOOLCHAIN=stable` or `RUSTUP_TOOLCHAIN=1.95.0` only for approved AVM/Cargo commands
+- Solana CLI `3.1.10` is detected locally and matches the Anchor 1.0.x compatible Solana CLI line
 - GORKH must not run `rustup default`
 - GORKH must not install Rust through curl-pipe-sh or any unverified installer
 - prebuilt Anchor artifacts remain blocked until an official URL and SHA-256 are pinned
 
 If `rustup` is present, Developer Workstation can prepare the fixed preview:
 
-`rustup toolchain install 1.79.0`
+`rustup toolchain install stable`
 
-Then the approved Anchor activation path can run AVM with the fixed Rust environment for that command only. This does not change the global Rust default.
+or the explicit fallback:
+
+`rustup toolchain install 1.95.0`
+
+Then the approved Anchor activation path can run AVM with `latest` or `1.0.2` and the fixed Rust environment for that command only. This does not change the global Rust default.
 
 ## Install Location
 
@@ -74,11 +79,13 @@ The manifest is explicit and honest:
 - Anchor is installed through AVM when AVM/Cargo are present and the user approves the fixed tooling operation.
 - Bundled tools are not claimed unless app resources actually contain validated executables.
 
-## Current D5 State
+## Current D6 State
 
-- Cargo/rustc 1.94 are detected locally.
-- rustup is detected locally with only the stable aarch64 toolchain installed.
-- AVM 0.30.1 is detected.
-- Anchor remains inactive because no Anchor version is set.
-- `avm list` failed in the local environment and is recorded as a compatibility blocker.
-- Full localnet smoke remains blocked until a fixed Anchor/Rust candidate is activated.
+- D6 targets Anchor latest stable, expected `1.0.2`.
+- D6 targets Rust stable, expected `1.95.0`.
+- Solana CLI `3.1.10` remains acceptable when detected.
+- `rustup toolchain install stable` activated Rust/Cargo `1.95.0` locally without a GORKH `rustup default` command.
+- `avm install latest` resolved Anchor CLI `1.0.2` but failed during native linking on this machine.
+- `anchor --version` still reports `Anchor version not set`.
+- Full localnet deploy smoke remains blocked until Anchor activates.
+- Anchor activation and localnet smoke evidence are recorded in `docs/qa/developer-workstation-localnet-smoke.md`.

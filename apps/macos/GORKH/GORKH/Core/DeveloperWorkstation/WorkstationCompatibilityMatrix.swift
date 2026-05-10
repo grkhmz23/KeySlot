@@ -113,7 +113,7 @@ struct WorkstationCompatibilityMatrix: Codable, Equatable {
         let rustCandidates = WorkstationRustToolchainPolicy.fixedCandidates.map { candidate in
             WorkstationRustToolchainCandidate(
                 version: candidate,
-                source: candidate == "stable-aarch64-apple-darwin" ? "Detected stable channel" : "Pinned compatibility candidate",
+                source: candidate == WorkstationRustToolchainPolicy.stableChannel ? "Official stable channel; expected to resolve to \(WorkstationRustToolchainPolicy.expectedStableVersion)" : "Explicit Rust \(WorkstationRustToolchainPolicy.expectedStableVersion) candidate",
                 installed: probe.rustupToolchains.contains { $0.hasPrefix(candidate) },
                 installCommandPreview: rustupPath.flatMap {
                     WorkstationRustToolchainPolicy.installPlan(rustupPath: $0, rustToolchain: candidate)?.redactedPreview
@@ -125,10 +125,10 @@ struct WorkstationCompatibilityMatrix: Codable, Equatable {
         let anchorCandidates = WorkstationAnchorVersionPolicy.fixedCandidates.map { candidate in
             WorkstationAnchorVersionCandidate(
                 version: candidate,
-                source: candidate == "0.31.1" ? "Official Anchor release candidate" : "Existing D3/D4 pinned candidate",
+                source: candidate == WorkstationAnchorVersionPolicy.latestChannel ? "Official AVM latest channel; expected to resolve to \(WorkstationAnchorVersionPolicy.explicitStableCandidate)" : "Explicit Anchor \(WorkstationAnchorVersionPolicy.explicitStableCandidate) candidate",
                 recommended: candidate == WorkstationAnchorVersionPolicy.recommendedCandidate,
-                installStrategy: "AVM fixed install/use; prebuilt artifact remains blocked without sha256",
-                verifiedSourceState: "Official source known; no prebuilt artifact checksum pinned"
+                installStrategy: "AVM fixed install/use; record resolved anchor --version after activation",
+                verifiedSourceState: "Official Anchor release known; no prebuilt artifact checksum pinned"
             )
         }
 
@@ -137,22 +137,22 @@ struct WorkstationCompatibilityMatrix: Codable, Equatable {
                 anchorVersion: WorkstationAnchorVersionPolicy.recommendedCandidate,
                 rustToolchainVersion: WorkstationRustToolchainPolicy.compatibilityPinnedToolchain,
                 status: probe.rustupVersion == nil ? .blocked : .installPlanAvailable,
-                installStrategy: "Install pinned Rust toolchain with rustup, run AVM install/use with RUSTUP_TOOLCHAIN override, then verify anchor --version.",
+                installStrategy: "Install Rust stable with rustup, run AVM install/use latest, then verify anchor --version records the exact resolved version.",
                 blocker: probe.rustupVersion == nil ? "rustup is missing; GORKH will not install Rust via bootstrap scripts." : nil
             ),
             WorkstationCompatibilityCandidate(
-                anchorVersion: WorkstationAnchorInstaller.pinnedAnchorVersion,
-                rustToolchainVersion: WorkstationRustToolchainPolicy.compatibilityPinnedToolchain,
+                anchorVersion: WorkstationAnchorVersionPolicy.explicitStableCandidate,
+                rustToolchainVersion: WorkstationRustToolchainPolicy.expectedStableVersion,
                 status: probe.rustupVersion == nil ? .blocked : .installPlanAvailable,
-                installStrategy: "Retry existing Anchor 0.30.1 candidate with pinned Rust environment only.",
-                blocker: probe.rustupVersion == nil ? "rustup is missing; pinned Rust toolchain cannot be prepared." : nil
+                installStrategy: "Install explicit Rust \(WorkstationRustToolchainPolicy.expectedStableVersion), run AVM install/use Anchor \(WorkstationAnchorVersionPolicy.explicitStableCandidate), then verify anchor --version.",
+                blocker: probe.rustupVersion == nil ? "rustup is missing; explicit Rust toolchain cannot be prepared." : nil
             ),
             WorkstationCompatibilityCandidate(
-                anchorVersion: WorkstationAnchorInstaller.pinnedAnchorVersion,
+                anchorVersion: "0.31.1 / 0.30.1",
                 rustToolchainVersion: probe.rustcVersion ?? "current",
                 status: .blocked,
-                installStrategy: "Use current Rust/Cargo.",
-                blocker: "D4 showed Anchor 0.30.1 fails to compile under the current Rust/Cargo toolchain."
+                installStrategy: "Historical fallback only.",
+                blocker: "D6 supersedes the old 0.31.1 / 1.79.0 path with Anchor latest / 1.0.2 and Rust stable / 1.95.0."
             )
         ]
 
@@ -166,7 +166,7 @@ struct WorkstationCompatibilityMatrix: Codable, Equatable {
             blockers.append(WorkstationCompatibilityBlocker(id: "avm-list", component: "AVM", message: avmListError))
         }
         if probe.rustupVersion == nil {
-            blockers.append(WorkstationCompatibilityBlocker(id: "rustup", component: "Rust", message: "rustup is missing; pinned Rust install/use cannot be prepared."))
+            blockers.append(WorkstationCompatibilityBlocker(id: "rustup", component: "Rust", message: "rustup is missing; stable Rust install/use cannot be prepared."))
         }
 
         let status: WorkstationCompatibilityStatus
@@ -178,11 +178,11 @@ struct WorkstationCompatibilityMatrix: Codable, Equatable {
             recommendedID = nil
         } else if probe.rustupVersion != nil {
             status = .installPlanAvailable
-            summary = "Anchor is blocked, but a fixed Rust pin plus fixed Anchor candidate plan can be prepared without changing the global Rust default."
+            summary = "Anchor is blocked, but the latest stable Rust/Anchor activation plan can be prepared without changing the global Rust default."
             recommendedID = "\(WorkstationAnchorVersionPolicy.recommendedCandidate)-\(WorkstationRustToolchainPolicy.compatibilityPinnedToolchain)"
         } else {
             status = .blocked
-            summary = "Anchor remains blocked. A verified prebuilt artifact or rustup-managed pinned toolchain is required."
+            summary = "Anchor remains blocked. A verified prebuilt artifact or rustup-managed stable toolchain is required."
             recommendedID = nil
         }
 
@@ -203,8 +203,10 @@ struct WorkstationCompatibilityMatrix: Codable, Equatable {
 }
 
 enum WorkstationRustToolchainPolicy {
-    static let compatibilityPinnedToolchain = "1.79.0"
-    static let fixedCandidates = ["1.79.0", "stable-aarch64-apple-darwin"]
+    static let stableChannel = "stable"
+    static let expectedStableVersion = "1.95.0"
+    static let compatibilityPinnedToolchain = stableChannel
+    static let fixedCandidates = ["stable", "1.95.0"]
     static let environmentKey = "RUSTUP_TOOLCHAIN"
 
     static func isFixedCandidate(_ version: String) -> Bool {
@@ -212,7 +214,7 @@ enum WorkstationRustToolchainPolicy {
     }
 
     static func installPlan(rustupPath: String, rustToolchain: String) -> WorkstationCommandPlan? {
-        guard rustToolchain == compatibilityPinnedToolchain else {
+        guard isFixedCandidate(rustToolchain) else {
             return nil
         }
         return WorkstationCommandBuilders.rustupToolchainInstall(rustupPath: rustupPath, rustToolchain: rustToolchain)
@@ -228,8 +230,10 @@ enum WorkstationRustToolchainPolicy {
 }
 
 enum WorkstationAnchorVersionPolicy {
-    static let recommendedCandidate = "0.31.1"
-    static let fixedCandidates = ["0.31.1", "0.30.1"]
+    static let latestChannel = "latest"
+    static let explicitStableCandidate = "1.0.2"
+    static let recommendedCandidate = latestChannel
+    static let fixedCandidates = ["latest", "1.0.2"]
 
     static func isFixedCandidate(_ version: String) -> Bool {
         fixedCandidates.contains(version)
@@ -290,7 +294,7 @@ enum WorkstationAnchorStrategySelector {
             return WorkstationAnchorStrategyDecision(
                 strategy: .avmCurrentRust,
                 status: .blocked,
-                message: "AVM is present, but pinned Rust cannot be prepared. Current Rust path is blocked by D4 compile failure risk.",
+                message: "AVM is present, but stable Rust cannot be prepared. Use only the fixed latest/1.0.2 Anchor candidates.",
                 commandPreviews: [avmInstall.redactedPreview, avmUse.redactedPreview],
                 environmentPreview: nil
             )
@@ -308,7 +312,7 @@ enum WorkstationAnchorStrategySelector {
         return WorkstationAnchorStrategyDecision(
             strategy: .avmPinnedRust,
             status: .installPlanAvailable,
-            message: "Recommended: prepare pinned Rust \(WorkstationRustToolchainPolicy.compatibilityPinnedToolchain), run fixed AVM install/use for Anchor \(WorkstationAnchorVersionPolicy.recommendedCandidate), then verify anchor --version. This does not change the global Rust default.",
+            message: "Recommended: prepare Rust \(WorkstationRustToolchainPolicy.compatibilityPinnedToolchain) (expected \(WorkstationRustToolchainPolicy.expectedStableVersion)), run fixed AVM install/use for Anchor \(WorkstationAnchorVersionPolicy.recommendedCandidate) (expected \(WorkstationAnchorVersionPolicy.explicitStableCandidate)), then verify anchor --version. This does not change the global Rust default.",
             commandPreviews: [rustInstall.redactedPreview, avmInstall.redactedPreview, avmUse.redactedPreview, "Verify anchor --version"],
             environmentPreview: "RUSTUP_TOOLCHAIN=\(WorkstationRustToolchainPolicy.compatibilityPinnedToolchain)"
         )

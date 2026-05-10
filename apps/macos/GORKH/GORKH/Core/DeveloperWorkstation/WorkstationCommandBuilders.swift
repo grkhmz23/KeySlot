@@ -38,7 +38,7 @@ enum WorkstationCommandBuilders {
 
     static func rustupToolchainInstall(rustupPath: String, rustToolchain: String) -> WorkstationCommandPlan {
         WorkstationCommandPlan(
-            name: "Install pinned Rust toolchain",
+            name: "Install fixed Rust toolchain",
             executablePath: rustupPath,
             arguments: ["toolchain", "install", rustToolchain]
         )
@@ -46,7 +46,7 @@ enum WorkstationCommandBuilders {
 
     static func cargoVersionWithRustToolchain(cargoPath: String, rustToolchain: String) -> WorkstationCommandPlan {
         WorkstationCommandPlan(
-            name: "Cargo version with pinned Rust",
+            name: "Cargo version with fixed Rust",
             executablePath: cargoPath,
             arguments: ["+\(rustToolchain)", "--version"],
             environmentOverrides: ["RUSTUP_TOOLCHAIN": rustToolchain]
@@ -161,16 +161,19 @@ enum WorkstationCommandBuilders {
     }
 
     static func cargoInstallAVM(cargoPath: String, anchorVersion: String) -> WorkstationCommandPlan {
-        WorkstationCommandPlan(
+        let tagVersion = anchorVersion == WorkstationAnchorVersionPolicy.latestChannel
+            ? WorkstationAnchorVersionPolicy.explicitStableCandidate
+            : anchorVersion
+        return WorkstationCommandPlan(
             name: "Install AVM",
             executablePath: cargoPath,
             arguments: [
                 "install",
                 "--git",
-                "https://github.com/coral-xyz/anchor",
+                "https://github.com/solana-foundation/anchor",
                 "avm",
                 "--tag",
-                "v\(anchorVersion)",
+                "v\(tagVersion)",
                 "--locked",
                 "--force"
             ],

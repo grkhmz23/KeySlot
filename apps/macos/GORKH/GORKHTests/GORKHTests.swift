@@ -6995,8 +6995,9 @@ struct GORKHTests {
         #expect(manifest.entry(for: .solana)?.hasVerifiedDownload == false)
         #expect(manifest.entry(for: .anchor)?.installStrategy == .avmManagedAnchor)
         #expect(manifest.entry(for: .avm)?.installStatus == .detectedOnly)
-        #expect(manifest.entry(for: .anchor)?.recommendedAnchorCandidates?.contains("0.31.1") == true)
-        #expect(manifest.entry(for: .rustc)?.rustToolchainPinningNote?.contains("1.79.0") == true)
+        #expect(manifest.entry(for: .anchor)?.recommendedAnchorCandidates?.contains("latest") == true)
+        #expect(manifest.entry(for: .anchor)?.recommendedAnchorCandidates?.contains("1.0.2") == true)
+        #expect(manifest.entry(for: .rustc)?.rustToolchainPinningNote?.contains("1.95.0") == true)
 
         let installer = WorkstationToolchainInstaller(
             manifest: manifest,
@@ -7076,15 +7077,36 @@ struct GORKHTests {
         #expect(anchorInstallPlan.commandPreviews.joined(separator: " ").contains("cargo install"))
         let avmInstall = WorkstationCommandBuilders.cargoInstallAVM(cargoPath: "/usr/bin/cargo", anchorVersion: WorkstationAnchorInstaller.pinnedAnchorVersion)
         try WorkstationCommandRunner().validate(avmInstall)
-        #expect(avmInstall.arguments == ["install", "--git", "https://github.com/coral-xyz/anchor", "avm", "--tag", "v0.30.1", "--locked", "--force"])
+        #expect(avmInstall.arguments == ["install", "--git", "https://github.com/solana-foundation/anchor", "avm", "--tag", "v1.0.2", "--locked", "--force"])
+        let avmInstallFromLatest = WorkstationCommandBuilders.cargoInstallAVM(cargoPath: "/usr/bin/cargo", anchorVersion: "latest")
+        try WorkstationCommandRunner().validate(avmInstallFromLatest)
+        #expect(avmInstallFromLatest.arguments.contains("v1.0.2"))
+        let unsafeAVMTag = WorkstationCommandPlan(
+            name: "Install AVM",
+            executablePath: "/usr/bin/cargo",
+            arguments: ["install", "--git", "https://github.com/solana-foundation/anchor", "avm", "--tag", "vlatest"]
+        )
+        #expect(throws: WorkstationCommandValidationError.self) {
+            try WorkstationCommandRunner().validate(unsafeAVMTag)
+        }
 
-        #expect(WorkstationAnchorVersionPolicy.isFixedCandidate("0.31.1"))
-        #expect(!WorkstationAnchorVersionPolicy.isFixedCandidate("0.31.2"))
-        #expect(WorkstationRustToolchainPolicy.installPlan(rustupPath: "/usr/bin/rustup", rustToolchain: "1.79.0")?.arguments == ["toolchain", "install", "1.79.0"])
+        #expect(WorkstationAnchorVersionPolicy.isFixedCandidate("latest"))
+        #expect(WorkstationAnchorVersionPolicy.isFixedCandidate("1.0.2"))
+        #expect(!WorkstationAnchorVersionPolicy.isFixedCandidate("0.31.1"))
+        #expect(!WorkstationAnchorVersionPolicy.isFixedCandidate("1.0.3"))
+        #expect(WorkstationRustToolchainPolicy.installPlan(rustupPath: "/usr/bin/rustup", rustToolchain: "stable")?.arguments == ["toolchain", "install", "stable"])
+        #expect(WorkstationRustToolchainPolicy.installPlan(rustupPath: "/usr/bin/rustup", rustToolchain: "1.95.0")?.arguments == ["toolchain", "install", "1.95.0"])
+        #expect(WorkstationRustToolchainPolicy.installPlan(rustupPath: "/usr/bin/rustup", rustToolchain: "1.79.0") == nil)
         #expect(WorkstationRustToolchainPolicy.installPlan(rustupPath: "/usr/bin/rustup", rustToolchain: "nightly") == nil)
-        let pinnedAVMInstall = WorkstationCommandBuilders.avmInstallAnchor(avmPath: "/usr/bin/avm", anchorVersion: "0.31.1", rustToolchain: "1.79.0")
+        let pinnedAVMInstall = WorkstationCommandBuilders.avmInstallAnchor(avmPath: "/usr/bin/avm", anchorVersion: "latest", rustToolchain: "stable")
         try WorkstationCommandRunner().validate(pinnedAVMInstall)
-        #expect(pinnedAVMInstall.environmentOverrides["RUSTUP_TOOLCHAIN"] == "1.79.0")
+        #expect(pinnedAVMInstall.environmentOverrides["RUSTUP_TOOLCHAIN"] == "stable")
+        let explicitAVMInstall = WorkstationCommandBuilders.avmInstallAnchor(avmPath: "/usr/bin/avm", anchorVersion: "1.0.2", rustToolchain: "1.95.0")
+        try WorkstationCommandRunner().validate(explicitAVMInstall)
+        let unsafeAVMInstall = WorkstationCommandBuilders.avmInstallAnchor(avmPath: "/usr/bin/avm", anchorVersion: "1.0.3")
+        #expect(throws: WorkstationCommandValidationError.self) {
+            try WorkstationCommandRunner().validate(unsafeAVMInstall)
+        }
         let unsafeRustEnv = WorkstationCommandPlan(
             name: "Unsafe Rust pin",
             executablePath: "/usr/bin/cargo",
@@ -7113,11 +7135,14 @@ struct GORKHTests {
         let compatibilityMatrix = WorkstationCompatibilityMatrix.build(probe: compatibilityProbe)
         let encodedMatrix = try JSONEncoder().encode(compatibilityMatrix)
         let decodedMatrix = try JSONDecoder().decode(WorkstationCompatibilityMatrix.self, from: encodedMatrix)
-        #expect(decodedMatrix.anchorCandidates.contains { $0.version == "0.31.1" && $0.recommended })
+        #expect(decodedMatrix.anchorCandidates.contains { $0.version == "latest" && $0.recommended })
+        #expect(decodedMatrix.anchorCandidates.contains { $0.version == "1.0.2" && !$0.recommended })
+        #expect(!decodedMatrix.anchorCandidates.contains { $0.version == "0.31.1" && $0.recommended })
         #expect(decodedMatrix.result.status == .installPlanAvailable)
         let strategy = WorkstationAnchorStrategySelector.select(matrix: decodedMatrix, avmPath: "/usr/bin/avm", rustupPath: "/usr/bin/rustup")
         #expect(strategy.strategy == .avmPinnedRust)
-        #expect(strategy.commandPreviews.joined(separator: " ").contains("rustup toolchain install 1.79.0"))
+        #expect(strategy.commandPreviews.joined(separator: " ").contains("rustup toolchain install stable"))
+        #expect(strategy.commandPreviews.joined(separator: " ").contains("avm install latest"))
         #expect(!strategy.commandPreviews.joined(separator: " ").contains("rustup default"))
 
         let smokePreflight = WorkstationLocalnetSmokeRunner.preflight(
@@ -7238,8 +7263,11 @@ struct GORKHTests {
             "d4 evidence",
             "anchor activation",
             "no localnet program id was recorded",
-            "d5 compatibility",
-            "rustup toolchain install 1.79.0"
+            "d6 latest stable",
+            "rustup toolchain install stable",
+            "anchor latest",
+            "1.0.2",
+            "1.95.0"
         ] {
             #expect(docs.contains(required))
         }
@@ -7251,7 +7279,7 @@ struct GORKHTests {
         #expect(script.contains("anchor --version"))
         #expect(script.contains("found but unusable"))
         #expect(script.contains("GORKH_WORKSTATION_RUST_TOOLCHAIN"))
-        #expect(script.contains("1.79.0|stable-aarch64-apple-darwin"))
+        #expect(script.contains("stable|1.95.0"))
         #expect(script.contains("solana program deploy"))
         #expect(!script.contains("mainnet-beta"))
         #expect(!script.contains("api.mainnet"))
@@ -7262,7 +7290,8 @@ struct GORKHTests {
         let releaseEvidence = try sourceText(relativePath: "../../../docs/qa/release-evidence-matrix.md").lowercased()
         #expect(releaseEvidence.contains("developer workstation"))
         #expect(releaseEvidence.contains("anchor remains inactive"))
-        #expect(releaseEvidence.contains("0.31.1"))
+        #expect(releaseEvidence.contains("1.0.2"))
+        #expect(releaseEvidence.contains("1.95.0"))
         #expect(releaseEvidence.contains("live-blocked"))
 
         let workstationSource = try [

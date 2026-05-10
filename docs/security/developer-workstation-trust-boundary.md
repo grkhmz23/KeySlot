@@ -37,7 +37,7 @@ Missing hashes block install. GORKH must not run unverified bootstrap scripts or
 
 If AVM must be installed through Cargo, that is treated as trusted tooling install risk and requires explicit confirmation. GORKH prepares only fixed Cargo arguments for the official Anchor repository; it does not run arbitrary package-manager commands or project scripts.
 
-Rust compatibility pinning is also explicit and fixed. GORKH may prepare `rustup toolchain install 1.79.0` when rustup is already present, and may scope `RUSTUP_TOOLCHAIN=1.79.0` to approved AVM/Cargo commands. It must not run `rustup default`, install rustup through a bootstrap script, or accept arbitrary Rust version strings.
+Rust compatibility pinning is also explicit and fixed. GORKH may prepare `rustup toolchain install stable` or `rustup toolchain install 1.95.0` when rustup is already present, and may scope `RUSTUP_TOOLCHAIN=stable` or `RUSTUP_TOOLCHAIN=1.95.0` to approved AVM/Cargo commands. It must not run `rustup default`, install rustup through a bootstrap script, or accept arbitrary Rust version strings.
 
 ## Key Boundary
 

@@ -35,10 +35,10 @@ struct WorkstationAnchorInstallPlan: Codable, Equatable, Identifiable {
 }
 
 enum WorkstationAnchorInstaller {
-    static let pinnedAnchorVersion = "0.30.1"
+    static let pinnedAnchorVersion = WorkstationAnchorVersionPolicy.explicitStableCandidate
 
     static func isValidPinnedVersion(_ version: String) -> Bool {
-        version.range(of: #"^\d+\.\d+\.\d+$"#, options: .regularExpression) != nil
+        WorkstationAnchorVersionPolicy.isFixedCandidate(version)
     }
 
     static func plan(snapshot: WorkstationToolchainSnapshot, pinnedVersion: String = pinnedAnchorVersion) -> WorkstationAnchorInstallPlan {
@@ -47,7 +47,7 @@ enum WorkstationAnchorInstaller {
                 id: "anchor-\(pinnedVersion)",
                 pinnedAnchorVersion: pinnedVersion,
                 status: .blockedInvalidVersion,
-                message: "Anchor version must be pinned as major.minor.patch.",
+                message: "Anchor version must be a fixed approved candidate: latest or \(WorkstationAnchorVersionPolicy.explicitStableCandidate).",
                 commandPreviews: []
             )
         }

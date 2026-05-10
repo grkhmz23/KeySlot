@@ -29,7 +29,7 @@ Options:
 No mainnet, no devnet by default, no arbitrary project path, and no unverified installer execution.
 
 Optional fixed Rust pin:
-  GORKH_WORKSTATION_RUST_TOOLCHAIN=1.79.0 scripts/workstation-localnet-smoke.sh \
+  GORKH_WORKSTATION_RUST_TOOLCHAIN=stable scripts/workstation-localnet-smoke.sh \
     --full-localnet
 USAGE
 }
@@ -108,7 +108,7 @@ validate_rust_pin() {
   fi
 
   case "$GORKH_WORKSTATION_RUST_TOOLCHAIN" in
-    1.79.0|stable-aarch64-apple-darwin)
+    stable|1.95.0)
       export RUSTUP_TOOLCHAIN="$GORKH_WORKSTATION_RUST_TOOLCHAIN"
       echo "rust pin: using fixed candidate $GORKH_WORKSTATION_RUST_TOOLCHAIN"
       ;;

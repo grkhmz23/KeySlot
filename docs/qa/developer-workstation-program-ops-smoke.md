@@ -106,12 +106,40 @@ Recorded D4 result:
 Phase D5 adds a fixed compatibility matrix:
 
 - Anchor candidates: `0.31.1`, `0.30.1`
-- recommended Anchor candidate: `0.31.1`
+- historical recommended Anchor candidate: `0.31.1`
 - Rust pin candidate: `1.79.0`
 - detected local Rust/Cargo: `1.94.0`
 - detected rustup: `1.29.0`
 - detected AVM: `0.30.1`
 
-The selected strategy is to prepare `rustup toolchain install 1.79.0` with explicit tooling approval, then run fixed AVM install/use commands for Anchor `0.31.1` with `RUSTUP_TOOLCHAIN=1.79.0` scoped to that command environment. GORKH does not run `rustup default`, does not accept arbitrary version strings, and does not use unverified install scripts.
+The D5 strategy was to prepare `rustup toolchain install 1.79.0` with explicit tooling approval, then run fixed AVM install/use commands for Anchor `0.31.1` with `RUSTUP_TOOLCHAIN=1.79.0` scoped to that command environment. GORKH does not run `rustup default`, does not accept arbitrary version strings, and does not use unverified install scripts.
 
 D5 did not produce a localnet deploy. Anchor remains inactive, so localnet build/deploy continues to skip safely before validator startup.
+
+## D6 Latest Stable Path
+
+Phase D6 supersedes the old D5 recommendation with the current latest stable targets:
+
+- Anchor channel: `latest`
+- expected resolved Anchor CLI: `1.0.2`
+- explicit Anchor fallback: `1.0.2`
+- Rust channel: `stable`
+- expected resolved Rust: `1.95.0`
+- explicit Rust fallback: `1.95.0`
+- Solana CLI: local `solana-cli 3.1.10`
+
+Fixed D6 activation commands:
+
+- `rustup toolchain install stable`
+- `avm install latest`
+- `avm use latest` only after install succeeds
+- `anchor --version`
+
+D6 result:
+
+- Rust stable and explicit `1.95.0` probes report `rustc 1.95.0` / `cargo 1.95.0`.
+- `avm install latest` resolved to Anchor CLI `1.0.2` but failed during native linking because the local Apple linker/LTO reader could not parse Rust 1.95/LLVM 22 bitcode objects from SPL proof-generation dependencies.
+- `anchor --version` still reports `Anchor version not set`.
+- Full localnet deploy remains blocked by Anchor activation.
+- Program id: none.
+- Mainnet program operations remain locked.

@@ -149,11 +149,48 @@ struct WorkstationCommandRunner {
             throw WorkstationCommandValidationError.unsafeExecutable
         }
         try plan.arguments.forEach(Self.validateArgument)
+        try validateFixedToolchainArguments(plan)
         try WorkstationRustToolchainPolicy.validateEnvironmentOverrides(plan.environmentOverrides)
         if let workingDirectory = plan.workingDirectory {
             try Self.validateArgument(workingDirectory)
             guard workingDirectory.hasPrefix("/") else {
                 throw WorkstationCommandValidationError.unsafeWorkingDirectory
+            }
+        }
+    }
+
+    private func validateFixedToolchainArguments(_ plan: WorkstationCommandPlan) throws {
+        if plan.arguments.count == 3,
+           plan.arguments[0] == "toolchain",
+           plan.arguments[1] == "install",
+           !WorkstationRustToolchainPolicy.isFixedCandidate(plan.arguments[2]) {
+            throw WorkstationCommandValidationError.unsafeArgument(plan.arguments[2])
+        }
+
+        if plan.arguments.count == 2,
+           ["install", "use"].contains(plan.arguments[0]),
+           plan.name.contains("Anchor"),
+           !WorkstationAnchorVersionPolicy.isFixedCandidate(plan.arguments[1]) {
+            throw WorkstationCommandValidationError.unsafeArgument(plan.arguments[1])
+        }
+
+        if plan.arguments.count == 2,
+           plan.arguments[1] == "--version",
+           plan.arguments[0].hasPrefix("+") {
+            let toolchain = String(plan.arguments[0].dropFirst())
+            if !WorkstationRustToolchainPolicy.isFixedCandidate(toolchain) {
+                throw WorkstationCommandValidationError.unsafeArgument(plan.arguments[0])
+            }
+        }
+
+        if plan.name == "Install AVM",
+           let tagIndex = plan.arguments.firstIndex(of: "--tag"),
+           plan.arguments.indices.contains(tagIndex + 1) {
+            let tag = plan.arguments[tagIndex + 1]
+            let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
+            if version == WorkstationAnchorVersionPolicy.latestChannel ||
+                !WorkstationAnchorVersionPolicy.isFixedCandidate(version) {
+                throw WorkstationCommandValidationError.unsafeArgument(tag)
             }
         }
     }
