@@ -59,17 +59,15 @@ struct WalletSecurityStatusStripView: View {
             rpcSecurity: walletManager.rpcProviderSecurityStatus
         )
 
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                chip(content.lockTitle, image: content.lockIsHealthy ? "checkmark.seal" : "lock", healthy: content.lockIsHealthy)
-                chip(content.autoLockTitle, image: "timer", healthy: content.autoLockIsHealthy)
-                chip(content.localAuthenticationTitle, image: "touchid", healthy: content.localAuthenticationIsHealthy)
-                chip(content.backupTitle, image: "externaldrive.badge.checkmark", healthy: content.backupIsHealthy)
-                chip(content.mainnetProtectionTitle, image: "exclamationmark.triangle", healthy: true)
-                chip(content.signingGuardTitle, image: "signature", healthy: true)
-                chip(content.agentSignerAccessTitle, image: "person.crop.circle.badge.xmark", healthy: true)
-                chip(content.rpcTitle, image: "bolt.horizontal", healthy: content.rpcIsHealthy)
-            }
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8, alignment: .leading)], alignment: .leading, spacing: 8) {
+            chip(content.lockTitle, image: content.lockIsHealthy ? "checkmark.seal" : "lock", healthy: content.lockIsHealthy)
+            chip(content.autoLockTitle, image: "timer", healthy: content.autoLockIsHealthy)
+            chip(content.localAuthenticationTitle, image: "touchid", healthy: content.localAuthenticationIsHealthy)
+            chip(content.backupTitle, image: "externaldrive.badge.checkmark", healthy: content.backupIsHealthy)
+            chip(content.mainnetProtectionTitle, image: "exclamationmark.triangle", healthy: true)
+            chip(content.signingGuardTitle, image: "signature", healthy: true)
+            chip(content.agentSignerAccessTitle, image: "person.crop.circle.badge.xmark", healthy: true)
+            chip(content.rpcTitle, image: "bolt.horizontal", healthy: content.rpcIsHealthy)
         }
         .accessibilityLabel("Wallet security status")
     }

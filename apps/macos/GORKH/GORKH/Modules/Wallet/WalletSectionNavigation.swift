@@ -46,6 +46,25 @@ enum WalletSection: String, CaseIterable, Identifiable {
         }
     }
 
+    var subtitle: String {
+        switch self {
+        case .overview:
+            return "Balances, safety state, and quick actions."
+        case .portfolio:
+            return "Assets, PUSD, DeFi, yield, and PnL."
+        case .send:
+            return "Receive, send SOL, and review token transfers."
+        case .swap:
+            return "Jupiter quotes, review, simulation, and approval."
+        case .privateWallet:
+            return "Cloak status, drafts, and private activity."
+        case .security:
+            return "Backup, lock, authentication, and RPC status."
+        case .activity:
+            return "Wallet events with safe technical details."
+        }
+    }
+
     var systemImage: String {
         switch self {
         case .overview:

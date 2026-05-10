@@ -69,6 +69,8 @@ struct WalletInspectorView: View {
                 .frame(width: 72, alignment: .leading)
             Text(value)
                 .foregroundStyle(GorkhColors.primaryText)
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer()
         }
         .font(.callout)
@@ -80,6 +82,8 @@ struct WalletInspectorView: View {
                 .foregroundStyle(GorkhColors.success)
             Text(title)
                 .foregroundStyle(GorkhColors.secondaryText)
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .font(.caption)
     }

@@ -3798,6 +3798,7 @@ struct GORKHTests {
         ])
         #expect(WalletSection.productionOrder.first == .overview)
         #expect(WalletSection.watchOnlyOrder == [.overview, .portfolio, .activity])
+        #expect(WalletSection.productionOrder.allSatisfy { !$0.subtitle.isEmpty })
         #expect(!WalletSection.productionOrder.map(\.title).contains("Audit"))
     }
 
@@ -3893,6 +3894,10 @@ struct GORKHTests {
         #expect(receiveSource.contains("wallet.receive"))
         #expect(activitySource.contains("wallet.activity"))
         #expect(walletSource.contains("wallet.section.navigation"))
+        #expect(walletSource.contains("walletSidebar"))
+        #expect(walletSource.contains("Back to Overview"))
+        #expect(walletSource.contains("sectionMenu"))
+        #expect(walletSource.contains("GeometryReader"))
 
         let checklist = try sourceText(relativePath: "../../../docs/qa/wallet-visual-regression-checklist.md")
         #expect(checklist.contains("Wallet Visual Regression Checklist"))
