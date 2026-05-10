@@ -115,14 +115,22 @@ enum TransactionDecoder {
                 }
                 return accountMetas[accountIndex]
             }
+            let parsed = TransactionInstructionParser.parse(
+                programID: programID,
+                programLabel: label,
+                accounts: accounts,
+                data: instructionData
+            )
             instructions.append(DecodedInstruction(
                 index: index,
                 programID: programID,
                 programLabel: label,
                 accounts: accounts,
                 dataLength: instructionDataLength,
-                decodedAction: TransactionInstructionLabeler.decodedAction(programID: programID, data: instructionData),
-                riskHints: TransactionInstructionLabeler.instructionRiskHints(programID: programID, data: instructionData)
+                decodedAction: parsed.action,
+                riskHints: parsed.riskHints,
+                parseStatus: parsed.status,
+                parsedSummary: parsed
             ))
         }
 

@@ -113,10 +113,10 @@ enum TransactionInstructionLabeler {
             return "System transfer"
         case 0:
             return "Create account"
+        case 1:
+            return "Assign account"
         case 8:
             return "Allocate account"
-        case 9:
-            return "Assign account"
         default:
             return "System instruction"
         }
@@ -127,6 +127,8 @@ enum TransactionInstructionLabeler {
             return "Token instruction"
         }
         switch discriminator {
+        case 1:
+            return "Initialize token account"
         case 3:
             return "Token Transfer"
         case 12:
@@ -135,6 +137,8 @@ enum TransactionInstructionLabeler {
             return "Approve delegate"
         case 13:
             return "ApproveChecked delegate"
+        case 5:
+            return "Revoke delegate"
         case 6:
             return "Set authority"
         case 9:

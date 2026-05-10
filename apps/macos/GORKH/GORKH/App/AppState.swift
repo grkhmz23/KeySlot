@@ -5,6 +5,7 @@ import SwiftUI
 final class AppState: ObservableObject {
     @Published var selectedModule: GORKHModule = .wallet
     @Published var requestedWalletSection: WalletSection?
+    @Published var pendingAgentMessage: String?
 
     let walletManager: WalletManager
 
@@ -19,6 +20,11 @@ final class AppState: ObservableObject {
     func requestWalletSection(_ section: WalletSection) {
         requestedWalletSection = section
         selectedModule = .wallet
+    }
+
+    func requestAgentMessage(_ message: String) {
+        pendingAgentMessage = message
+        selectedModule = .agent
     }
 }
 

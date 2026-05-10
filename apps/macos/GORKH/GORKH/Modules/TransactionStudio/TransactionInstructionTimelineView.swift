@@ -61,6 +61,7 @@ struct TransactionInstructionTimelineView: View {
                     .font(.headline)
                     .foregroundStyle(GorkhColors.primaryText)
                 GorkhStatusChip(title: instruction.programLabel, systemImage: "cpu", color: instruction.programLabel == "Unknown Program" ? GorkhColors.warning : GorkhColors.accent)
+                GorkhStatusChip(title: instruction.parseStatus.title, systemImage: instruction.parseStatus == .recognized ? "checkmark.seal" : "questionmark.diamond", color: instruction.parseStatus == .recognized ? GorkhColors.success : GorkhColors.warning)
                 Spacer()
                 Text("\(instruction.accounts.count) account(s), \(instruction.dataLength) byte(s)")
                     .font(.caption)
@@ -72,6 +73,25 @@ struct TransactionInstructionTimelineView: View {
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(GorkhColors.secondaryText)
                 .textSelection(.enabled)
+            if instruction.parsedSummary.details.isEmpty == false {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(instruction.parsedSummary.details.prefix(6)) { detail in
+                        HStack(alignment: .top) {
+                            Text(detail.label)
+                                .font(.caption)
+                                .foregroundStyle(GorkhColors.secondaryText)
+                                .frame(width: 132, alignment: .leading)
+                            Text(detail.value)
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(GorkhColors.primaryText)
+                                .textSelection(.enabled)
+                        }
+                    }
+                }
+                .padding(8)
+                .background(GorkhColors.panel)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
             if instruction.riskHints.isEmpty == false {
                 HStack {
                     ForEach(instruction.riskHints, id: \.self) { hint in

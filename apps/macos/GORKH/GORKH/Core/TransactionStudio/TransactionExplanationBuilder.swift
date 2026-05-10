@@ -43,6 +43,18 @@ enum TransactionExplanationBuilder {
             simText = "Simulation has not run."
         }
         let summary = "This \(decoded.transactionVersion) transaction uses \(decoded.instructions.count) instruction(s) across \(decoded.programSummaries.count) program(s): \(programList.isEmpty ? "none detected" : programList). Required signer(s): \(signerText.isEmpty ? "none detected" : signerText). \(simText)"
+        let recognizedFragments = decoded.instructions
+            .compactMap(\.parsedSummary.explanationFragment)
+            .removingDuplicates()
+            .prefix(4)
+        let parserSummary: String
+        if recognizedFragments.isEmpty {
+            parserSummary = "No common instruction parser produced a detailed action summary."
+        } else {
+            parserSummary = "Recognized actions: \(recognizedFragments.joined(separator: " "))"
+        }
+        let unknownCount = decoded.instructions.filter { $0.parseStatus == .unknown }.count
+        let unknownSummary = unknownCount > 0 ? " \(unknownCount) instruction(s) remain unknown and require caution." : ""
 
         var checklist = [
             "Confirm fee payer \(decoded.feePayer.map(short) ?? "unknown") is expected.",
@@ -53,7 +65,7 @@ enum TransactionExplanationBuilder {
         checklist.append(contentsOf: risk.flags.prefix(5).map(\.message))
 
         return TransactionExplanation(
-            summary: summary,
+            summary: "\(summary) \(parserSummary)\(unknownSummary)",
             reviewChecklist: checklist,
             source: "local deterministic",
             generatedAt: Date()
@@ -65,5 +77,12 @@ enum TransactionExplanationBuilder {
             return value
         }
         return "\(value.prefix(4))...\(value.suffix(4))"
+    }
+}
+
+private extension Array where Element: Hashable {
+    func removingDuplicates() -> [Element] {
+        var seen = Set<Element>()
+        return filter { seen.insert($0).inserted }
     }
 }

@@ -141,6 +141,48 @@ struct DecodedInstruction: Codable, Equatable, Identifiable {
     let dataLength: Int
     let decodedAction: String
     let riskHints: [String]
+    let parseStatus: TransactionInstructionParseStatus
+    let parsedSummary: TransactionParsedInstruction
+}
+
+enum TransactionInstructionParseStatus: String, Codable, Equatable, CaseIterable {
+    case recognized
+    case partial
+    case unknown
+
+    var title: String {
+        switch self {
+        case .recognized:
+            return "Recognized"
+        case .partial:
+            return "Partial"
+        case .unknown:
+            return "Unknown"
+        }
+    }
+}
+
+struct TransactionInstructionDetail: Codable, Equatable, Identifiable {
+    var id: String { "\(label):\(value)" }
+
+    let label: String
+    let value: String
+}
+
+struct TransactionParsedInstruction: Codable, Equatable {
+    let status: TransactionInstructionParseStatus
+    let action: String
+    let details: [TransactionInstructionDetail]
+    let riskHints: [String]
+    let explanationFragment: String?
+
+    static let unknown = TransactionParsedInstruction(
+        status: .unknown,
+        action: "Unknown instruction data",
+        details: [],
+        riskHints: ["Unknown instruction data"],
+        explanationFragment: "Some instructions are unknown and require caution."
+    )
 }
 
 struct ProgramSummary: Codable, Equatable, Identifiable {
@@ -342,6 +384,8 @@ struct TransactionStudioHistoryEntry: Codable, Equatable, Identifiable {
     let summary: String
     let riskLevel: TransactionRiskLevel
     let simulationStatus: TransactionStudioSimulationStatus
+    let recognizedInstructionCount: Int
+    let unknownInstructionCount: Int
     let createdAt: Date
 
     init(
@@ -351,6 +395,8 @@ struct TransactionStudioHistoryEntry: Codable, Equatable, Identifiable {
         summary: String,
         riskLevel: TransactionRiskLevel,
         simulationStatus: TransactionStudioSimulationStatus,
+        recognizedInstructionCount: Int = 0,
+        unknownInstructionCount: Int = 0,
         createdAt: Date = Date()
     ) {
         self.id = id
@@ -359,7 +405,34 @@ struct TransactionStudioHistoryEntry: Codable, Equatable, Identifiable {
         self.summary = summary
         self.riskLevel = riskLevel
         self.simulationStatus = simulationStatus
+        self.recognizedInstructionCount = recognizedInstructionCount
+        self.unknownInstructionCount = unknownInstructionCount
         self.createdAt = createdAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case inputKind
+        case publicReference
+        case summary
+        case riskLevel
+        case simulationStatus
+        case recognizedInstructionCount
+        case unknownInstructionCount
+        case createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        inputKind = try container.decode(TransactionStudioInputKind.self, forKey: .inputKind)
+        publicReference = try container.decode(String.self, forKey: .publicReference)
+        summary = try container.decode(String.self, forKey: .summary)
+        riskLevel = try container.decode(TransactionRiskLevel.self, forKey: .riskLevel)
+        simulationStatus = try container.decode(TransactionStudioSimulationStatus.self, forKey: .simulationStatus)
+        recognizedInstructionCount = try container.decodeIfPresent(Int.self, forKey: .recognizedInstructionCount) ?? 0
+        unknownInstructionCount = try container.decodeIfPresent(Int.self, forKey: .unknownInstructionCount) ?? 0
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
     }
 }
 

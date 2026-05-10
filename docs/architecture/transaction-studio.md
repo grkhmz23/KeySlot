@@ -10,7 +10,7 @@ Transaction Studio supports:
 - Raw base64 or base58 transaction decoding.
 - Public address account summary lookup.
 - Read-only `simulateTransaction` for a decoded transaction when RPC allows it.
-- Deterministic instruction labeling, risk flags, and plain-English explanation.
+- Deterministic instruction parsing/labeling, risk flags, and plain-English explanation.
 - Summary-only local history.
 - Handoffs to Agent or Wallet Activity.
 
@@ -53,11 +53,22 @@ History stores only public references, summaries, risk level, simulation status,
 
 1. `TransactionStudioInputDetector` classifies input as signature, raw transaction, address, or unsupported.
 2. `TransactionDecoder` parses legacy and v0 transaction structure locally.
-3. `TransactionInstructionLabeler` labels known programs and basic actions.
-4. Unknown data remains `Unknown instruction data`.
-5. Address lookup uses public account info only.
+3. `TransactionInstructionParser` delegates to small deterministic parsers for common program layouts.
+4. `TransactionInstructionLabeler` still labels known programs and provides conservative fallback text.
+5. Unknown data remains `Unknown instruction data`.
+6. Address lookup uses public account info only.
 
 Known labels include System Program, SPL Token, Token-2022, Associated Token Account, Compute Budget, Memo, Address Lookup Table, Jupiter, Orca Whirlpool, Raydium AMM/CPMM/CLMM, Meteora DLMM, Kamino, MarginFi, Cloak, and Unknown Program.
+
+T2 parser coverage includes:
+
+- System Program: transfer, create account, assign, allocate.
+- SPL Token: transfer, transferChecked, approve, revoke, closeAccount, setAuthority partial decode, initializeAccount.
+- Token-2022: same common token layouts with explicit extension-data-unavailable warnings.
+- Associated Token Account: create/idempotent/recover-nested labels and account roles.
+- Compute Budget: heap frame, compute unit limit, compute unit price.
+- Memo: UTF-8 memo text with long memo truncation.
+- Jupiter: route labeling only. Route internals remain opaque unless the layout is confidently known.
 
 ## Simulation
 
@@ -77,6 +88,8 @@ Risk flags are deterministic. Current flags cover:
 - authority changes,
 - close-account instructions,
 - delegate approvals,
+- high compute unit limit/price,
+- DeFi aggregator route,
 - Token-2022 extension risk,
 - upgradeable loader interaction,
 - address lookup table use,
@@ -98,3 +111,5 @@ Allowed handoffs:
 - open Wallet Activity for a signature.
 
 Handoffs do not create an executable transaction path.
+
+The Agent handoff sends a safe parsed summary, risk flags, simulation status, and public reference only. It does not include raw transaction bytes, serialized payloads, or secret fields.

@@ -4766,7 +4766,8 @@ struct GORKHTests {
         #expect(decoded.transactionVersion == "legacy")
         #expect(decoded.instructions.count == 1)
         #expect(decoded.instructions.first?.programLabel == "System Program")
-        #expect(decoded.instructions.first?.decodedAction == "System transfer")
+        #expect(decoded.instructions.first?.decodedAction.contains("System transfer") == true)
+        #expect(decoded.instructions.first?.parseStatus == .recognized)
         #expect(decoded.signerSummaries.first?.address == SolanaConstants.systemProgramID)
         #expect(decoded.writableAccounts.contains { $0.address == recipient })
 
@@ -4800,6 +4801,15 @@ struct GORKHTests {
             "GORKH/Core/TransactionStudio/TransactionStudioModels.swift",
             "GORKH/Core/TransactionStudio/TransactionStudioInputDetector.swift",
             "GORKH/Core/TransactionStudio/TransactionDecoder.swift",
+            "GORKH/Core/TransactionStudio/TransactionInstructionParser.swift",
+            "GORKH/Core/TransactionStudio/SystemInstructionParser.swift",
+            "GORKH/Core/TransactionStudio/SPLTokenInstructionParser.swift",
+            "GORKH/Core/TransactionStudio/Token2022InstructionParser.swift",
+            "GORKH/Core/TransactionStudio/ATAInstructionParser.swift",
+            "GORKH/Core/TransactionStudio/ComputeBudgetInstructionParser.swift",
+            "GORKH/Core/TransactionStudio/MemoInstructionParser.swift",
+            "GORKH/Core/TransactionStudio/JupiterInstructionLabeler.swift",
+            "GORKH/Core/TransactionStudio/TransactionStudioSmokeModels.swift",
             "GORKH/Core/TransactionStudio/TransactionInstructionLabeler.swift",
             "GORKH/Core/TransactionStudio/TransactionRiskAnalyzer.swift",
             "GORKH/Core/TransactionStudio/TransactionSimulationService.swift",
@@ -4821,10 +4831,165 @@ struct GORKHTests {
 
         let architecture = try sourceText(relativePath: "../../../docs/architecture/transaction-studio.md").lowercased()
         let smoke = try sourceText(relativePath: "../../../docs/qa/transaction-studio-smoke.md").lowercased()
+        let liveSmoke = try sourceText(relativePath: "../../../docs/qa/transaction-studio-live-smoke.md").lowercased()
         #expect(architecture.contains("decode, simulation, explanation, risk review"))
         #expect(smoke.contains("transaction studio v0.1 is decode/simulate/review only"))
+        #expect(liveSmoke.contains("gettransaction"))
+        #expect(liveSmoke.contains("getparsedaccountinfo"))
         #expect(!architecture.contains("nft"))
         #expect(!smoke.contains("nft"))
+        #expect(!liveSmoke.contains("nft"))
+    }
+
+    @Test func transactionStudioCommonParsersRiskExplanationAndHandoffStaySafe() throws {
+        func u32(_ value: UInt32) -> Data {
+            Data([
+                UInt8(value & 0xff),
+                UInt8((value >> 8) & 0xff),
+                UInt8((value >> 16) & 0xff),
+                UInt8((value >> 24) & 0xff)
+            ])
+        }
+        func u64(_ value: UInt64) -> Data {
+            Data((0..<8).map { UInt8((value >> UInt64($0 * 8)) & 0xff) })
+        }
+        func meta(_ index: Int) -> DecodedAccountMeta {
+            DecodedAccountMeta(index: index, address: Base58.encode(Data(repeating: UInt8(index + 1), count: 32)), isSigner: index == 0, isWritable: index < 3)
+        }
+        let accounts = (0..<8).map(meta)
+
+        let systemTransfer = SystemInstructionParser.parse(accounts: accounts, data: u32(2) + u64(1_500_000_000))
+        #expect(systemTransfer.status == .recognized)
+        #expect(systemTransfer.action.contains("1.5 SOL"))
+        #expect(systemTransfer.details.contains { $0.label == "Lamports" && $0.value == "1500000000" })
+
+        let splTransfer = SPLTokenInstructionParser.parse(accounts: accounts, data: Data([3]) + u64(42), tokenProgramLabel: "SPL Token")
+        #expect(splTransfer.status == .recognized)
+        #expect(splTransfer.riskHints.contains("Token transfer"))
+        #expect(splTransfer.details.contains { $0.label == "Raw amount" && $0.value == "42" })
+
+        let splChecked = SPLTokenInstructionParser.parse(accounts: accounts, data: Data([12]) + u64(1_234_500) + Data([6]), tokenProgramLabel: "SPL Token")
+        #expect(splChecked.action.contains("1.2345"))
+        #expect(splChecked.details.contains { $0.label == "Decimals" && $0.value == "6" })
+
+        let approve = SPLTokenInstructionParser.parse(accounts: accounts, data: Data([4]) + u64(10), tokenProgramLabel: "SPL Token")
+        #expect(approve.riskHints.contains("Token delegate approval"))
+        let revoke = SPLTokenInstructionParser.parse(accounts: accounts, data: Data([5]), tokenProgramLabel: "SPL Token")
+        #expect(revoke.action.contains("Revoke"))
+        let close = SPLTokenInstructionParser.parse(accounts: accounts, data: Data([9]), tokenProgramLabel: "SPL Token")
+        #expect(close.riskHints.contains("Token account close"))
+        let setAuthority = SPLTokenInstructionParser.parse(accounts: accounts, data: Data([6, 2]), tokenProgramLabel: "SPL Token")
+        #expect(setAuthority.riskHints.contains("Authority change"))
+
+        let token2022 = Token2022InstructionParser.parse(accounts: accounts, data: Data([12]) + u64(100) + Data([2]))
+        #expect(token2022.action.contains("Token-2022"))
+        #expect(token2022.riskHints.contains("Token-2022 extensions may affect transfers"))
+
+        let ata = ATAInstructionParser.parse(accounts: accounts, data: Data())
+        #expect(ata.action.contains("Create associated token account"))
+        #expect(ata.details.contains { $0.label == "Associated token account" })
+
+        let computeLimit = ComputeBudgetInstructionParser.parse(data: Data([2]) + u32(1_400_000))
+        #expect(computeLimit.riskHints.contains("High compute unit limit"))
+        let computePrice = ComputeBudgetInstructionParser.parse(data: Data([3]) + u64(200_000))
+        #expect(computePrice.riskHints.contains("High compute unit price"))
+
+        let memo = MemoInstructionParser.parse(data: Data("hello".utf8))
+        #expect(memo.status == .recognized)
+        let longMemo = MemoInstructionParser.parse(data: Data(String(repeating: "a", count: 220).utf8))
+        #expect(longMemo.status == .partial)
+        #expect(longMemo.details.first?.value.contains("[truncated]") == true)
+
+        let jupiter = JupiterInstructionLabeler.parse(programLabel: "Jupiter", accounts: accounts, data: Data([1, 2, 3]))
+        #expect(jupiter.action == "Jupiter route instruction")
+        #expect(jupiter.riskHints.contains("DeFi aggregator route"))
+
+        func instruction(_ index: Int, programID: String, data: Data) -> DecodedInstruction {
+            let label = TransactionInstructionLabeler.label(for: programID)
+            let parsed = TransactionInstructionParser.parse(programID: programID, programLabel: label, accounts: accounts, data: data)
+            return DecodedInstruction(
+                index: index,
+                programID: programID,
+                programLabel: label,
+                accounts: accounts,
+                dataLength: data.count,
+                decodedAction: parsed.action,
+                riskHints: parsed.riskHints,
+                parseStatus: parsed.status,
+                parsedSummary: parsed
+            )
+        }
+
+        let decoded = DecodedTransaction(
+            inputKind: .rawTransaction,
+            network: .mainnetBeta,
+            transactionVersion: "legacy",
+            signatureCount: 1,
+            signatures: [Base58.encode(Data(repeating: 1, count: 64))],
+            feePayer: accounts[0].address,
+            recentBlockhash: Base58.encode(Data(repeating: 7, count: 32)),
+            accountMetas: accounts,
+            instructions: [
+                instruction(0, programID: SolanaConstants.systemProgramID, data: u32(2) + u64(1_500_000_000)),
+                instruction(1, programID: SolanaConstants.splTokenProgramID, data: Data([4]) + u64(10)),
+                instruction(2, programID: TransactionInstructionLabeler.computeBudgetProgramID, data: Data([2]) + u32(1_400_000)),
+                instruction(3, programID: TransactionInstructionLabeler.jupiterV6ProgramID, data: Data([1, 2, 3])),
+                instruction(4, programID: "Bad111111111111111111111111111111111111111", data: Data([9]))
+            ],
+            programSummaries: [
+                ProgramSummary(programID: SolanaConstants.systemProgramID, label: "System Program", instructionCount: 1),
+                ProgramSummary(programID: SolanaConstants.splTokenProgramID, label: "SPL Token", instructionCount: 1),
+                ProgramSummary(programID: TransactionInstructionLabeler.computeBudgetProgramID, label: "Compute Budget", instructionCount: 1),
+                ProgramSummary(programID: TransactionInstructionLabeler.jupiterV6ProgramID, label: "Jupiter", instructionCount: 1),
+                ProgramSummary(programID: "Bad111111111111111111111111111111111111111", label: "Unknown Program", instructionCount: 1)
+            ],
+            signerSummaries: [SignerSummary(address: accounts[0].address, isFeePayer: true)],
+            writableAccounts: accounts.prefix(3).map { WritableAccountSummary(address: $0.address, isSigner: $0.isSigner) },
+            addressLookupTables: [],
+            feeSummary: TransactionFeeSummary(requiredSignatureCount: 1, estimatedFeeLamports: nil),
+            messageBase64: "safe-message-summary",
+            simulationTransactionBase64: "raw-payload-not-used-in-handoff",
+            fetchedSignature: nil,
+            slot: nil,
+            blockTime: nil,
+            fingerprint: "unit-fingerprint",
+            decodedAt: Date(timeIntervalSince1970: 0)
+        )
+        let risk = TransactionRiskAnalyzer.review(decoded: decoded, simulation: .unavailable("stale blockhash"))
+        #expect(risk.flags.contains { $0.kind == .nativeSOLTransfer })
+        #expect(risk.flags.contains { $0.kind == .approveDelegate })
+        #expect(risk.flags.contains { $0.kind == .highComputeUsage })
+        #expect(risk.flags.contains { $0.kind == .defiProtocolInteraction })
+        #expect(risk.flags.contains { $0.kind == .unknownProgram })
+
+        let explanation = TransactionExplanationBuilder.build(decoded: decoded, simulation: .unavailable("stale blockhash"), risk: risk)
+        #expect(explanation.summary.contains("transfers 1.5 SOL"))
+        #expect(explanation.summary.contains("unknown"))
+
+        let handoff = TransactionStudioHandoff(
+            target: .agentExplanation,
+            summary: "Risk flags: \(risk.flags.map(\.message).joined(separator: " | ")). No raw transaction payload is included."
+        )
+        let handoffJSON = try #require(String(data: JSONEncoder().encode(handoff), encoding: .utf8)).lowercased()
+        #expect(!handoffJSON.contains("raw-payload-not-used-in-handoff"))
+        #expect(!handoffJSON.contains("serializedtransaction"))
+        #expect(!handoffJSON.contains("transactionpayload"))
+
+        let history = TransactionStudioHistoryEntry(
+            inputKind: .rawTransaction,
+            publicReference: "unit-fingerprint",
+            summary: explanation.summary,
+            riskLevel: risk.level,
+            simulationStatus: .unavailable,
+            recognizedInstructionCount: decoded.instructions.filter { $0.parseStatus == .recognized }.count,
+            unknownInstructionCount: decoded.instructions.filter { $0.parseStatus == .unknown }.count
+        )
+        let historyJSON = try #require(String(data: JSONEncoder().encode(history), encoding: .utf8)).lowercased()
+        #expect(historyJSON.contains("recognizedinstructioncount"))
+        #expect(historyJSON.contains("unknowninstructioncount"))
+        for forbidden in ["privatekey", "secretkey", "seedphrase", "mnemonic", "walletjson", "signingseed", "transactionpayload", "serializedtransaction"] {
+            #expect(!historyJSON.contains(forbidden))
+        }
     }
 
     @Test func agentMemoryAndAuditRedactionContainNoSecrets() throws {

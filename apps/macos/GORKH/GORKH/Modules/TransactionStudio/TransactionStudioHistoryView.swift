@@ -28,6 +28,7 @@ struct TransactionStudioHistoryView: View {
                                 GorkhStatusChip(title: entry.inputKind.title, systemImage: "doc.text", color: GorkhColors.accent)
                                 GorkhStatusChip(title: entry.riskLevel.title, systemImage: "exclamationmark.shield", color: entry.riskLevel == .high ? .red : GorkhColors.warning)
                                 GorkhStatusChip(title: entry.simulationStatus.title, systemImage: "waveform.path.ecg", color: entry.simulationStatus == .success ? GorkhColors.accent : GorkhColors.warning)
+                                GorkhStatusChip(title: "\(entry.recognizedInstructionCount) parsed / \(entry.unknownInstructionCount) unknown", systemImage: "list.bullet.rectangle", color: GorkhColors.accent)
                             }
                             Text(entry.publicReference)
                                 .font(.system(.caption, design: .monospaced))

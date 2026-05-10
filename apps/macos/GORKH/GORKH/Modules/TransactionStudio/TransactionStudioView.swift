@@ -263,22 +263,51 @@ struct TransactionStudioView: View {
     }
 
     private func sendToAgent() {
-        appState.selectedModule = .agent
-        record(.handoffCreated, "Transaction Studio finding handed to Agent.")
+        appState.requestAgentMessage(safeAgentSummary())
+        record(.handoffCreated, "Transaction Studio finding handed to Agent.", details: ["payload": "safe_summary_only"])
     }
 
     private func saveHistory() {
         let reference = decodedTransaction?.fetchedSignature ?? detectedInput?.safePreview ?? "local-summary"
+        let recognized = decodedTransaction?.instructions.filter { $0.parseStatus == .recognized }.count ?? 0
+        let unknown = decodedTransaction?.instructions.filter { $0.parseStatus == .unknown }.count ?? 0
         let entry = TransactionStudioHistoryEntry(
             inputKind: detectedInput?.kind ?? .unknown,
             publicReference: reference,
             summary: explanation.summary,
             riskLevel: riskReview.level,
-            simulationStatus: simulation.status
+            simulationStatus: simulation.status,
+            recognizedInstructionCount: recognized,
+            unknownInstructionCount: unknown
         )
         historyStore.append(entry)
         history = historyStore.load()
         record(.handoffCreated, "Transaction Studio history entry saved.", details: ["risk": riskReview.level.rawValue])
+    }
+
+    private func safeAgentSummary() -> String {
+        var lines = [
+            "Read-only Transaction Studio handoff.",
+            "Summary: \(explanation.summary)",
+            "Risk level: \(riskReview.level.title)",
+            "Simulation: \(simulation.status.title)"
+        ]
+        if let decodedTransaction {
+            lines.append("Input: \(decodedTransaction.inputKind.title)")
+            if let signature = decodedTransaction.fetchedSignature {
+                lines.append("Signature: \(signature)")
+            } else {
+                lines.append("Fingerprint: \(decodedTransaction.fingerprint)")
+            }
+            lines.append("Programs: \(decodedTransaction.programSummaries.map(\.label).joined(separator: ", "))")
+            lines.append("Recognized instructions: \(decodedTransaction.instructions.filter { $0.parseStatus == .recognized }.count)")
+            lines.append("Unknown instructions: \(decodedTransaction.instructions.filter { $0.parseStatus == .unknown }.count)")
+        }
+        if riskReview.flags.isEmpty == false {
+            lines.append("Risk flags: \(riskReview.flags.map(\.message).joined(separator: " | "))")
+        }
+        lines.append("No raw transaction payload is included. Do not execute from chat.")
+        return lines.joined(separator: "\n")
     }
 
     private func clearHistory() {

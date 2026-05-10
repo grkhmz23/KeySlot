@@ -42,6 +42,7 @@ Transaction Studio v0.1 is decode/simulate/review only. It cannot sign, broadcas
 2. Click `Decode`.
 3. Expected:
    - Transaction version, fee payer, static signers, writable accounts, program labels, and instruction timeline appear.
+   - System transfer, SPL transfer, ATA create, Compute Budget, Memo, and Jupiter route instructions show parser badges when recognized.
    - Unknown instruction data remains explicitly unknown.
 
 ### Simulation Failure
@@ -64,6 +65,7 @@ Transaction Studio v0.1 is decode/simulate/review only. It cannot sign, broadcas
 
 - `Copy summary` copies explanation text only.
 - `Send to Agent` routes to Agent without executing.
+- Agent receives a safe parsed summary only, not raw transaction bytes.
 - `Save history` stores a summary only.
 - `Open Activity` is available only for signature-backed findings.
 

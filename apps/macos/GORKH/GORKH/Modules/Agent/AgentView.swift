@@ -104,6 +104,10 @@ struct AgentView: View {
         .accessibilityIdentifier("agent.root")
         .onAppear {
             appendAudit(.agentSectionViewed, "Agent section opened with A2 tiny-swap execution gate.")
+            consumePendingAgentMessageIfNeeded()
+        }
+        .onChange(of: appState.pendingAgentMessage) {
+            consumePendingAgentMessageIfNeeded()
         }
     }
 
@@ -180,6 +184,21 @@ struct AgentView: View {
         Task {
             await processChatInput(input)
         }
+    }
+
+    private func consumePendingAgentMessageIfNeeded() {
+        guard let pendingMessage = appState.pendingAgentMessage else {
+            return
+        }
+        appState.pendingAgentMessage = nil
+        selectedSection = .chat
+        let safeMessage = AgentSafetyRedactor.redact(pendingMessage)
+        chatMessages.append(AgentChatMessage(role: .user, text: safeMessage))
+        chatMessages.append(AgentChatMessage(
+            role: .assistant,
+            text: "I received a read-only Transaction Studio summary. I can explain the risk flags and help route you to Wallet Activity, but I cannot sign or execute from chat."
+        ))
+        appendAudit(.agentReadOnlyAnalysisPerformed, "Transaction Studio handoff received.", details: ["source": "transaction_studio"])
     }
 
     private func processChatInput(_ input: String) async {
