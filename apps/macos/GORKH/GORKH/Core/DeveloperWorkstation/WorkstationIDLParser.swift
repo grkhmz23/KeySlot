@@ -50,6 +50,7 @@ struct WorkstationIDLParser {
         let type = object["type"] as? [String: Any]
         return WorkstationIDLAccount(
             name: object["name"] as? String ?? "unknown",
+            discriminator: parseDiscriminator(object["discriminator"]),
             fields: (type?["fields"] as? [[String: Any]] ?? object["fields"] as? [[String: Any]] ?? []).map(parseField)
         )
     }
@@ -100,5 +101,18 @@ struct WorkstationIDLParser {
             return dictionary.keys.sorted().joined(separator: "|")
         }
         return String(describing: value)
+    }
+
+    private static func parseDiscriminator(_ value: Any?) -> [UInt8]? {
+        guard let values = value as? [Any] else {
+            return nil
+        }
+        let bytes = values.compactMap { entry -> UInt8? in
+            if let int = entry as? Int, int >= 0, int <= 255 {
+                return UInt8(int)
+            }
+            return nil
+        }
+        return bytes.count == values.count ? bytes : nil
     }
 }

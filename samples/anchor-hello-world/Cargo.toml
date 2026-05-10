@@ -1,0 +1,6 @@
+[workspace]
+members = ["programs/hello_world"]
+resolver = "2"
+
+[profile.release]
+overflow-checks = true

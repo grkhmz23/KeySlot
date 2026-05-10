@@ -5,7 +5,9 @@ struct DeveloperWorkstationView: View {
     @State private var selectedCluster: WorkstationCluster = .localnet
     @State private var activeProject: WorkstationProject?
     @State private var toolchainSnapshot: WorkstationToolchainSnapshot = .unchecked
+    @State private var toolchainPlans: [WorkstationToolchainInstallPlan] = []
     @State private var developerWallet: DeveloperWalletMetadata = .missing
+    @State private var localValidatorStatus: WorkstationLocalValidatorStatus = .unchecked
     @State private var activity: [WorkstationActivityEvent] = [
         WorkstationActivityEvent(kind: .workstationOpened, message: "Developer Workstation opened.")
     ]
@@ -15,6 +17,7 @@ struct DeveloperWorkstationView: View {
     @State private var gitURLInput = ""
     @State private var trustPhrase = ""
     @State private var idlText = ""
+    @State private var idlFilter = ""
     @State private var parsedIDL: WorkstationIDL?
     @State private var accountAddress = ""
     @State private var accountDataBase64 = ""
@@ -28,6 +31,7 @@ struct DeveloperWorkstationView: View {
     @State private var programOperation: WorkstationProgramOperation = .solanaProgramShow
     @State private var artifactPath = ""
     @State private var destructivePhrase = ""
+    @State private var programCommandPreview = "Prepare a command preview after toolchain, project, wallet, and cluster checks."
     @State private var logState = WorkstationLogStreamState.idle()
 
     private let keyVault = KeychainDeveloperKeyVault()
@@ -130,7 +134,7 @@ struct DeveloperWorkstationView: View {
                 overviewCard("Project", value: activeProject?.displayName ?? "No project", detail: activeProject?.trustStatus.title ?? "Import a project to begin.")
                 overviewCard("Toolchain", value: "\(toolchainSnapshot.availableCount)/\(WorkstationToolchainComponent.allCases.count) ready", detail: "Bundled, managed, then trusted system paths.")
                 overviewCard("Developer Wallet", value: developerWallet.status.title, detail: developerWallet.publicAddress.ifEmpty("Separate localnet/devnet wallet only."))
-                overviewCard("Local Validator", value: "Status only", detail: "Start/stop remains locked unless Solana CLI is available and approved.")
+                overviewCard("Local Validator", value: localValidatorStatus.state.title, detail: localValidatorStatus.message)
                 overviewCard("Activity", value: "\(activity.count) events", detail: "Redacted Workstation audit trail.")
             }
 
@@ -214,34 +218,53 @@ struct DeveloperWorkstationView: View {
     private var toolchainSection: some View {
         GorkhPanel("Managed Toolchain") {
             HStack {
-                Text("Detection checks bundled app resources, Application Support/GORKH/Toolchains, then trusted absolute system paths.")
+                Text("Detection checks bundled app resources, versioned Application Support/GORKH/Toolchains installs, then trusted absolute system paths.")
                     .font(.caption)
                     .foregroundStyle(GorkhColors.secondaryText)
                 Spacer()
                 Button("Check Toolchain") {
-                    toolchainSnapshot = WorkstationToolchainResolver().resolveAll()
-                    appendActivity(.toolchainChecked, "Toolchain status checked.")
+                    refreshToolchain()
                 }
             }
 
             ForEach(toolchainSnapshot.resolutions) { resolution in
-                HStack(spacing: 10) {
-                    Text(resolution.component.displayName)
-                        .frame(width: 120, alignment: .leading)
-                    WorkstationStatusChip(
-                        title: resolution.status.title,
-                        systemImage: resolution.status == .available ? "checkmark.circle" : "exclamationmark.triangle",
-                        color: resolution.status == .available ? GorkhColors.success : GorkhColors.warning
-                    )
-                    Text(resolution.source.title)
-                        .foregroundStyle(GorkhColors.secondaryText)
-                    Spacer()
-                    Text(resolution.executablePath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? resolution.message)
-                        .font(.caption)
-                        .foregroundStyle(GorkhColors.secondaryText)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 10) {
+                        Text(resolution.component.displayName)
+                            .frame(width: 120, alignment: .leading)
+                        WorkstationStatusChip(
+                            title: resolution.status.title,
+                            systemImage: resolution.status == .available ? "checkmark.circle" : "exclamationmark.triangle",
+                            color: resolution.status == .available ? GorkhColors.success : GorkhColors.warning
+                        )
+                        Text(resolution.source.title)
+                            .foregroundStyle(GorkhColors.secondaryText)
+                        Spacer()
+                        Text(resolution.executablePath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? resolution.message)
+                            .font(.caption)
+                            .foregroundStyle(GorkhColors.secondaryText)
+                    }
+                    if let plan = toolchainPlans.first(where: { $0.component == resolution.component }) {
+                        HStack(spacing: 8) {
+                            WorkstationStatusChip(
+                                title: plan.status.title,
+                                systemImage: plan.canInstall ? "arrow.down.circle" : "lock",
+                                color: plan.canInstall ? GorkhColors.success : GorkhColors.warning
+                            )
+                            Text(plan.message)
+                                .font(.caption)
+                                .foregroundStyle(GorkhColors.secondaryText)
+                            Spacer()
+                        }
+                    }
                 }
                 .font(.callout)
+                .padding(.vertical, 4)
             }
+
+            Text("Install buttons stay disabled until manifest entries include verified HTTPS sources and sha256 values. No unverified installer execution is available.")
+                .font(.caption)
+                .foregroundStyle(GorkhColors.warning)
         }
     }
 
@@ -256,6 +279,7 @@ struct DeveloperWorkstationView: View {
                     parseIDL()
                 }
                 .buttonStyle(.borderedProminent)
+                labeledTextField("Search IDL", text: $idlFilter, prompt: "instruction, account, type")
             }
 
             if let parsedIDL {
@@ -264,10 +288,10 @@ struct DeveloperWorkstationView: View {
                     keyValue("Version", parsedIDL.version ?? "Unavailable")
                     keyValue("Summary", parsedIDL.summary)
                     DisclosureGroup("Instructions") {
-                        ForEach(parsedIDL.instructions) { instruction in
+                        ForEach(filteredInstructions(parsedIDL)) { instruction in
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(instruction.name).fontWeight(.semibold)
-                                Text("\(instruction.accounts.count) accounts, \(instruction.args.count) args")
+                                Text("\(instruction.accounts.count) accounts, \(instruction.accounts.filter(\.isSigner).count) signers, \(instruction.accounts.filter(\.isMut).count) writable, \(instruction.args.count) args")
                                     .font(.caption)
                                     .foregroundStyle(GorkhColors.secondaryText)
                             }
@@ -275,11 +299,22 @@ struct DeveloperWorkstationView: View {
                         }
                     }
                     DisclosureGroup("Accounts") {
-                        ForEach(parsedIDL.accounts) { account in
-                            Text("\(account.name): \(account.fields.map(\.name).joined(separator: ", "))")
-                                .font(.caption)
-                                .foregroundStyle(GorkhColors.secondaryText)
+                        ForEach(filteredAccounts(parsedIDL)) { account in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(account.name).fontWeight(.semibold)
+                                Text("Discriminator \(account.discriminatorHex)")
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(GorkhColors.secondaryText)
+                                Text(account.fields.map { "\($0.name): \($0.type)" }.joined(separator: ", "))
+                                    .font(.caption)
+                                    .foregroundStyle(GorkhColors.secondaryText)
+                            }
                         }
+                    }
+                    DisclosureGroup("Types / Events / Errors") {
+                        Text("\(parsedIDL.types.count) types, \(parsedIDL.events.count) events, \(parsedIDL.errors.count) errors")
+                            .font(.caption)
+                            .foregroundStyle(GorkhColors.secondaryText)
                     }
                 }
             }
@@ -327,7 +362,18 @@ struct DeveloperWorkstationView: View {
                     .foregroundStyle(decision.isAllowed ? GorkhColors.success : GorkhColors.warning)
             }
 
-            Text("Command preview is generated only from fixed builders. No raw terminal input or arbitrary flags are accepted in D1.")
+            Button("Prepare Fixed Command Preview") {
+                prepareProgramCommandPreview()
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!decision.isAllowed)
+
+            Text(programCommandPreview)
+                .font(.caption.monospaced())
+                .foregroundStyle(GorkhColors.secondaryText)
+                .textSelection(.enabled)
+
+            Text("Command preview is generated only from fixed builders. No raw terminal input or arbitrary flags are accepted in D2.")
                 .font(.caption)
                 .foregroundStyle(GorkhColors.secondaryText)
         }
@@ -376,12 +422,16 @@ struct DeveloperWorkstationView: View {
                     ownerProgram: nil,
                     lamports: nil,
                     dataBase64: accountDataBase64.isEmpty ? nil : accountDataBase64,
-                    idlAccount: idlAccount
+                    idlAccount: idlAccount,
+                    idl: parsedIDL
                 )
             )
             keyValue("Status", result.status.title)
             keyValue("Data length", "\(result.dataLength) bytes")
             keyValue("Raw preview", result.rawPreview.ifEmpty("Unavailable"))
+            ForEach(result.fields) { field in
+                keyValue(field.name, "\(field.value) (\(field.type))")
+            }
             Text(result.message)
                 .font(.caption)
                 .foregroundStyle(GorkhColors.secondaryText)
@@ -396,6 +446,7 @@ struct DeveloperWorkstationView: View {
                 }
             }
             .pickerStyle(.menu)
+            keyValue("Risk label", rpcMethod.isReadOnly && !rpcMethod.isBroadScan ? "Read-only preset" : "Blocked or routed through guarded panel")
             labeledTextField("Address", text: $rpcAddress, prompt: "Required for address methods")
             labeledTextField("Signature", text: $rpcSignature, prompt: "Required for signature methods")
             labeledTextField("Encoded transaction/message", text: $encodedTransaction, prompt: "Required for simulate/getFeeForMessage")
@@ -417,7 +468,7 @@ struct DeveloperWorkstationView: View {
             Text(permission.message)
                 .font(.caption)
                 .foregroundStyle(permission.isAllowed ? GorkhColors.success : GorkhColors.warning)
-            Text("sendTransaction, custom method text, and broad scans are blocked. requestAirdrop is routed through the faucet guard only.")
+            Text("Saved presets are bounded to reviewed read-only methods. sendTransaction, custom method text, and broad scans are blocked. requestAirdrop is routed through the faucet guard only.")
                 .font(.caption)
                 .foregroundStyle(GorkhColors.secondaryText)
         }
@@ -455,10 +506,34 @@ struct DeveloperWorkstationView: View {
             }
 
             GorkhPanel("Local Validator") {
-                Text("Status detection uses localnet RPC health. Start/stop remains approval-gated and fixed-command only.")
+                Text("Status detection uses localnet RPC health. Start uses solana-test-validator with fixed args and an Application Support ledger path.")
                     .font(.caption)
                     .foregroundStyle(GorkhColors.secondaryText)
-                WorkstationStatusChip(title: "Start/stop locked in UI foundation", systemImage: "lock", color: GorkhColors.warning)
+                WorkstationStatusChip(
+                    title: localValidatorStatus.state.title,
+                    systemImage: localValidatorStatus.state == .running ? "checkmark.circle" : "server.rack",
+                    color: localValidatorStatus.state == .running ? GorkhColors.success : GorkhColors.warning
+                )
+                Text(localValidatorStatus.message)
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.secondaryText)
+                if let validatorPath = WorkstationToolchainResolver().companionExecutablePath(named: "solana-test-validator", nextTo: .solana) {
+                    let ledger = FileManager.default
+                        .urls(for: .applicationSupportDirectory, in: .userDomainMask)
+                        .first!
+                        .appendingPathComponent("GORKH/Localnet/ledger", isDirectory: true)
+                        .path
+                    let plan = WorkstationLocalValidatorCommandBuilder.start(
+                        validatorPath: validatorPath,
+                        ledgerPath: ledger,
+                        reset: false
+                    )
+                    keyValue("Start preview", plan.redactedPreview)
+                } else {
+                    Text("solana-test-validator was not found next to a validated Solana CLI executable.")
+                        .font(.caption)
+                        .foregroundStyle(GorkhColors.warning)
+                }
             }
 
             GorkhPanel("Devnet / Localnet Faucet") {
@@ -561,6 +636,40 @@ struct DeveloperWorkstationView: View {
         }
     }
 
+    private func refreshToolchain() {
+        let resolver = WorkstationToolchainResolver()
+        toolchainSnapshot = resolver.resolveAll()
+        let installer = WorkstationToolchainInstaller(manifest: .d2Placeholder)
+        toolchainPlans = WorkstationToolchainComponent.allCases.map { component in
+            installer.plan(component: component, resolution: toolchainSnapshot.resolution(for: component))
+        }
+        appendActivity(.toolchainChecked, "Toolchain status checked.")
+        appendActivity(.toolchainInstallPlanCreated, "Managed toolchain install plans refreshed.")
+    }
+
+    private func filteredInstructions(_ idl: WorkstationIDL) -> [WorkstationIDLInstruction] {
+        let query = idlFilter.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else {
+            return idl.instructions
+        }
+        return idl.instructions.filter {
+            $0.name.lowercased().contains(query) ||
+                $0.args.contains { $0.name.lowercased().contains(query) || $0.type.lowercased().contains(query) } ||
+                $0.accounts.contains { $0.name.lowercased().contains(query) }
+        }
+    }
+
+    private func filteredAccounts(_ idl: WorkstationIDL) -> [WorkstationIDLAccount] {
+        let query = idlFilter.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else {
+            return idl.accounts
+        }
+        return idl.accounts.filter {
+            $0.name.lowercased().contains(query) ||
+                $0.fields.contains { $0.name.lowercased().contains(query) || $0.type.lowercased().contains(query) }
+        }
+    }
+
     private func inspectFolder() {
         do {
             let project = try WorkstationProjectImporter().inspectFolder(URL(fileURLWithPath: projectPathInput))
@@ -612,6 +721,31 @@ struct DeveloperWorkstationView: View {
             appendActivity(.idlLoaded, "IDL loaded.")
         } catch {
             appendActivity(.commandBlocked, "IDL parse failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func prepareProgramCommandPreview() {
+        let request = WorkstationProgramOperationRequest(
+            operation: programOperation,
+            cluster: selectedCluster,
+            project: activeProject,
+            toolchain: toolchainSnapshot,
+            developerWallet: developerWallet,
+            artifactPath: artifactPath.isEmpty ? nil : artifactPath,
+            programID: programID.isEmpty ? nil : programID,
+            exactPhrase: destructivePhrase
+        )
+        do {
+            let plan = try WorkstationProgramOpsRunner.preparePlan(request: request, keypairPath: "/tmp/[redacted-developer-authority].json")
+            programCommandPreview = plan.redactedPreview
+            appendActivity(
+                .commandPreviewPrepared,
+                "Fixed command preview prepared.",
+                details: ["operation": programOperation.rawValue, "cluster": selectedCluster.rawValue]
+            )
+        } catch {
+            programCommandPreview = error.localizedDescription
+            appendActivity(.commandBlocked, "Command preview blocked: \(error.localizedDescription)")
         }
     }
 

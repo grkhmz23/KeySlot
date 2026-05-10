@@ -36,7 +36,12 @@ struct WorkstationIDLAccount: Codable, Equatable, Identifiable {
     var id: String { name }
 
     let name: String
+    let discriminator: [UInt8]?
     let fields: [WorkstationIDLField]
+
+    var discriminatorHex: String {
+        (discriminator ?? WorkstationAnchorDiscriminator.account(name: name)).map { String(format: "%02x", $0) }.joined()
+    }
 }
 
 struct WorkstationIDLNamedType: Codable, Equatable, Identifiable {
@@ -71,6 +76,25 @@ enum WorkstationIDLParserError: LocalizedError, Equatable {
             return "IDL JSON could not be parsed."
         case .missingName:
             return "IDL is missing a program name."
+        }
+    }
+}
+
+enum WorkstationAnchorDiscriminator {
+    static func account(name: String) -> [UInt8] {
+        Array(WorkstationToolchainVerifier.sha256Hex(data: Data("account:\(name)".utf8))
+            .chunks(of: 2)
+            .prefix(8)
+            .compactMap { UInt8($0, radix: 16) })
+    }
+}
+
+private extension String {
+    func chunks(of size: Int) -> [String] {
+        stride(from: 0, to: count, by: size).map {
+            let start = index(startIndex, offsetBy: $0)
+            let end = index(start, offsetBy: size, limitedBy: endIndex) ?? endIndex
+            return String(self[start..<end])
         }
     }
 }

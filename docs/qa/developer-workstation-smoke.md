@@ -1,6 +1,6 @@
 # Developer Workstation Smoke
 
-Use this checklist for D1 local QA. Do not run untrusted project commands.
+Use this checklist for D2 local QA. Do not run untrusted project commands.
 
 ## App Navigation
 
@@ -28,19 +28,26 @@ Use this checklist for D1 local QA. Do not run untrusted project commands.
 
 - Click Check Toolchain.
 - Expected: Solana CLI, Anchor, Rust, Cargo, Node, npm, and Git show available/missing states honestly.
+- Expected: managed install plan appears for each tool.
+- Expected: placeholder manifest entries are blocked until verified source and sha256 are filled.
+- Expected: bundled availability is not claimed unless app resources contain binaries.
 - Missing tools should disable dependent program operations.
 
 ## IDL Browser
 
 - Paste a small Anchor IDL fixture.
 - Expected: instructions, accounts, types, errors, and events parse if present.
+- Expected: instruction signer/writable counts and account discriminators are visible.
+- Search for an instruction or account field.
+- Expected: filtered rows update without running code.
 - Invalid JSON should show a parse failure activity event.
 
 ## Account Decoder
 
 - Enter a public account address and optional safe base64 fixture data.
 - Expected: owner/data summary appears when available.
-- If IDL decode is unavailable, UI says so honestly.
+- If an Anchor discriminator and simple primitive fields match the loaded IDL, expected primitive values are shown.
+- If complex fields are present, expected state is partial/unavailable rather than guessed.
 
 ## Logs
 
@@ -66,6 +73,13 @@ Use this checklist for D1 local QA. Do not run untrusted project commands.
 - Expected: faucet request is allowed through faucet guard only.
 - Select mainnet.
 - Expected: blocked.
+
+## Local Validator
+
+- Check Localnet.
+- Expected: local validator status and fixed start-command preview are visible when `solana-test-validator` is discoverable.
+- Expected: logs are bounded and redacted.
+- Do not reset the ledger unless explicitly testing destructive localnet behavior.
 
 ## Compute Lab
 

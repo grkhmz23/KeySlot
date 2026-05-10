@@ -6936,7 +6936,7 @@ struct GORKHTests {
         )
         #expect(decode.dataLength == 4)
         #expect(decode.status == .ready)
-        #expect(decode.fields.first?.value.contains("Decode unavailable") == true)
+        #expect(decode.fields.first?.value.contains("Data unavailable") == true)
 
         var logState = WorkstationLogStreamState.idle(cluster: .devnet, maxEntries: 2).started(programID: SolanaConstants.systemProgramID)
         logState = logState.appending(WorkstationLogEntry(cluster: .devnet, programID: SolanaConstants.systemProgramID, signature: nil, line: "first"))
@@ -6975,6 +6975,204 @@ struct GORKHTests {
             "GORKH/Core/DeveloperWorkstation/WorkstationCommandRunner.swift",
             "GORKH/Core/DeveloperWorkstation/WorkstationCommandBuilders.swift",
             "GORKH/Core/DeveloperWorkstation/WorkstationRPCPlaygroundService.swift",
+            "GORKH/Modules/DeveloperWorkstation/DeveloperWorkstationView.swift"
+        ].map(sourceText(relativePath:)).joined(separator: "\n").lowercased()
+        for forbidden in [
+            "/bin/sh",
+            "eval(",
+            "arbitrarycommand",
+            "sendtransaction(",
+            "requestairdrop("
+        ] {
+            #expect(!workstationSource.contains(forbidden))
+        }
+    }
+
+    @Test func developerWorkstationManagedToolchainLocalnetAndDecoderDeepeningStayGated() throws {
+        let manifestText = try sourceText(relativePath: "../../../docs/toolchains/gorkh-toolchain-manifest.json")
+        let manifest = try WorkstationToolchainManifestLoader.parse(string: manifestText)
+        #expect(manifest.tools.count >= WorkstationToolchainComponent.allCases.count)
+        #expect(manifest.entry(for: .solana)?.hasVerifiedDownload == false)
+
+        let installer = WorkstationToolchainInstaller(
+            manifest: manifest,
+            managedRoot: FileManager.default.temporaryDirectory.appendingPathComponent("gorkh-managed-\(UUID().uuidString)", isDirectory: true)
+        )
+        let blockedSolanaPlan = installer.plan(component: .solana, resolution: .missing(.solana))
+        #expect(blockedSolanaPlan.status == .installBlockedMissingChecksum)
+        #expect(blockedSolanaPlan.verificationStatus == .missingChecksum)
+        #expect(!blockedSolanaPlan.canInstall)
+
+        let verified = WorkstationToolchainVerifier.verify(data: Data("hello".utf8), expectedSHA256: WorkstationToolchainVerifier.sha256Hex(data: Data("hello".utf8)))
+        #expect(verified == .verified)
+        #expect(throws: WorkstationToolchainInstallError.self) {
+            try WorkstationArchiveSafety.validateEntryPaths(["bin/solana", "../escape"])
+        }
+
+        let tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("gorkh-workstation-d2-\(UUID().uuidString)", isDirectory: true)
+        let managedSolanaBin = tempRoot.appendingPathComponent("Toolchains/solana/1.18.0/bin", isDirectory: true)
+        try FileManager.default.createDirectory(at: managedSolanaBin, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let solanaPath = managedSolanaBin.appendingPathComponent("solana")
+        let validatorPath = managedSolanaBin.appendingPathComponent("solana-test-validator")
+        try "#!/usr/bin/env false\n".write(to: solanaPath, atomically: true, encoding: .utf8)
+        try "#!/usr/bin/env false\n".write(to: validatorPath, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: Int16(0o755))], ofItemAtPath: solanaPath.path)
+        try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: Int16(0o755))], ofItemAtPath: validatorPath.path)
+
+        let resolver = WorkstationToolchainResolver(
+            environment: [:],
+            bundleRoot: nil,
+            managedRoot: tempRoot.appendingPathComponent("Toolchains", isDirectory: true),
+            systemDirectories: []
+        )
+        let snapshot = resolver.resolveAll()
+        #expect(snapshot.resolution(for: .solana)?.source == .managed)
+        #expect(resolver.companionExecutablePath(named: "solana-test-validator", nextTo: .solana) == validatorPath.path)
+
+        let localValidatorPlan = WorkstationLocalValidatorCommandBuilder.start(
+            validatorPath: validatorPath.path,
+            ledgerPath: tempRoot.appendingPathComponent("Localnet/ledger", isDirectory: true).path,
+            reset: true
+        )
+        try WorkstationCommandRunner().validate(localValidatorPlan)
+        #expect(localValidatorPlan.arguments.contains("--reset"))
+        #expect(!localValidatorPlan.redactedPreview.contains(";"))
+
+        let sampleProject = try WorkstationProjectImporter().inspectFolder(URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("samples/anchor-hello-world", isDirectory: true))
+        #expect(sampleProject.detectedFramework == .anchor)
+        #expect(sampleProject.detectedFiles.anchorToml)
+        #expect(sampleProject.detectedFiles.targetIDLJSONCount >= 1)
+
+        let trusted = WorkstationTrustPolicy.trustedCopy(of: sampleProject, phrase: WorkstationTrustPolicy.requiredPhrase)
+        let vault = InMemoryDeveloperKeyVault()
+        let devWallet = try vault.generateDeveloperWallet()
+        let allowedBuild = WorkstationProgramManager.evaluate(
+            WorkstationProgramOperationRequest(
+                operation: .anchorBuild,
+                cluster: .localnet,
+                project: trusted,
+                toolchain: WorkstationToolchainSnapshot(resolutions: [
+                    WorkstationToolchainResolution(
+                        component: .anchor,
+                        source: .system,
+                        status: .available,
+                        executablePath: "/usr/local/bin/anchor",
+                        version: nil,
+                        lastCheckedAt: nil,
+                        message: "fixture"
+                    )
+                ]),
+                developerWallet: devWallet,
+                artifactPath: nil,
+                programID: nil,
+                exactPhrase: nil
+            )
+        )
+        #expect(allowedBuild.isAllowed)
+
+        let mainnetBuild = WorkstationProgramManager.evaluate(
+            WorkstationProgramOperationRequest(
+                operation: .anchorBuild,
+                cluster: .mainnetBeta,
+                project: trusted,
+                toolchain: WorkstationToolchainSnapshot(resolutions: [
+                    WorkstationToolchainResolution(
+                        component: .anchor,
+                        source: .system,
+                        status: .available,
+                        executablePath: "/usr/local/bin/anchor",
+                        version: nil,
+                        lastCheckedAt: nil,
+                        message: "fixture"
+                    )
+                ]),
+                developerWallet: devWallet,
+                artifactPath: nil,
+                programID: nil,
+                exactPhrase: nil
+            )
+        )
+        #expect(!mainnetBuild.isAllowed)
+
+        let idlText = try sourceText(relativePath: "../../../samples/anchor-hello-world/target/idl/hello_world.json")
+        let idl = try WorkstationIDLParser.parse(string: idlText)
+        let helloState = try #require(idl.accounts.first { $0.name == "HelloState" })
+        #expect(!helloState.discriminatorHex.isEmpty)
+
+        let authority = try #require(SolanaAddressValidator.decodeAddress(SolanaConstants.systemProgramID))
+        let accountData = Data(WorkstationAnchorDiscriminator.account(name: "HelloState") + Array(authority) + littleEndianBytes(42))
+        let decoded = WorkstationAccountDecoder.decode(
+            WorkstationAccountDecodeRequest(
+                address: SolanaConstants.systemProgramID,
+                ownerProgram: SolanaConstants.systemProgramID,
+                lamports: 1,
+                dataBase64: accountData.base64EncodedString(),
+                idlAccount: nil,
+                idl: idl
+            )
+        )
+        #expect(decoded.message.contains("simple primitive fields decoded"))
+        #expect(decoded.fields.first { $0.name == "value" }?.value == "42")
+
+        let complexIDL = try WorkstationIDLParser.parse(string: """
+        {"name":"complex","accounts":[{"name":"State","type":{"kind":"struct","fields":[{"name":"items","type":{"vec":"u64"}}]}}]}
+        """)
+        let complexData = Data(WorkstationAnchorDiscriminator.account(name: "State") + [0, 0, 0, 0])
+        let complexDecoded = WorkstationAccountDecoder.decode(
+            WorkstationAccountDecodeRequest(
+                address: SolanaConstants.systemProgramID,
+                ownerProgram: nil,
+                lamports: nil,
+                dataBase64: complexData.base64EncodedString(),
+                idlAccount: nil,
+                idl: complexIDL
+            )
+        )
+        #expect(complexDecoded.fields.first?.value.contains("Data unavailable") == true)
+    }
+
+    @Test func developerWorkstationD2DocsScriptsAndSourcesStaySafe() throws {
+        let docs = try [
+            "../../../docs/architecture/developer-workstation.md",
+            "../../../docs/security/developer-workstation-trust-boundary.md",
+            "../../../docs/qa/developer-workstation-smoke.md",
+            "../../../docs/qa/developer-workstation-program-ops-smoke.md",
+            "../../../docs/qa/developer-workstation-localnet-smoke.md",
+            "../../../docs/toolchains/README.md"
+        ].map(sourceText(relativePath:)).joined(separator: "\n").lowercased()
+        for required in [
+            "checksum",
+            "local validator",
+            "sample anchor project",
+            "mainnet program ops locked",
+            "no arbitrary shell",
+            "offline signing"
+        ] {
+            #expect(docs.contains(required))
+        }
+        #expect(!docs.contains("nft"))
+
+        let script = try sourceText(relativePath: "../../../scripts/workstation-localnet-smoke.sh")
+        #expect(script.contains("--live"))
+        #expect(script.contains("anchor deploy"))
+        #expect(!script.contains("mainnet"))
+        #expect(!script.contains("/bin/sh"))
+        #expect(!script.contains("sh -"))
+        #expect(!script.lowercased().contains("curl"))
+
+        let workstationSource = try [
+            "GORKH/Core/DeveloperWorkstation/WorkstationToolchainInstaller.swift",
+            "GORKH/Core/DeveloperWorkstation/WorkstationLocalValidator.swift",
+            "GORKH/Core/DeveloperWorkstation/WorkstationProgramOpsRunner.swift",
             "GORKH/Modules/DeveloperWorkstation/DeveloperWorkstationView.swift"
         ].map(sourceText(relativePath:)).joined(separator: "\n").lowercased()
         for forbidden in [

@@ -1,6 +1,6 @@
 # Developer Workstation Program Ops Smoke
 
-This smoke is for localnet/devnet program-operation readiness. Do not use mainnet program operations in D1.
+This smoke is for localnet/devnet program-operation readiness. Do not use mainnet program operations.
 
 ## Preconditions
 
@@ -17,6 +17,7 @@ This smoke is for localnet/devnet program-operation readiness. Do not use mainne
 - Expected: requires Anchor CLI and trusted project.
 - Expected command preview: fixed `anchor build`.
 - Expected: blocked if project is untrusted or Anchor CLI missing.
+- Expected: command preview is prepared through a fixed builder only.
 
 ## Localnet / Devnet Deploy
 
@@ -24,6 +25,7 @@ This smoke is for localnet/devnet program-operation readiness. Do not use mainne
 - Expected: requires Solana CLI, trusted project, developer wallet, and artifact path.
 - Expected command preview uses fixed `solana program deploy` arguments.
 - Expected: no arbitrary flags.
+- Expected: deployment uses the separate Developer Workstation dev wallet, not the main wallet.
 
 ## Program Show
 
@@ -59,3 +61,17 @@ This smoke is for localnet/devnet program-operation readiness. Do not use mainne
 - Record command preview only.
 - Record success/failure status.
 - Do not record private key material, wallet JSON, or local temp file contents.
+
+## Localnet Sample Smoke
+
+Use:
+
+`scripts/workstation-localnet-smoke.sh --check`
+
+Expected:
+
+- sample Anchor project exists
+- tool availability is reported
+- no build or deploy runs in check mode
+
+Use `--live` only when Solana CLI, solana-test-validator, and Anchor CLI are installed locally and localnet use is intentional. The live path creates a temporary keypair file, starts a validator if needed, builds the sample, deploys to localnet, and deletes temporary files on exit.

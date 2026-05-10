@@ -6,8 +6,8 @@ Developer Workstation is a native Solana builder workspace for inspecting projec
 
 - Top-level app section: `Developer Workstation`
 - Internal sections: Overview, Projects, Toolchain, IDL Browser, Program Manager, Logs, Account Decoder, RPC Playground, Compute Lab, Localnet, Offline Signing, Activity
-- D1 program operations are localnet/devnet only
-- Mainnet program ops locked is the default D1 state for deploy, upgrade, close, and authority mutation
+- D1/D2 program operations are localnet/devnet only
+- Mainnet program ops locked is the default state for deploy, upgrade, close, and authority mutation
 - Mainnet program deploy, upgrade, close, and authority mutation are locked pending a reviewed future phase
 - Transaction signing and broadcast remain outside Transaction Studio and Workstation review surfaces
 
@@ -42,11 +42,11 @@ All process execution goes through fixed command plans:
 - timeout
 - redacted output
 
-There is no shell, no eval, no pipes, and no raw terminal editor in D1.
+There is no shell, no eval, no pipes, and no raw terminal editor in Developer Workstation.
 
 ## Developer Wallet
 
-Developer Workstation uses a separate localnet/devnet wallet stored in Keychain. It is not the main GORKH Wallet and is not available for mainnet program operations in D1.
+Developer Workstation uses a separate localnet/devnet wallet stored in Keychain. It is not the main GORKH Wallet and is not available for mainnet program operations.
 
 If a CLI command needs a keypair file, the keypair is written only to a secure temporary directory, chmod `0600` where possible, used for the single command, then deleted. Paths are redacted from logs and activity.
 
@@ -61,11 +61,39 @@ If a CLI command needs a keypair file, the keypair is written only to a secure t
 
 ## RPC Playground
 
-Allowed RPC methods are read-only. `requestAirdrop` is available only through the guarded localnet/devnet faucet. `sendTransaction`, broad `getProgramAccounts`, and custom method text are blocked in D1.
+Allowed RPC methods are read-only. `requestAirdrop` is available only through the guarded localnet/devnet faucet. `sendTransaction`, broad `getProgramAccounts`, and custom method text are blocked.
+
+## Managed Toolchain Install
+
+D2 adds an explicit managed toolchain manifest at `docs/toolchains/gorkh-toolchain-manifest.json`.
+
+Managed installs are allowed only when a manifest entry has:
+
+- HTTPS source URL
+- sha256
+- versioned install directory under `Application Support/GORKH/Toolchains`
+- executable relative path
+- license/source note
+
+Entries with missing source or checksum are shown as blocked. This repository does not commit toolchain binaries and does not claim bundled Solana, Anchor, Rust, Node, npm, or Git binaries unless app resources actually contain them.
+
+Archive extraction must reject absolute paths, parent traversal, backslashes, and null bytes. No unverified installer execution is allowed.
+
+## Local Validator
+
+D2 defines a fixed local validator lifecycle:
+
+- detect localnet RPC health at `http://127.0.0.1:8899`
+- start `solana-test-validator` only from a validated executable path
+- use an Application Support ledger path
+- stream bounded redacted logs
+- stop only a validator process started by GORKH
+
+The fixed start command uses `solana-test-validator` with explicit ledger, RPC port, faucet port, and ledger size arguments. Reset is a gated option.
 
 ## Program Manager
 
-D1 exposes policy evaluation and fixed command previews for:
+Developer Workstation exposes policy evaluation and fixed command previews for:
 
 - `anchor build`
 - `anchor deploy`
@@ -76,6 +104,21 @@ D1 exposes policy evaluation and fixed command previews for:
 
 Build/deploy/close/authority operations require a trusted project, required toolchain, separate developer wallet, explicit approval, and localnet/devnet cluster. Mainnet is locked.
 
+D2 can prepare fixed localnet build/deploy command previews from the selected trusted project and toolchain snapshot. Actual live smoke remains manual and localnet-only through `scripts/workstation-localnet-smoke.sh --live`.
+
+## IDL and Account Decode
+
+D2 deepens IDL parsing by showing instruction accounts, signer/writable counts, account discriminators, types, events, and errors.
+
+The account decoder can match Anchor account discriminators and decode simple primitive Borsh fields:
+
+- bool
+- signed and unsigned 8/16/32/64-bit integers
+- string with a bounded length
+- pubkey
+
+Complex vectors, arrays, options, nested structs, and unknown layouts fall back to an honest unavailable state.
+
 ## Offline Signing Foundation
 
-Offline signing is a foundation only in D1. It can describe and prepare future unsigned/signed file review workflows, but it does not sign or broadcast.
+Offline signing is a foundation only. It can describe and prepare future unsigned/signed file review workflows, but it does not sign or broadcast.

@@ -73,6 +73,7 @@ struct WorkstationToolchainResolver {
         }
         candidates.append((managedRoot.appendingPathComponent(component.executableName).path, .managed))
         candidates.append((managedRoot.appendingPathComponent(component.executableName).appendingPathComponent("bin/\(component.executableName)").path, .managed))
+        candidates.append(contentsOf: versionedManagedCandidatePaths(for: component))
         for directory in systemDirectories {
             candidates.append((URL(fileURLWithPath: directory).appendingPathComponent(component.executableName).path, .system))
         }
@@ -80,6 +81,37 @@ struct WorkstationToolchainResolver {
             candidates.append((URL(fileURLWithPath: directory).appendingPathComponent(component.executableName).path, .system))
         }
         return candidates
+    }
+
+    func companionExecutablePath(named executableName: String, nextTo component: WorkstationToolchainComponent) -> String? {
+        for candidate in candidatePaths(for: component) {
+            let directory = URL(fileURLWithPath: candidate.path).deletingLastPathComponent()
+            let companion = directory.appendingPathComponent(executableName).path
+            if isValidExecutable(companion, expectedName: executableName) {
+                return companion
+            }
+        }
+        return nil
+    }
+
+    private func versionedManagedCandidatePaths(for component: WorkstationToolchainComponent) -> [(path: String, source: WorkstationToolchainSource)] {
+        let componentRoot = managedRoot.appendingPathComponent(component.rawValue, isDirectory: true)
+        guard let versions = try? fileManager.contentsOfDirectory(
+            at: componentRoot,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+        return versions
+            .filter { ((try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false) }
+            .sorted { $0.lastPathComponent > $1.lastPathComponent }
+            .flatMap { version in
+                [
+                    (version.appendingPathComponent(component.executableName).path, WorkstationToolchainSource.managed),
+                    (version.appendingPathComponent("bin/\(component.executableName)").path, WorkstationToolchainSource.managed)
+                ]
+            }
     }
 
     private func pathDirectoriesFromEnvironment() -> [String] {

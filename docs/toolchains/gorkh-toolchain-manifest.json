@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-05-10",
+  "tools": [
+    {
+      "toolID": "solana",
+      "version": "pending",
+      "platform": "macos",
+      "architecture": "arm64",
+      "sourceURL": null,
+      "sha256": null,
+      "executableRelativePath": "bin/solana",
+      "installStrategy": "unavailable",
+      "notes": "Managed install is blocked until release packaging provides a verified HTTPS archive and sha256.",
+      "licenseNote": "Package according to the upstream Solana license."
+    },
+    {
+      "toolID": "anchor",
+      "version": "pending",
+      "platform": "macos",
+      "architecture": "arm64",
+      "sourceURL": null,
+      "sha256": null,
+      "executableRelativePath": "bin/anchor",
+      "installStrategy": "unavailable",
+      "notes": "Prefer a verified prebuilt binary. Building through Cargo is a tooling install risk and must stay explicitly approved.",
+      "licenseNote": "Package according to the upstream Anchor license."
+    },
+    {
+      "toolID": "rustc",
+      "version": "pending",
+      "platform": "macos",
+      "architecture": "arm64",
+      "sourceURL": null,
+      "sha256": null,
+      "executableRelativePath": "bin/rustc",
+      "installStrategy": "unavailable",
+      "notes": "Managed Rust packaging requires verified archives; no bootstrap script execution is allowed.",
+      "licenseNote": "Package according to upstream Rust license terms."
+    },
+    {
+      "toolID": "cargo",
+      "version": "pending",
+      "platform": "macos",
+      "architecture": "arm64",
+      "sourceURL": null,
+      "sha256": null,
+      "executableRelativePath": "bin/cargo",
+      "installStrategy": "unavailable",
+      "notes": "Cargo is resolved as part of a verified Rust toolchain package.",
+      "licenseNote": "Package according to upstream Rust license terms."
+    },
+    {
+      "toolID": "node",
+      "version": "pending",
+      "platform": "macos",
+      "architecture": "arm64",
+      "sourceURL": null,
+      "sha256": null,
+      "executableRelativePath": "bin/node",
+      "installStrategy": "unavailable",
+      "notes": "Managed Node packaging requires a verified archive and sha256.",
+      "licenseNote": "Package according to upstream Node.js license terms."
+    },
+    {
+      "toolID": "npm",
+      "version": "pending",
+      "platform": "macos",
+      "architecture": "arm64",
+      "sourceURL": null,
+      "sha256": null,
+      "executableRelativePath": "bin/npm",
+      "installStrategy": "unavailable",
+      "notes": "npm is resolved as part of a verified Node toolchain package.",
+      "licenseNote": "Package according to upstream npm license terms."
+    },
+    {
+      "toolID": "git",
+      "version": "system",
+      "platform": "macos",
+      "architecture": "arm64",
+      "sourceURL": null,
+      "sha256": null,
+      "executableRelativePath": "bin/git",
+      "installStrategy": "unavailable",
+      "notes": "D2 prefers validated system Git and does not package managed Git by default.",
+      "licenseNote": "Use system Git or package according to upstream Git license terms."
+    }
+  ]
+}

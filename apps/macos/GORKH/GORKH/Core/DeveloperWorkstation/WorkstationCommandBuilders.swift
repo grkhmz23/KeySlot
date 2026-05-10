@@ -96,4 +96,26 @@ enum WorkstationCommandBuilders {
             writesToCluster: true
         )
     }
+
+    static func cargoBuild(cargoPath: String, projectPath: String) -> WorkstationCommandPlan {
+        WorkstationCommandPlan(
+            name: "Cargo build",
+            executablePath: cargoPath,
+            arguments: ["build"],
+            workingDirectory: projectPath,
+            requiresTrustedProject: true,
+            writesToCluster: false
+        )
+    }
+
+    static func npmInstall(npmPath: String, projectPath: String) -> WorkstationCommandPlan {
+        WorkstationCommandPlan(
+            name: "npm install",
+            executablePath: npmPath,
+            arguments: ["install", "--ignore-scripts"],
+            workingDirectory: projectPath,
+            requiresTrustedProject: true,
+            writesToCluster: false
+        )
+    }
 }
