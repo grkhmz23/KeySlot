@@ -49,6 +49,19 @@ The live hackathon demo should execute one tiny same-chain swap only after:
 
 Do not claim a live transaction until the transaction hash/signature exists.
 
+## Current Rehearsal Evidence
+
+Latest A8 rehearsal status, 2026-05-10:
+
+- Node.js is installed locally.
+- Zerion CLI was not resolved in PATH.
+- `ZERION_API_KEY` was missing in the shell environment.
+- Separate Zerion wallet, scoped policy, and agent token were not verified.
+- No live transaction was executed.
+- Transaction hash/signature remains pending.
+
+Submission claim status: do not claim live transaction execution until the CLI/API/wallet/policy/token prerequisites are configured and a transaction hash/signature is recorded.
+
 ## Code Modules Involved
 
 - `GORKH/Core/Agent/AgentIntentClassifier.swift`

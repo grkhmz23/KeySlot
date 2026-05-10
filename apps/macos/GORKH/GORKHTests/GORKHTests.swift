@@ -4817,6 +4817,9 @@ struct GORKHTests {
         #expect(lowercasedDocs.contains("transaction hash/signature"))
         #expect(lowercasedDocs.contains("do not claim a live transaction"))
         #expect(lowercasedDocs.contains("a7 demo pack"))
+        #expect(lowercasedDocs.contains("a8 rehearsal"))
+        #expect(lowercasedDocs.contains("zerion cli was not resolved in path") || lowercasedDocs.contains("zerion cli status: not resolved in path"))
+        #expect(lowercasedDocs.contains("no live transaction was executed") || lowercasedDocs.contains("status: blocked before live transaction"))
 
         let demoDocs = [runbook, policies, video, submission, e2e].joined(separator: "\n")
         for forbidden in [

@@ -84,3 +84,27 @@ Record:
 - cleanup confirmation.
 
 If no live transaction is run, mark the live step as pending and do not claim it in the submission.
+
+## A8 Rehearsal Result - 2026-05-10
+
+Status: blocked before live transaction.
+
+Validated locally:
+
+- Node.js status: installed, `v22.22.2`.
+- Zerion CLI status: not resolved in PATH.
+- Zerion API key status: missing in the shell environment, checked without printing a value.
+- Separate Zerion wallet: not verified because CLI/API setup is incomplete.
+- Scoped policy: not verified because CLI/API setup is incomplete.
+- Agent token: not verified because CLI/API setup is incomplete.
+- Proposal/review/execution: not run live because the required Zerion prerequisites are missing.
+
+Evidence status:
+
+- Transaction hash/signature: pending.
+- Audit timeline for live execution: pending.
+- Cleanup/revoke: pending; no token was created or used during this rehearsal.
+
+Blocker:
+
+Install/configure Zerion CLI, set `ZERION_API_KEY` locally, create a separate tiny-funded Zerion wallet, create a scoped policy, and create an agent token. Then rerun this checklist before claiming a live transaction.

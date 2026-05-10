@@ -70,6 +70,7 @@ Agent/Zerion status:
 - A5 Hosted Agent API contract/mock smoke: implemented.
 - A6 Hosted Agent remote smoke/failure-mode QA: implemented, remote endpoint smoke pending unless `GORKH_AGENT_API_BASE_URL` is configured locally.
 - A7 Demo pack: runbook, policy templates, video script, submission summary, and E2E smoke checklist.
+- A8 Rehearsal: blocked on local setup because Zerion CLI was not resolved in PATH and `ZERION_API_KEY` was missing. No live transaction was run.
 
 Before hackathon submission, collect:
 
