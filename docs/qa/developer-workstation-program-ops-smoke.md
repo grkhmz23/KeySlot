@@ -167,3 +167,37 @@ D7 result:
 - Deploy signature: `5FS38zAwXX4SP3VVRi1r1ubHHXYFdsv7S9WBYCdFbG4uR8ANWTyy6u9jAqt1Bq8YNby61xTu4DE94eQ8KA6Ed2To`.
 - Temporary keypair files were created only inside the smoke temp directory and cleanup was confirmed.
 - Mainnet program operations remain locked.
+
+## D8 Program Ops Certification
+
+D8 adds a safe evidence store and gated previews for localnet/devnet program management:
+
+- Program evidence is stored as redacted JSON under Application Support.
+- The Workstation UI shows localnet smoke evidence, program id, signature, tool versions, IDL path summary, artifact summary, and temp key cleanup status.
+- AVM degraded state is non-blocking only when `anchor --version` succeeds.
+- Devnet certification is manual and gated by Devnet selection, trusted project, active toolchain, separate developer wallet, exact confirmation, and fixed command preview.
+- Devnet deploy is not run automatically; `scripts/workstation-program-ops-smoke.sh --devnet-sample --confirm-devnet` skips unless `GORKH_WORKSTATION_DEVNET_DEPLOY=1` is also set.
+- Upgrade, close, authority transfer, and authority revoke previews are localnet/devnet only.
+
+Required phrases:
+
+- Upgrade: `I understand this upgrades a Solana program on localnet or devnet.`
+- Close: `I understand this closes a Solana program and may be irreversible.`
+- Revoke authority: `I understand this revokes upgrade authority and may be irreversible.`
+
+Preview script:
+
+- `scripts/workstation-program-ops-smoke.sh --program-show --cluster localnet --program-id <public-program-id>`
+- `scripts/workstation-program-ops-smoke.sh --upgrade-preview --cluster devnet --program-id <public-program-id>`
+- `scripts/workstation-program-ops-smoke.sh --close-preview --cluster localnet --program-id <public-program-id>`
+- `scripts/workstation-program-ops-smoke.sh --authority-preview --cluster devnet --program-id <public-program-id>`
+
+D8 smoke result:
+
+- `scripts/workstation-program-ops-smoke.sh --authority-preview --cluster devnet --program-id 11111111111111111111111111111111` passed and printed fixed localnet/devnet-safe authority previews only.
+- `scripts/workstation-program-ops-smoke.sh --localnet-sample` passed outside the sandbox after a sandboxed validator faucet bind was blocked.
+- Program id: `4rQMkzANcjjinzHd47mp1Kj2W7pokFfJxmxMsjQPdnfJ`.
+- Deploy signature: `3UwxdFwWT3WhLfKT5Gssf3Z19pawgA4x5KwWbXqNzUJAyeSmiU7LHWBhWuTr363QjvDivfxSoheVbF883foX9r8r`.
+- Temp keypair cleanup: confirmed by successful smoke exit.
+
+Mainnet program operations remain locked.

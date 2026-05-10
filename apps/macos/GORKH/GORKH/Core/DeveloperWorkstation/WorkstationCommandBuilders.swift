@@ -4,11 +4,17 @@ enum WorkstationProgramOperation: String, Codable, CaseIterable, Identifiable {
     case anchorBuild = "anchor_build"
     case anchorDeploy = "anchor_deploy"
     case solanaProgramDeploy = "solana_program_deploy"
+    case solanaProgramUpgrade = "solana_program_upgrade"
     case solanaProgramShow = "solana_program_show"
     case solanaProgramClose = "solana_program_close"
-    case solanaSetUpgradeAuthority = "solana_set_upgrade_authority"
+    case solanaTransferUpgradeAuthority = "solana_transfer_upgrade_authority"
+    case solanaRevokeUpgradeAuthority = "solana_revoke_upgrade_authority"
 
     var id: String { rawValue }
+
+    var title: String {
+        rawValue.replacingOccurrences(of: "_", with: " ").capitalized
+    }
 }
 
 enum WorkstationCommandBuilders {
@@ -115,6 +121,17 @@ enum WorkstationCommandBuilders {
         )
     }
 
+    static func solanaProgramUpgrade(solanaPath: String, artifactPath: String, programID: String, cluster: WorkstationCluster, keyFilePath: String) -> WorkstationCommandPlan {
+        WorkstationCommandPlan(
+            name: "Solana program upgrade",
+            executablePath: solanaPath,
+            arguments: ["program", "deploy", artifactPath, "--program-id", programID, "--url", cluster.rpcURL.absoluteString, "--keypair", keyFilePath],
+            cluster: cluster,
+            requiresTrustedProject: true,
+            writesToCluster: true
+        )
+    }
+
     static func solanaProgramShow(solanaPath: String, programID: String, cluster: WorkstationCluster) -> WorkstationCommandPlan {
         WorkstationCommandPlan(
             name: "Solana program show",
@@ -137,11 +154,22 @@ enum WorkstationCommandBuilders {
         )
     }
 
-    static func solanaSetUpgradeAuthority(solanaPath: String, programID: String, newAuthority: String, cluster: WorkstationCluster, keyFilePath: String) -> WorkstationCommandPlan {
+    static func solanaTransferUpgradeAuthority(solanaPath: String, programID: String, newAuthority: String, cluster: WorkstationCluster, keyFilePath: String) -> WorkstationCommandPlan {
         WorkstationCommandPlan(
-            name: "Solana set upgrade authority",
+            name: "Solana transfer upgrade authority",
             executablePath: solanaPath,
             arguments: ["program", "set-upgrade-authority", programID, "--new-upgrade-authority", newAuthority, "--url", cluster.rpcURL.absoluteString, "--keypair", keyFilePath],
+            cluster: cluster,
+            requiresTrustedProject: true,
+            writesToCluster: true
+        )
+    }
+
+    static func solanaRevokeUpgradeAuthority(solanaPath: String, programID: String, cluster: WorkstationCluster, keyFilePath: String) -> WorkstationCommandPlan {
+        WorkstationCommandPlan(
+            name: "Solana revoke upgrade authority",
+            executablePath: solanaPath,
+            arguments: ["program", "set-upgrade-authority", programID, "--final", "--url", cluster.rpcURL.absoluteString, "--keypair", keyFilePath],
             cluster: cluster,
             requiresTrustedProject: true,
             writesToCluster: true

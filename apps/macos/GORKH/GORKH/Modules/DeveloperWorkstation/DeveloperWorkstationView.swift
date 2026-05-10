@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct DeveloperWorkstationView: View {
     @State private var selectedSection: DeveloperWorkstationSection = .overview
@@ -15,6 +16,8 @@ struct DeveloperWorkstationView: View {
     @State private var localValidatorStatus: WorkstationLocalValidatorStatus = .unchecked
     @State private var localValidatorResetPhrase = ""
     @State private var localnetSmokePreflight: WorkstationLocalnetSmokePreflight?
+    @State private var programEvidence: [WorkstationProgramOperationEvidence] = [.d8LocalnetCertification, .d7LocalnetCertification]
+    @State private var evidenceStoreMessage = "Safe evidence is stored as redacted JSON under Application Support."
     @State private var activity: [WorkstationActivityEvent] = [
         WorkstationActivityEvent(kind: .workstationOpened, message: "Developer Workstation opened.")
     ]
@@ -35,13 +38,17 @@ struct DeveloperWorkstationView: View {
     @State private var encodedTransaction = ""
     @State private var faucetAddress = ""
     @State private var faucetAmount = "0.5"
+    @State private var faucetStatus = "Airdrop requests are capped and limited to devnet/localnet."
     @State private var programOperation: WorkstationProgramOperation = .solanaProgramShow
     @State private var artifactPath = ""
+    @State private var newAuthority = ""
     @State private var destructivePhrase = ""
+    @State private var devnetCertificationPhrase = ""
     @State private var programCommandPreview = "Prepare a command preview after toolchain, project, wallet, and cluster checks."
     @State private var logState = WorkstationLogStreamState.idle()
 
     private let keyVault = KeychainDeveloperKeyVault()
+    private let evidenceStore = WorkstationProgramOperationEvidenceStore()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -65,6 +72,10 @@ struct DeveloperWorkstationView: View {
         }
         .onAppear {
             developerWallet = keyVault.metadata() ?? .missing
+            let stored = evidenceStore.load()
+            if !stored.isEmpty {
+                programEvidence = stored
+            }
         }
     }
 
@@ -144,6 +155,7 @@ struct DeveloperWorkstationView: View {
                 overviewCard("Toolchain", value: "\(toolchainSnapshot.availableCount)/\(WorkstationToolchainComponent.allCases.count) ready", detail: "Bundled, managed, then trusted system paths.")
                 overviewCard("Developer Wallet", value: developerWallet.status.title, detail: developerWallet.publicAddress.ifEmpty("Separate localnet/devnet wallet only."))
                 overviewCard("Local Validator", value: localValidatorStatus.state.title, detail: localValidatorStatus.message)
+                overviewCard("Program Evidence", value: programEvidence.first?.status.title ?? "None", detail: programEvidence.first?.programID ?? "No stored program id.")
                 overviewCard("Activity", value: "\(activity.count) events", detail: "Redacted Workstation audit trail.")
             }
 
@@ -160,6 +172,8 @@ struct DeveloperWorkstationView: View {
                     quickAction("Offline Signing", systemImage: "externaldrive.badge.lock", target: .offlineSigning)
                 }
             }
+
+            programEvidencePanel
         }
     }
 
@@ -437,6 +451,16 @@ struct DeveloperWorkstationView: View {
                 Text("Verified binary install remains disabled until the official release asset URL and SHA-256 are pinned. Source compile failures do not enable unverified downloads.")
                     .font(.caption)
                     .foregroundStyle(GorkhColors.warning)
+                if compatibilityMatrix.probe.anchorVersion != nil {
+                    WorkstationStatusChip(
+                        title: "AVM degraded, Anchor active",
+                        systemImage: "exclamationmark.triangle",
+                        color: GorkhColors.warning
+                    )
+                    Text("AVM use latest may panic locally, but Anchor CLI is active. This is non-blocking for builds because `anchor --version` succeeds; keep the warning visible until AVM runtime behavior is fixed upstream.")
+                        .font(.caption)
+                        .foregroundStyle(GorkhColors.warning)
+                }
             }
 
             GorkhPanel("Fixed Candidate Matrix") {
@@ -558,77 +582,127 @@ struct DeveloperWorkstationView: View {
                 developerWallet: developerWallet,
                 artifactPath: artifactPath.isEmpty ? nil : artifactPath,
                 programID: programID.isEmpty ? nil : programID,
+                newAuthority: newAuthority.isEmpty ? nil : newAuthority,
                 exactPhrase: destructivePhrase
             )
         )
 
-        return GorkhPanel("Program Manager") {
-            Text("Localnet/devnet program ops are gated by project trust, fixed command builders, a separate developer wallet, and explicit approval. Mainnet operations are locked.")
-                .font(.caption)
-                .foregroundStyle(GorkhColors.warning)
+        let devnetDecision = WorkstationDevnetCertificationPolicy.validate(
+            cluster: selectedCluster,
+            project: activeProject,
+            toolchain: toolchainSnapshot,
+            developerWallet: developerWallet,
+            confirmation: devnetCertificationPhrase
+        )
 
-            Picker("Operation", selection: $programOperation) {
-                ForEach(WorkstationProgramOperation.allCases) { operation in
-                    Text(operation.rawValue.replacingOccurrences(of: "_", with: " ")).tag(operation)
+        return VStack(alignment: .leading, spacing: 14) {
+            GorkhPanel("Program Manager") {
+                Text("Localnet/devnet program ops are gated by project trust, fixed command builders, a separate developer wallet, and explicit approval. Mainnet operations are locked.")
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.warning)
+
+                Picker("Operation", selection: $programOperation) {
+                    ForEach(WorkstationProgramOperation.allCases) { operation in
+                        Text(operation.title).tag(operation)
+                    }
                 }
-            }
-            .pickerStyle(.menu)
+                .pickerStyle(.menu)
 
-            labeledTextField("Program id", text: $programID, prompt: "Program public key")
-            labeledTextField("Artifact path", text: $artifactPath, prompt: "target/deploy/program.so")
-            labeledTextField("Destructive phrase", text: $destructivePhrase, prompt: WorkstationProgramManager.destructivePhrase)
+                labeledTextField("Program id", text: $programID, prompt: "Program public key")
+                labeledTextField("Artifact path", text: $artifactPath, prompt: "target/deploy/program.so")
+                if programOperation == .solanaTransferUpgradeAuthority {
+                    labeledTextField("New upgrade authority", text: $newAuthority, prompt: "New authority public key")
+                }
+                if let requiredPhrase = WorkstationProgramManager.requiredPhrase(for: programOperation) {
+                    Text(requiredPhrase)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(GorkhColors.warning)
+                        .textSelection(.enabled)
+                    labeledTextField("Exact approval phrase", text: $destructivePhrase, prompt: requiredPhrase)
+                } else {
+                    Text("This operation still requires explicit approval after preview; no destructive phrase is needed.")
+                        .font(.caption)
+                        .foregroundStyle(GorkhColors.secondaryText)
+                }
 
-            WorkstationStatusChip(
-                title: decision.isAllowed ? "Ready for explicit approval" : "Blocked",
-                systemImage: decision.isAllowed ? "checkmark.shield" : "lock.shield",
-                color: decision.isAllowed ? GorkhColors.success : GorkhColors.warning
-            )
-            ForEach(decision.reasons, id: \.self) { reason in
-                Text(reason)
-                    .font(.caption)
-                    .foregroundStyle(decision.isAllowed ? GorkhColors.success : GorkhColors.warning)
-            }
-
-            Button("Prepare Fixed Command Preview") {
-                prepareProgramCommandPreview()
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(!decision.isAllowed)
-
-            Text(programCommandPreview)
-                .font(.caption.monospaced())
-                .foregroundStyle(GorkhColors.secondaryText)
-                .textSelection(.enabled)
-
-            Text("Command preview is generated only from fixed builders. No raw terminal input or arbitrary flags are accepted.")
-                .font(.caption)
-                .foregroundStyle(GorkhColors.secondaryText)
-
-            Divider().overlay(GorkhColors.border)
-
-            Text("Sample Localnet Smoke")
-                .font(.headline)
-            Button("Run Sample Localnet Smoke Preflight") {
-                prepareLocalnetSmokePreflight()
-            }
-            .buttonStyle(.bordered)
-            if let localnetSmokePreflight {
                 WorkstationStatusChip(
-                    title: localnetSmokePreflight.status.title,
-                    systemImage: localnetSmokePreflight.status == .ready ? "checkmark.circle" : "lock",
-                    color: localnetSmokePreflight.status == .ready ? GorkhColors.success : GorkhColors.warning
+                    title: decision.isAllowed ? "Ready for explicit approval" : "Blocked",
+                    systemImage: decision.isAllowed ? "checkmark.shield" : "lock.shield",
+                    color: decision.isAllowed ? GorkhColors.success : GorkhColors.warning
                 )
-                Text(localnetSmokePreflight.summary)
+                ForEach(decision.reasons, id: \.self) { reason in
+                    Text(reason)
+                        .font(.caption)
+                        .foregroundStyle(decision.isAllowed ? GorkhColors.success : GorkhColors.warning)
+                }
+
+                Button("Prepare Fixed Command Preview") {
+                    prepareProgramCommandPreview()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!decision.isAllowed)
+
+                Text(programCommandPreview)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(GorkhColors.secondaryText)
+                    .textSelection(.enabled)
+
+                Text("Command preview is generated only from fixed builders. No raw terminal input or arbitrary flags are accepted.")
                     .font(.caption)
-                    .foregroundStyle(localnetSmokePreflight.status == .ready ? GorkhColors.success : GorkhColors.warning)
-                DisclosureGroup("Fixed smoke steps") {
-                    ForEach(localnetSmokePreflight.steps, id: \.self) { step in
-                        Text(step)
-                            .font(.caption)
-                            .foregroundStyle(GorkhColors.secondaryText)
+                    .foregroundStyle(GorkhColors.secondaryText)
+
+                Divider().overlay(GorkhColors.border)
+
+                Text("Sample Localnet Smoke")
+                    .font(.headline)
+                Button("Run Sample Localnet Smoke Preflight") {
+                    prepareLocalnetSmokePreflight()
+                }
+                .buttonStyle(.bordered)
+                if let localnetSmokePreflight {
+                    WorkstationStatusChip(
+                        title: localnetSmokePreflight.status.title,
+                        systemImage: localnetSmokePreflight.status == .ready ? "checkmark.circle" : "lock",
+                        color: localnetSmokePreflight.status == .ready ? GorkhColors.success : GorkhColors.warning
+                    )
+                    Text(localnetSmokePreflight.summary)
+                        .font(.caption)
+                        .foregroundStyle(localnetSmokePreflight.status == .ready ? GorkhColors.success : GorkhColors.warning)
+                    DisclosureGroup("Fixed smoke steps") {
+                        ForEach(localnetSmokePreflight.steps, id: \.self) { step in
+                            Text(step)
+                                .font(.caption)
+                                .foregroundStyle(GorkhColors.secondaryText)
+                        }
                     }
                 }
             }
+
+            GorkhPanel("Devnet Certification") {
+                Text("Devnet deployment certification is manual and gated. GORKH requires a trusted project, Developer Workstation wallet, active toolchain, Devnet selection, fixed command preview, and exact confirmation.")
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.secondaryText)
+                Text(WorkstationDevnetCertificationPolicy.requiredConfirmation)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(GorkhColors.warning)
+                    .textSelection(.enabled)
+                labeledTextField("Devnet confirmation", text: $devnetCertificationPhrase, prompt: WorkstationDevnetCertificationPolicy.requiredConfirmation)
+                WorkstationStatusChip(
+                    title: devnetDecision.isAllowed ? "Devnet certification ready" : "Devnet certification blocked",
+                    systemImage: devnetDecision.isAllowed ? "checkmark.shield" : "lock.shield",
+                    color: devnetDecision.isAllowed ? GorkhColors.success : GorkhColors.warning
+                )
+                ForEach(devnetDecision.reasons, id: \.self) { reason in
+                    Text(reason)
+                        .font(.caption)
+                        .foregroundStyle(devnetDecision.isAllowed ? GorkhColors.success : GorkhColors.warning)
+                }
+                Text("Use `scripts/workstation-program-ops-smoke.sh --devnet-sample --confirm-devnet` for the CLI smoke path. It skips safely if the dev wallet is not funded or prerequisites are missing.")
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.secondaryText)
+            }
+
+            programEvidencePanel
         }
     }
 
@@ -660,6 +734,68 @@ struct DeveloperWorkstationView: View {
                         .font(.caption.monospaced())
                         .foregroundStyle(GorkhColors.secondaryText)
                 }
+            }
+        }
+    }
+
+    private var programEvidencePanel: some View {
+        GorkhPanel("Program Operation Evidence") {
+            Text(evidenceStoreMessage)
+                .font(.caption)
+                .foregroundStyle(GorkhColors.secondaryText)
+
+            if let latest = programEvidence.first {
+                WorkstationStatusChip(
+                    title: "\(latest.cluster.title) \(latest.status.title)",
+                    systemImage: latest.status == .succeeded ? "checkmark.seal" : "exclamationmark.triangle",
+                    color: latest.status == .succeeded ? GorkhColors.success : GorkhColors.warning
+                )
+                keyValue("Operation", latest.operation.title)
+                keyValue("Project", latest.projectName)
+                keyValue("Program id", latest.programID ?? "Unavailable")
+                keyValue("Signature", latest.signature ?? "Unavailable")
+                keyValue("Temp key cleanup", latest.tempKeyCleanupStatus.title)
+                keyValue("Command", latest.commandSummary)
+                keyValue("IDL", latest.idlPath ?? "Unavailable")
+                keyValue("Artifact", latest.artifactPath ?? "Unavailable")
+                DisclosureGroup("Tool versions") {
+                    ForEach(latest.toolVersions.keys.sorted(), id: \.self) { key in
+                        keyValue(key, latest.toolVersions[key] ?? "")
+                    }
+                }
+                DisclosureGroup("Log summary") {
+                    Text(latest.logSummary)
+                        .font(.caption)
+                        .foregroundStyle(GorkhColors.secondaryText)
+                        .textSelection(.enabled)
+                }
+                HStack {
+                    Button("Copy Program ID") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(latest.programID ?? "", forType: .string)
+                        appendActivity(.localnetSmokeEvidenceViewed, "Program id copied from safe evidence.")
+                    }
+                    .disabled(latest.programID == nil)
+                    Button("Open IDL Browser") {
+                        selectedSection = .idlBrowser
+                        appendActivity(.localnetSmokeEvidenceViewed, "IDL Browser opened from program evidence.")
+                    }
+                    Button("Open Logs") {
+                        if let programID = latest.programID {
+                            self.programID = programID
+                        }
+                        selectedSection = .logs
+                        appendActivity(.localnetSmokeEvidenceViewed, "Logs opened from program evidence.")
+                    }
+                    Button("Persist D8 Evidence") {
+                        persistEvidence(.d8LocalnetCertification)
+                    }
+                }
+                .buttonStyle(.bordered)
+            } else {
+                Text("No safe program-operation evidence has been stored yet.")
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.secondaryText)
             }
         }
     }
@@ -804,6 +940,14 @@ struct DeveloperWorkstationView: View {
                 Text(permission.message)
                     .font(.caption)
                     .foregroundStyle(permission.isAllowed ? GorkhColors.success : GorkhColors.warning)
+                Button("Request Devnet Airdrop") {
+                    requestDevnetAirdrop(recipient: recipient, amountText: faucetAmount, permission: permission)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!permission.isAllowed || selectedCluster != .devnet)
+                Text(faucetStatus)
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.secondaryText)
             }
         }
     }
@@ -1030,18 +1174,34 @@ struct DeveloperWorkstationView: View {
             developerWallet: developerWallet,
             artifactPath: artifactPath.isEmpty ? nil : artifactPath,
             programID: programID.isEmpty ? nil : programID,
+            newAuthority: newAuthority.isEmpty ? nil : newAuthority,
             exactPhrase: destructivePhrase
         )
         do {
             let plan = try WorkstationProgramOpsRunner.preparePlan(request: request, keypairPath: "/tmp/[redacted-developer-authority].json")
             programCommandPreview = plan.redactedPreview
+            let event: WorkstationActivityKind = switch programOperation {
+            case .solanaProgramUpgrade:
+                .programUpgradePreviewed
+            case .solanaProgramClose:
+                .programClosePreviewed
+            case .solanaTransferUpgradeAuthority:
+                .authorityTransferPreviewed
+            case .solanaRevokeUpgradeAuthority:
+                .authorityRevokePreviewed
+            default:
+                .commandPreviewPrepared
+            }
             appendActivity(
-                .commandPreviewPrepared,
+                event,
                 "Fixed command preview prepared.",
                 details: ["operation": programOperation.rawValue, "cluster": selectedCluster.rawValue]
             )
         } catch {
             programCommandPreview = error.localizedDescription
+            if selectedCluster == .mainnetBeta {
+                appendActivity(.mainnetProgramOpBlocked, "Mainnet program operation blocked.", details: ["operation": programOperation.rawValue])
+            }
             appendActivity(.commandBlocked, "Command preview blocked: \(error.localizedDescription)")
         }
     }
@@ -1076,6 +1236,47 @@ struct DeveloperWorkstationView: View {
             appendActivity(.devWalletDeleted, "Developer Workstation wallet deleted.")
         } catch {
             appendActivity(.commandBlocked, "Developer wallet deletion failed.")
+        }
+    }
+
+    private func persistEvidence(_ evidence: WorkstationProgramOperationEvidence) {
+        do {
+            programEvidence = try evidenceStore.append(evidence)
+            evidenceStoreMessage = "Safe evidence stored at \(WorkstationProgramOperationEvidenceStore.defaultURL().lastPathComponent)."
+            appendActivity(
+                .programEvidenceStored,
+                "Safe program-operation evidence stored.",
+                details: ["cluster": evidence.cluster.rawValue, "operation": evidence.operation.rawValue]
+            )
+        } catch {
+            evidenceStoreMessage = "Evidence store failed: \(AgentSafetyRedactor.redact(error.localizedDescription))"
+            appendActivity(.commandBlocked, "Program evidence store failed.")
+        }
+    }
+
+    private func requestDevnetAirdrop(recipient: String, amountText: String, permission: WorkstationRPCPermission) {
+        guard permission.isAllowed, selectedCluster == .devnet else {
+            faucetStatus = "Airdrop blocked by Workstation faucet policy."
+            appendActivity(.devWalletAirdropFailed, "Devnet airdrop blocked by policy.")
+            return
+        }
+
+        appendActivity(.devWalletAirdropRequested, "Devnet airdrop requested.", details: ["cluster": selectedCluster.rawValue])
+        faucetStatus = "Requesting capped devnet airdrop..."
+        Task {
+            do {
+                let signature = try await WorkstationDevnetFaucetService()
+                    .requestCappedDevnetFunds(address: recipient, amountText: amountText)
+                await MainActor.run {
+                    faucetStatus = "Devnet airdrop requested. Signature: \(signature)"
+                    appendActivity(.devWalletAirdropSucceeded, "Devnet airdrop succeeded.", details: ["signature": signature])
+                }
+            } catch {
+                await MainActor.run {
+                    faucetStatus = "Devnet airdrop failed or rate limited."
+                    appendActivity(.devWalletAirdropFailed, "Devnet airdrop failed: \(error.localizedDescription)")
+                }
+            }
         }
     }
 

@@ -109,3 +109,9 @@ Local evidence:
 - no bundled binaries are claimed and no official prebuilt binary install is enabled without SHA-256.
 
 Anchor build uses upstream Solana/Anchor build tooling and may download SBPF platform tooling during the build. This is why project trust and explicit command approval remain required before any build or deploy operation.
+
+## D8 Program Ops Evidence
+
+D8 keeps the AVM warning visible in Developer Workstation: `avm use latest` may panic locally, but it is non-blocking while `anchor --version` succeeds.
+
+Program-operation evidence is stored as redacted JSON under Application Support. It stores public program ids, signatures, tool versions, safe command/log summaries, IDL/artifact path summaries, and temp key cleanup status. It does not store keypair file contents, private keys, raw command environments, or unredacted logs.

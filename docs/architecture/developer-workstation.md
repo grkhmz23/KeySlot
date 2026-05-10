@@ -9,6 +9,7 @@ Developer Workstation is a native Solana builder workspace for inspecting projec
 - D1-D3 program operations are localnet/devnet only
 - Mainnet program ops locked is the default state for deploy, upgrade, close, and authority mutation
 - Mainnet program deploy, upgrade, close, and authority mutation are locked pending a reviewed future phase
+- Program operation evidence is stored as redacted JSON under Application Support and contains only public ids, signatures, tool versions, status, and safe summaries
 - Transaction signing and broadcast remain outside Transaction Studio and Workstation review surfaces
 
 ## Trust Boundary
@@ -130,6 +131,17 @@ Developer Workstation exposes policy evaluation and fixed command previews for:
 Build/deploy/close/authority operations require a trusted project, required toolchain, separate developer wallet, explicit approval, and localnet/devnet cluster. Mainnet is locked.
 
 D3 can prepare fixed localnet build/deploy command previews from the selected trusted project and toolchain snapshot. Localnet smoke is staged through `scripts/workstation-localnet-smoke.sh --check`, `--build-sample`, `--deploy-sample`, and `--full-localnet`.
+
+D8 adds the certification layer around these program operations:
+
+- localnet evidence from the D7 Anchor sample deploy is visible in the Workstation UI
+- devnet certification is available only with Devnet selected, trusted project, active toolchain, separate developer wallet, explicit confirmation, and fixed command preview
+- devnet airdrop uses a capped helper and remains blocked on mainnet
+- upgrade, close, transfer-authority, and revoke-authority previews are localnet/devnet only
+- destructive operations require exact phrases before a command preview is allowed
+- `avm use latest` panic is surfaced as a degraded AVM warning when `anchor --version` still succeeds
+
+The Program Manager does not accept raw terminal input or arbitrary flags. Evidence capture records safe summaries only and never stores temporary keypair file contents.
 
 ## IDL and Account Decode
 

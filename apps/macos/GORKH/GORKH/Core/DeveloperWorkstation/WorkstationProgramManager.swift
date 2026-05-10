@@ -8,6 +8,7 @@ struct WorkstationProgramOperationRequest: Codable, Equatable {
     let developerWallet: DeveloperWalletMetadata?
     let artifactPath: String?
     let programID: String?
+    let newAuthority: String?
     let exactPhrase: String?
 }
 
@@ -33,7 +34,26 @@ enum WorkstationProgramOperationDecision: Codable, Equatable {
 }
 
 enum WorkstationProgramManager {
-    static let destructivePhrase = "I understand this local/devnet program operation can change or close a program."
+    static let legacyDestructivePhrase = "I understand this local/devnet program operation can change or close a program."
+    static let upgradePhrase = "I understand this upgrades a Solana program on localnet or devnet."
+    static let closePhrase = "I understand this closes a Solana program and may be irreversible."
+    static let transferAuthorityPhrase = "I understand this transfers upgrade authority on localnet or devnet."
+    static let revokeAuthorityPhrase = "I understand this revokes upgrade authority and may be irreversible."
+
+    static func requiredPhrase(for operation: WorkstationProgramOperation) -> String? {
+        switch operation {
+        case .solanaProgramUpgrade:
+            return upgradePhrase
+        case .solanaProgramClose:
+            return closePhrase
+        case .solanaTransferUpgradeAuthority:
+            return transferAuthorityPhrase
+        case .solanaRevokeUpgradeAuthority:
+            return revokeAuthorityPhrase
+        case .anchorBuild, .anchorDeploy, .solanaProgramDeploy, .solanaProgramShow:
+            return nil
+        }
+    }
 
     static func evaluate(_ request: WorkstationProgramOperationRequest) -> WorkstationProgramOperationDecision {
         var reasons: [String] = []
@@ -48,6 +68,8 @@ enum WorkstationProgramManager {
             if let block = WorkstationTrustPolicy.blocksExecution(project: request.project) {
                 reasons.append(block)
             }
+        }
+        if ![.anchorBuild, .solanaProgramShow].contains(request.operation) {
             if request.developerWallet?.status != .ready {
                 reasons.append("Developer Workstation wallet is required for localnet/devnet program operations.")
             }
@@ -62,22 +84,27 @@ enum WorkstationProgramManager {
             if request.toolchain.isAvailable(.anchor) == false {
                 reasons.append("Anchor CLI is required for Anchor deploy.")
             }
-        case .solanaProgramDeploy, .solanaProgramShow, .solanaProgramClose, .solanaSetUpgradeAuthority:
+        case .solanaProgramDeploy, .solanaProgramUpgrade, .solanaProgramShow, .solanaProgramClose, .solanaTransferUpgradeAuthority, .solanaRevokeUpgradeAuthority:
             if request.toolchain.isAvailable(.solana) == false {
                 reasons.append("Solana CLI is required for this program operation.")
             }
         }
 
-        if request.operation == .solanaProgramDeploy && (request.artifactPath?.isEmpty ?? true) {
+        if [.solanaProgramDeploy, .solanaProgramUpgrade].contains(request.operation),
+           (request.artifactPath?.isEmpty ?? true) {
             reasons.append("A build artifact path is required.")
         }
-        if [.solanaProgramShow, .solanaProgramClose, .solanaSetUpgradeAuthority].contains(request.operation),
+        if [.solanaProgramUpgrade, .solanaProgramShow, .solanaProgramClose, .solanaTransferUpgradeAuthority, .solanaRevokeUpgradeAuthority].contains(request.operation),
            (request.programID?.isEmpty ?? true) {
             reasons.append("A program id is required.")
         }
-        if [.solanaProgramClose, .solanaSetUpgradeAuthority].contains(request.operation),
-           request.exactPhrase != destructivePhrase {
-            reasons.append("Exact destructive-operation phrase is required.")
+        if request.operation == .solanaTransferUpgradeAuthority,
+           !SolanaAddressValidator.isValidAddress(request.newAuthority ?? "") {
+            reasons.append("A valid new upgrade authority public key is required.")
+        }
+        if let phrase = requiredPhrase(for: request.operation),
+           request.exactPhrase != phrase {
+            reasons.append("Exact phrase is required: \(phrase)")
         }
 
         if reasons.isEmpty {

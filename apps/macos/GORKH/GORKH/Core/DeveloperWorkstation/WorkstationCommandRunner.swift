@@ -150,12 +150,91 @@ struct WorkstationCommandRunner {
         }
         try plan.arguments.forEach(Self.validateArgument)
         try validateFixedToolchainArguments(plan)
+        try validateFixedProgramArguments(plan)
         try WorkstationRustToolchainPolicy.validateEnvironmentOverrides(plan.environmentOverrides)
         if let workingDirectory = plan.workingDirectory {
             try Self.validateArgument(workingDirectory)
             guard workingDirectory.hasPrefix("/") else {
                 throw WorkstationCommandValidationError.unsafeWorkingDirectory
             }
+        }
+    }
+
+    private func validateFixedProgramArguments(_ plan: WorkstationCommandPlan) throws {
+        switch plan.name {
+        case "Anchor build":
+            guard plan.arguments == ["build"] else {
+                throw WorkstationCommandValidationError.unsafeArgument(plan.arguments.joined(separator: " "))
+            }
+        case "Anchor deploy":
+            guard plan.arguments.count == 5,
+                  plan.arguments[0] == "deploy",
+                  plan.arguments[1] == "--provider.cluster",
+                  plan.arguments[3] == "--provider.wallet",
+                  WorkstationCluster.allCases.contains(where: { $0.programOpsMode == .enabled && $0.rpcURL.absoluteString == plan.arguments[2] }) else {
+                throw WorkstationCommandValidationError.unsafeArgument(plan.arguments.joined(separator: " "))
+            }
+        case "Solana program deploy":
+            guard plan.arguments.count == 7,
+                  Array(plan.arguments[0...1]) == ["program", "deploy"],
+                  plan.arguments[3] == "--url",
+                  plan.arguments[5] == "--keypair",
+                  WorkstationCluster.allCases.contains(where: { $0.programOpsMode == .enabled && $0.rpcURL.absoluteString == plan.arguments[4] }) else {
+                throw WorkstationCommandValidationError.unsafeArgument(plan.arguments.joined(separator: " "))
+            }
+        case "Solana program upgrade":
+            guard plan.arguments.count == 9,
+                  Array(plan.arguments[0...1]) == ["program", "deploy"],
+                  plan.arguments[3] == "--program-id",
+                  SolanaAddressValidator.isValidAddress(plan.arguments[4]),
+                  plan.arguments[5] == "--url",
+                  plan.arguments[7] == "--keypair",
+                  WorkstationCluster.allCases.contains(where: { $0.programOpsMode == .enabled && $0.rpcURL.absoluteString == plan.arguments[6] }) else {
+                throw WorkstationCommandValidationError.unsafeArgument(plan.arguments.joined(separator: " "))
+            }
+        case "Solana program show":
+            guard plan.arguments.count == 5,
+                  Array(plan.arguments[0...1]) == ["program", "show"],
+                  SolanaAddressValidator.isValidAddress(plan.arguments[2]),
+                  plan.arguments[3] == "--url" else {
+                throw WorkstationCommandValidationError.unsafeArgument(plan.arguments.joined(separator: " "))
+            }
+        case "Solana program close":
+            guard plan.arguments.count == 7,
+                  Array(plan.arguments[0...1]) == ["program", "close"],
+                  SolanaAddressValidator.isValidAddress(plan.arguments[2]),
+                  plan.arguments[3] == "--url",
+                  plan.arguments[5] == "--keypair",
+                  WorkstationCluster.allCases.contains(where: { $0.programOpsMode == .enabled && $0.rpcURL.absoluteString == plan.arguments[4] }) else {
+                throw WorkstationCommandValidationError.unsafeArgument(plan.arguments.joined(separator: " "))
+            }
+        case "Solana transfer upgrade authority":
+            guard plan.arguments.count == 9,
+                  Array(plan.arguments[0...1]) == ["program", "set-upgrade-authority"],
+                  SolanaAddressValidator.isValidAddress(plan.arguments[2]),
+                  plan.arguments[3] == "--new-upgrade-authority",
+                  SolanaAddressValidator.isValidAddress(plan.arguments[4]),
+                  plan.arguments[5] == "--url",
+                  plan.arguments[7] == "--keypair",
+                  WorkstationCluster.allCases.contains(where: { $0.programOpsMode == .enabled && $0.rpcURL.absoluteString == plan.arguments[6] }) else {
+                throw WorkstationCommandValidationError.unsafeArgument(plan.arguments.joined(separator: " "))
+            }
+        case "Solana revoke upgrade authority":
+            guard plan.arguments.count == 8,
+                  Array(plan.arguments[0...1]) == ["program", "set-upgrade-authority"],
+                  SolanaAddressValidator.isValidAddress(plan.arguments[2]),
+                  plan.arguments[3] == "--final",
+                  plan.arguments[4] == "--url",
+                  plan.arguments[6] == "--keypair",
+                  WorkstationCluster.allCases.contains(where: { $0.programOpsMode == .enabled && $0.rpcURL.absoluteString == plan.arguments[5] }) else {
+                throw WorkstationCommandValidationError.unsafeArgument(plan.arguments.joined(separator: " "))
+            }
+        default:
+            return
+        }
+
+        if plan.writesToCluster, plan.cluster?.programOpsMode != .enabled {
+            throw WorkstationCommandValidationError.unsafeArgument(plan.cluster?.rawValue ?? "missing cluster")
         }
     }
 

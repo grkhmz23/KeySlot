@@ -71,6 +71,23 @@ struct WorkstationProgramOpsRunner {
                 keyFilePath: keypairPath
             )
 
+        case .solanaProgramUpgrade:
+            let solana = try executable(.solana, snapshot: request.toolchain)
+            guard let artifactPath = request.artifactPath,
+                  let programID = request.programID else {
+                throw WorkstationProgramOpsRunnerError.unsupportedOperation
+            }
+            guard let keypairPath else {
+                throw WorkstationProgramOpsRunnerError.missingTemporaryKeypair
+            }
+            return WorkstationCommandBuilders.solanaProgramUpgrade(
+                solanaPath: solana,
+                artifactPath: artifactPath,
+                programID: programID,
+                cluster: request.cluster,
+                keyFilePath: keypairPath
+            )
+
         case .solanaProgramShow:
             let solana = try executable(.solana, snapshot: request.toolchain)
             guard let programID = request.programID else {
@@ -97,8 +114,37 @@ struct WorkstationProgramOpsRunner {
                 keyFilePath: keypairPath
             )
 
-        case .solanaSetUpgradeAuthority:
-            throw WorkstationProgramOpsRunnerError.unsupportedOperation
+        case .solanaTransferUpgradeAuthority:
+            let solana = try executable(.solana, snapshot: request.toolchain)
+            guard let programID = request.programID,
+                  let newAuthority = request.newAuthority else {
+                throw WorkstationProgramOpsRunnerError.unsupportedOperation
+            }
+            guard let keypairPath else {
+                throw WorkstationProgramOpsRunnerError.missingTemporaryKeypair
+            }
+            return WorkstationCommandBuilders.solanaTransferUpgradeAuthority(
+                solanaPath: solana,
+                programID: programID,
+                newAuthority: newAuthority,
+                cluster: request.cluster,
+                keyFilePath: keypairPath
+            )
+
+        case .solanaRevokeUpgradeAuthority:
+            let solana = try executable(.solana, snapshot: request.toolchain)
+            guard let programID = request.programID else {
+                throw WorkstationProgramOpsRunnerError.unsupportedOperation
+            }
+            guard let keypairPath else {
+                throw WorkstationProgramOpsRunnerError.missingTemporaryKeypair
+            }
+            return WorkstationCommandBuilders.solanaRevokeUpgradeAuthority(
+                solanaPath: solana,
+                programID: programID,
+                cluster: request.cluster,
+                keyFilePath: keypairPath
+            )
         }
     }
 

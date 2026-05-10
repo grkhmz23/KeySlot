@@ -6853,6 +6853,7 @@ struct GORKHTests {
                 developerWallet: metadata,
                 artifactPath: "/tmp/program.so",
                 programID: nil,
+                newAuthority: nil,
                 exactPhrase: nil
             )
         )
@@ -6867,6 +6868,7 @@ struct GORKHTests {
                 developerWallet: metadata,
                 artifactPath: "/tmp/program.so",
                 programID: nil,
+                newAuthority: nil,
                 exactPhrase: nil
             )
         )
@@ -6881,6 +6883,7 @@ struct GORKHTests {
                 developerWallet: metadata,
                 artifactPath: "/tmp/program.so",
                 programID: nil,
+                newAuthority: nil,
                 exactPhrase: nil
             )
         )
@@ -7206,6 +7209,7 @@ struct GORKHTests {
                 developerWallet: devWallet,
                 artifactPath: nil,
                 programID: nil,
+                newAuthority: nil,
                 exactPhrase: nil
             )
         )
@@ -7230,6 +7234,7 @@ struct GORKHTests {
                 developerWallet: devWallet,
                 artifactPath: nil,
                 programID: nil,
+                newAuthority: nil,
                 exactPhrase: nil
             )
         )
@@ -7272,6 +7277,202 @@ struct GORKHTests {
         #expect(complexDecoded.fields.first?.value.contains("Data unavailable") == true)
     }
 
+    @Test func developerWorkstationProgramOpsCertificationEvidenceAndGatesStaySafe() throws {
+        let trustedProject = WorkstationProject(
+            id: UUID(),
+            displayName: "hello-world",
+            localPath: "/tmp/hello-world",
+            sourceType: .folder,
+            trustStatus: .trusted,
+            detectedFramework: .anchor,
+            detectedFiles: WorkstationDetectedFiles(anchorToml: true, cargoToml: true, packageJSON: false, idlJSONCount: 0, targetIDLJSONCount: 1, programDirectoryCount: 1),
+            lastOpened: Date(timeIntervalSince1970: 1),
+            warnings: []
+        )
+        let devWallet = DeveloperWalletMetadata(
+            id: UUID(),
+            publicAddress: SolanaConstants.systemProgramID,
+            allowedClusters: [.localnet, .devnet],
+            status: .ready,
+            createdAt: Date(timeIntervalSince1970: 2)
+        )
+        let snapshot = WorkstationToolchainSnapshot(resolutions: [
+            WorkstationToolchainResolution(component: .anchor, source: .system, status: .available, executablePath: "/usr/local/bin/anchor", version: "anchor-cli 1.0.2", lastCheckedAt: nil, message: "fixture"),
+            WorkstationToolchainResolution(component: .solana, source: .system, status: .available, executablePath: "/usr/local/bin/solana", version: "solana-cli 3.1.10", lastCheckedAt: nil, message: "fixture")
+        ])
+
+        let upgradeBlocked = WorkstationProgramManager.evaluate(
+            WorkstationProgramOperationRequest(
+                operation: .solanaProgramUpgrade,
+                cluster: .devnet,
+                project: trustedProject,
+                toolchain: snapshot,
+                developerWallet: devWallet,
+                artifactPath: "/tmp/program.so",
+                programID: SolanaConstants.systemProgramID,
+                newAuthority: nil,
+                exactPhrase: nil
+            )
+        )
+        #expect(!upgradeBlocked.isAllowed)
+        #expect(upgradeBlocked.reasons.contains { $0.contains(WorkstationProgramManager.upgradePhrase) })
+
+        let upgradeAllowed = WorkstationProgramManager.evaluate(
+            WorkstationProgramOperationRequest(
+                operation: .solanaProgramUpgrade,
+                cluster: .devnet,
+                project: trustedProject,
+                toolchain: snapshot,
+                developerWallet: devWallet,
+                artifactPath: "/tmp/program.so",
+                programID: SolanaConstants.systemProgramID,
+                newAuthority: nil,
+                exactPhrase: WorkstationProgramManager.upgradePhrase
+            )
+        )
+        #expect(upgradeAllowed.isAllowed)
+
+        let closeBlocked = WorkstationProgramManager.evaluate(
+            WorkstationProgramOperationRequest(
+                operation: .solanaProgramClose,
+                cluster: .devnet,
+                project: trustedProject,
+                toolchain: snapshot,
+                developerWallet: devWallet,
+                artifactPath: nil,
+                programID: SolanaConstants.systemProgramID,
+                newAuthority: nil,
+                exactPhrase: WorkstationProgramManager.upgradePhrase
+            )
+        )
+        #expect(!closeBlocked.isAllowed)
+
+        let revokeAllowed = WorkstationProgramManager.evaluate(
+            WorkstationProgramOperationRequest(
+                operation: .solanaRevokeUpgradeAuthority,
+                cluster: .localnet,
+                project: trustedProject,
+                toolchain: snapshot,
+                developerWallet: devWallet,
+                artifactPath: nil,
+                programID: SolanaConstants.systemProgramID,
+                newAuthority: nil,
+                exactPhrase: WorkstationProgramManager.revokeAuthorityPhrase
+            )
+        )
+        #expect(revokeAllowed.isAllowed)
+
+        let mainnetAuthority = WorkstationProgramManager.evaluate(
+            WorkstationProgramOperationRequest(
+                operation: .solanaTransferUpgradeAuthority,
+                cluster: .mainnetBeta,
+                project: trustedProject,
+                toolchain: snapshot,
+                developerWallet: devWallet,
+                artifactPath: nil,
+                programID: SolanaConstants.systemProgramID,
+                newAuthority: SolanaConstants.systemProgramID,
+                exactPhrase: WorkstationProgramManager.transferAuthorityPhrase
+            )
+        )
+        #expect(!mainnetAuthority.isAllowed)
+        #expect(mainnetAuthority.reasons.contains("Locked pending reviewed mainnet program-ops phase."))
+
+        let upgradePlan = WorkstationCommandBuilders.solanaProgramUpgrade(
+            solanaPath: "/usr/local/bin/solana",
+            artifactPath: "/tmp/program.so",
+            programID: SolanaConstants.systemProgramID,
+            cluster: .devnet,
+            keyFilePath: "/tmp/keypair.json"
+        )
+        try WorkstationCommandRunner().validate(upgradePlan)
+        #expect(upgradePlan.arguments == ["program", "deploy", "/tmp/program.so", "--program-id", SolanaConstants.systemProgramID, "--url", WorkstationCluster.devnet.rpcURL.absoluteString, "--keypair", "/tmp/keypair.json"])
+
+        let closePlan = WorkstationCommandBuilders.solanaProgramClose(
+            solanaPath: "/usr/local/bin/solana",
+            programID: SolanaConstants.systemProgramID,
+            cluster: .localnet,
+            keyFilePath: "/tmp/keypair.json"
+        )
+        try WorkstationCommandRunner().validate(closePlan)
+
+        let transferPlan = WorkstationCommandBuilders.solanaTransferUpgradeAuthority(
+            solanaPath: "/usr/local/bin/solana",
+            programID: SolanaConstants.systemProgramID,
+            newAuthority: SolanaConstants.systemProgramID,
+            cluster: .devnet,
+            keyFilePath: "/tmp/keypair.json"
+        )
+        try WorkstationCommandRunner().validate(transferPlan)
+
+        let revokePlan = WorkstationCommandBuilders.solanaRevokeUpgradeAuthority(
+            solanaPath: "/usr/local/bin/solana",
+            programID: SolanaConstants.systemProgramID,
+            cluster: .devnet,
+            keyFilePath: "/tmp/keypair.json"
+        )
+        try WorkstationCommandRunner().validate(revokePlan)
+
+        let unsafeFlagPlan = WorkstationCommandPlan(
+            name: "Solana program close",
+            executablePath: "/usr/local/bin/solana",
+            arguments: ["program", "close", SolanaConstants.systemProgramID, "--url", WorkstationCluster.devnet.rpcURL.absoluteString, "--keypair", "/tmp/keypair.json", "--bypass"]
+        )
+        #expect(throws: WorkstationCommandValidationError.self) {
+            try WorkstationCommandRunner().validate(unsafeFlagPlan)
+        }
+
+        let devnetBlocked = WorkstationDevnetCertificationPolicy.validate(
+            cluster: .devnet,
+            project: trustedProject,
+            toolchain: snapshot,
+            developerWallet: devWallet,
+            confirmation: ""
+        )
+        #expect(!devnetBlocked.isAllowed)
+        let devnetAllowed = WorkstationDevnetCertificationPolicy.validate(
+            cluster: .devnet,
+            project: trustedProject,
+            toolchain: snapshot,
+            developerWallet: devWallet,
+            confirmation: WorkstationDevnetCertificationPolicy.requiredConfirmation
+        )
+        #expect(devnetAllowed.isAllowed)
+        #expect(!WorkstationFaucetPolicy.validate(WorkstationFaucetRequest(cluster: .mainnetBeta, publicAddress: devWallet.publicAddress, amountSOL: 0.5)).isAllowed)
+        #expect(!WorkstationFaucetPolicy.validate(WorkstationFaucetRequest(cluster: .devnet, publicAddress: devWallet.publicAddress, amountSOL: 2.5)).isAllowed)
+
+        let evidence = WorkstationProgramOperationEvidence(
+            projectID: trustedProject.id,
+            projectName: "hello privateKey abc",
+            cluster: .devnet,
+            operation: .solanaProgramDeploy,
+            programID: SolanaConstants.systemProgramID,
+            signature: String(repeating: "1", count: 88),
+            toolVersions: ["anchor": "anchor-cli 1.0.2"],
+            commandSummary: "solana program deploy /tmp/program.so --keypair /tmp/privateKey.json",
+            status: .succeeded,
+            logSummary: "privateKey: abc\nseed phrase: twelve words",
+            idlPath: "/Users/example/project/target/idl/hello_world.json",
+            artifactPath: "/Users/example/project/target/deploy/hello_world.so",
+            tempKeyCleanupStatus: .cleaned
+        )
+        let encoded = try JSONEncoder().encode(evidence)
+        let encodedText = String(decoding: encoded, as: UTF8.self).lowercased()
+        #expect(!encodedText.contains("privatekey: abc"))
+        #expect(!encodedText.contains("seed phrase"))
+        #expect(!encodedText.contains("/users/example"))
+
+        let storeURL = FileManager.default.temporaryDirectory.appendingPathComponent("gorkh-evidence-\(UUID().uuidString).json")
+        let store = WorkstationProgramOperationEvidenceStore(fileURL: storeURL)
+        let stored = try store.append(evidence)
+        #expect(stored.count == 1)
+        let loaded = store.load()
+        #expect(loaded.first?.tempKeyCleanupStatus == .cleaned)
+        let storedText = String(decoding: try Data(contentsOf: storeURL), as: UTF8.self).lowercased()
+        #expect(!storedText.contains("privatekey: abc"))
+        #expect(!storedText.contains("seed phrase"))
+    }
+
     @Test func developerWorkstationD2DocsScriptsAndSourcesStaySafe() throws {
         let docs = try [
             "../../../docs/architecture/developer-workstation.md",
@@ -7279,6 +7480,7 @@ struct GORKHTests {
             "../../../docs/qa/developer-workstation-smoke.md",
             "../../../docs/qa/developer-workstation-program-ops-smoke.md",
             "../../../docs/qa/developer-workstation-localnet-smoke.md",
+            "../../../docs/qa/developer-workstation-devnet-smoke.md",
             "../../../docs/toolchains/README.md"
         ].map(sourceText(relativePath:)).joined(separator: "\n").lowercased()
         for required in [
@@ -7299,7 +7501,12 @@ struct GORKHTests {
             "1.0.2",
             "1.95.0",
             "anchor-cli 1.0.2",
-            "full localnet smoke"
+            "full localnet smoke",
+            "d8 program ops certification",
+            "devnet certification",
+            "program-operation evidence",
+            "i understand this closes a solana program and may be irreversible",
+            "i understand this revokes upgrade authority and may be irreversible"
         ] {
             #expect(docs.contains(required))
         }
@@ -7323,10 +7530,23 @@ struct GORKHTests {
         #expect(!script.contains("sh -"))
         #expect(!script.lowercased().contains("curl"))
 
+        let programOpsScript = try sourceText(relativePath: "../../../scripts/workstation-program-ops-smoke.sh")
+        #expect(programOpsScript.contains("--devnet-sample"))
+        #expect(programOpsScript.contains("--confirm-devnet"))
+        #expect(programOpsScript.contains("GORKH_WORKSTATION_DEVNET_DEPLOY"))
+        #expect(programOpsScript.contains("solana program close"))
+        #expect(programOpsScript.contains("set-upgrade-authority"))
+        #expect(!programOpsScript.contains("mainnet-beta"))
+        #expect(!programOpsScript.contains("api.mainnet"))
+        #expect(!programOpsScript.contains("/bin/sh"))
+        #expect(!programOpsScript.contains("sh -"))
+        #expect(!programOpsScript.lowercased().contains("curl"))
+
         let releaseEvidence = try sourceText(relativePath: "../../../docs/qa/release-evidence-matrix.md").lowercased()
         #expect(releaseEvidence.contains("developer workstation"))
         #expect(releaseEvidence.contains("anchor cli `1.0.2` is active"))
         #expect(releaseEvidence.contains("full localnet sample deploy succeeded"))
+        #expect(releaseEvidence.contains("devnet certification path exists"))
         #expect(releaseEvidence.contains("1.0.2"))
         #expect(releaseEvidence.contains("1.95.0"))
         #expect(releaseEvidence.contains("local/live"))
@@ -7335,6 +7555,7 @@ struct GORKHTests {
             "GORKH/Core/DeveloperWorkstation/WorkstationToolchainInstaller.swift",
             "GORKH/Core/DeveloperWorkstation/WorkstationAVMModernization.swift",
             "GORKH/Core/DeveloperWorkstation/WorkstationAVMInstaller.swift",
+            "GORKH/Core/DeveloperWorkstation/WorkstationProgramOperationEvidence.swift",
             "GORKH/Core/DeveloperWorkstation/WorkstationLocalnetSmokeRunner.swift",
             "GORKH/Core/DeveloperWorkstation/WorkstationLocalValidator.swift",
             "GORKH/Core/DeveloperWorkstation/WorkstationProgramOpsRunner.swift",

@@ -41,6 +41,8 @@ D7 also models fixed `avm self-update`, but old AVM `0.30.1` did not support tha
 
 Rust compatibility pinning is also explicit and fixed. GORKH may prepare `rustup toolchain install stable` or `rustup toolchain install 1.95.0` when rustup is already present, and may scope `RUSTUP_TOOLCHAIN=stable` or `RUSTUP_TOOLCHAIN=1.95.0` to approved AVM/Cargo commands. It must not run `rustup default`, install rustup through a bootstrap script, or accept arbitrary Rust version strings.
 
+D8 surfaces a non-blocking AVM warning when `avm use latest` panics locally but `anchor --version` succeeds. Builds may continue only because Anchor CLI is active; the warning remains visible in compatibility and evidence docs.
+
 ## Key Boundary
 
 Developer Workstation uses a separate Keychain-backed dev wallet for localnet/devnet. It does not use the main GORKH Wallet, the Agent wallet, or any private/Cloak state.
@@ -58,6 +60,18 @@ Mainnet support is read-only:
 - Transaction Studio review
 
 Mainnet program deploy, upgrade, close, and authority mutation are locked.
+
+## Program Evidence Boundary
+
+Developer Workstation may persist program-operation evidence under Application Support as safe JSON. Evidence may include public program ids, public signatures, cluster, operation, tool versions, status, safe log summary, safe IDL/artifact path summaries, and temporary key cleanup status.
+
+Evidence must not include private keys, seed phrases, wallet JSON, signing seeds, raw command environments, temporary keypair file contents, or unredacted logs.
+
+Destructive operation phrases:
+
+- Upgrade: `I understand this upgrades a Solana program on localnet or devnet.`
+- Close: `I understand this closes a Solana program and may be irreversible.`
+- Revoke authority: `I understand this revokes upgrade authority and may be irreversible.`
 
 ## Local Validator Boundary
 

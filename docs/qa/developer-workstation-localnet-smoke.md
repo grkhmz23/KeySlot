@@ -199,6 +199,19 @@ Notes:
 - Anchor build may fetch upstream SBPF platform tools as part of the trusted tooling/build process. This remains behind explicit trust and command approval.
 - Mainnet program operations remain locked.
 
+D8 repeatable evidence:
+
+- `scripts/workstation-localnet-smoke.sh --full-localnet` passed again during D8.
+- D8 direct full-localnet program id: `JE3EjaYf1r58eLJzmoyL1xStBdYNCXYo8FZ9qfNsosGi`.
+- D8 direct full-localnet deploy signature: `DVAjoFeTEWTTPwYKWba1nBwoevR5SkW2eS5iQhpPAgEmTEF25qZjzArx7YZSQKMMS2fSgPvFDbvnmGGKCvfZUE6`.
+- `scripts/workstation-program-ops-smoke.sh --localnet-sample` passed outside the sandbox after the sandboxed attempt was blocked by local faucet binding.
+- D8 Program Ops wrapper program id: `4rQMkzANcjjinzHd47mp1Kj2W7pokFfJxmxMsjQPdnfJ`.
+- D8 Program Ops wrapper deploy signature: `3UwxdFwWT3WhLfKT5Gssf3Z19pawgA4x5KwWbXqNzUJAyeSmiU7LHWBhWuTr363QjvDivfxSoheVbF883foX9r8r`.
+- The D8 localnet program id and deploy signature are exposed in Developer Workstation as safe program-operation evidence.
+- Evidence includes tool versions, command summary, IDL/artifact path summaries, and temp key cleanup status.
+- Evidence is persisted as redacted JSON under Application Support only when the user stores it.
+- Raw keypair files and unredacted command environments are never stored.
+
 ## Boundaries
 
 - No mainnet program operations.
