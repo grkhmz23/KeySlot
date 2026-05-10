@@ -20,6 +20,9 @@ struct AgentView: View {
     @State private var lastIntent: AgentIntentClassification?
     @State private var toolResults: [AgentToolResult] = []
     @State private var agentMemory = AgentMemoryStore()
+    @State private var conversationID = UUID()
+    @State private var aiStatus = AgentAIStatus.localSafeMode(reason: "Hosted AI endpoint is not configured.")
+    @State private var isAIResponding = false
     @State private var selectedTinySwap: ZerionTinySwapProposal?
     @State private var helpProbe = ZerionCLIHelpProbe.unchecked
     @State private var confirmationPhrase = ""
@@ -53,6 +56,8 @@ struct AgentView: View {
                         proposals: agentProposals,
                         toolResults: toolResults,
                         memoryEntries: agentMemory.entries,
+                        aiStatus: aiStatus,
+                        isAIResponding: isAIResponding,
                         submitAction: submitChatMessage,
                         handoffAction: handoffAgentProposal
                     )
@@ -171,7 +176,12 @@ struct AgentView: View {
         let userMessage = AgentChatMessage(role: .user, text: input)
         chatMessages.append(userMessage)
         appendAudit(.agentChatMessageReceived, "Agent chat message received.", details: ["length": "\(input.count)"])
+        Task {
+            await processChatInput(input)
+        }
+    }
 
+    private func processChatInput(_ input: String) async {
         let classification = AgentIntentClassifier().classify(input)
         lastIntent = classification
         appendAudit(
@@ -184,6 +194,7 @@ struct AgentView: View {
             classification,
             walletIsWatchOnly: walletManager.selectedProfile?.isWatchOnly == true
         )
+        let aiResult = await hostedAIResult(for: input, classification: classification)
 
         if lane == .readOnlyAnalysis {
             let result = AgentDeFiOpportunityAnalyzer.analyze(
@@ -194,7 +205,7 @@ struct AgentView: View {
             )
             toolResults.insert(result, at: 0)
             agentMemory.remember(intent: classification, result: result)
-            chatMessages.append(AgentChatMessage(role: .assistant, text: result.summary))
+            chatMessages.append(AgentChatMessage(role: .assistant, text: assistantMessage(localMessage: result.summary, aiResult: aiResult)))
             appendAudit(.agentReadOnlyAnalysisPerformed, result.title, details: ["intent": classification.intentType.rawValue])
             return
         }
@@ -221,16 +232,87 @@ struct AgentView: View {
 
         switch decision.status {
         case .allowed:
-            chatMessages.append(AgentChatMessage(role: .assistant, text: "\(proposal.title) is ready for destination-module review. I will not execute it from chat."))
+            chatMessages.append(AgentChatMessage(role: .assistant, text: assistantMessage(localMessage: "\(proposal.title) is ready for destination-module review. I will not execute it from chat.", aiResult: aiResult)))
             appendAudit(.agentProposalCreated, proposal.title, details: ["handoff": proposal.handoffTarget.rawValue])
+            if aiResult?.response.proposalDraft != nil {
+                appendAudit(.aiProposalSuggestionAcceptedAsDraft, proposal.title, details: ["deterministicProposal": proposal.type.rawValue])
+            }
         case .needsMoreInput:
-            chatMessages.append(AgentChatMessage(role: .assistant, text: "I need more details before creating a reviewable proposal: \(decision.reasons.joined(separator: " "))"))
+            chatMessages.append(AgentChatMessage(role: .assistant, text: assistantMessage(localMessage: "I need more details before creating a reviewable proposal: \(decision.reasons.joined(separator: " "))", aiResult: aiResult)))
             appendAudit(.agentProposalCreated, "Agent created a missing-fields proposal.", details: ["intent": classification.intentType.rawValue])
         case .blocked:
-            chatMessages.append(AgentChatMessage(role: .assistant, text: "Blocked by local policy: \(decision.reasons.joined(separator: " "))"))
+            chatMessages.append(AgentChatMessage(role: .assistant, text: assistantMessage(localMessage: "Blocked by local policy: \(decision.reasons.joined(separator: " "))", aiResult: aiResult)))
             let kind: AgentAuditEvent.Kind = classification.intentType == .unsafe ? .agentUnsafeRequestBlocked : (classification.intentType == .unsupported ? .agentUnsupportedRequestBlocked : .agentProposalBlocked)
             appendAudit(kind, decision.reasons.first ?? "Agent proposal blocked.", details: ["intent": classification.intentType.rawValue])
         }
+    }
+
+    private func hostedAIResult(for input: String, classification: AgentIntentClassification) async -> AgentLLMProviderResult? {
+        do {
+            let redactedInput = try AgentRedactedContextBuilder.redactedUserMessageForAI(input)
+            let context = try AgentRedactedContextBuilder.build(
+                portfolioSummary: walletManager.portfolioSummary,
+                pnlSummary: walletManager.portfolioPnLSummary,
+                pusdCirculationSnapshot: walletManager.pusdCirculationSnapshot,
+                auditEvents: walletManager.auditEvents,
+                selectedProfile: walletManager.selectedProfile,
+                selectedNetwork: walletManager.selectedNetwork,
+                rpcSecurityStatus: walletManager.rpcProviderSecurityStatus,
+                zerionStatus: statusSnapshot
+            )
+            let request = AgentLLMChatRequest(
+                conversationID: conversationID,
+                userMessage: redactedInput.message,
+                deterministicIntent: classification,
+                redactedContext: context,
+                enabledLocalTools: AgentToolBoundary.enabledLocalTools,
+                policyState: .current,
+                safetyMode: "hosted_ai_advisory_policy_deterministic"
+            )
+            appendAudit(.hostedAIRequestPrepared, "Hosted AI request prepared.", details: ["redaction": redactedInput.status.rawValue])
+            isAIResponding = true
+            defer { isAIResponding = false }
+
+            let configuration = AgentHostedAPIConfiguration()
+            let provider: any AgentLLMProvider = configuration.baseURL == nil
+                ? LocalDeterministicFallbackProvider(reason: "Hosted AI unavailable; using local safe mode.")
+                : HostedDeepSeekProvider(client: AgentHostedAPIClient(configuration: configuration))
+            let result = await provider.respond(to: request, redactionStatus: redactedInput.status)
+            aiStatus = result.status
+
+            if result.status.mode == .localSafeMode {
+                appendAudit(.hostedAIUnavailableFallback, result.status.message)
+                appendAudit(.localSafeModeUsed, "Local safe mode used for Agent response.")
+            } else {
+                appendAudit(.hostedAIResponseReceived, "Hosted AI response received.", details: ["state": result.status.providerState.rawValue])
+            }
+            for blocked in result.toolBoundaryDecision.blocked {
+                appendAudit(.aiToolSuggestionBlocked, "AI tool suggestion blocked.", details: ["tool": blocked])
+            }
+            return result
+        } catch {
+            let reason = AgentSafetyRedactor.redact(String(describing: error))
+            aiStatus = .hosted(
+                state: .disabled,
+                redactionStatus: .blocked,
+                endpointHost: nil,
+                responseStatus: "blocked",
+                message: "Hosted AI request blocked by redaction."
+            )
+            appendAudit(.hostedAIRequestBlockedByRedaction, reason)
+            return nil
+        }
+    }
+
+    private func assistantMessage(localMessage: String, aiResult: AgentLLMProviderResult?) -> String {
+        guard let aiResult else {
+            return localMessage
+        }
+        let aiMessage = aiResult.response.assistantMessage
+        if aiResult.status.mode == .localSafeMode {
+            return "\(localMessage)\n\n\(aiMessage)"
+        }
+        return "\(aiMessage)\n\nPolicy result: \(localMessage)"
     }
 
     private func handoffAgentProposal(_ proposal: AgentProposal) {

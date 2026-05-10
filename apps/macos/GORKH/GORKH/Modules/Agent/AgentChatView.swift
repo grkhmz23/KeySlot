@@ -8,6 +8,8 @@ struct AgentChatView: View {
     let proposals: [AgentProposal]
     let toolResults: [AgentToolResult]
     let memoryEntries: [AgentMemoryEntry]
+    let aiStatus: AgentAIStatus
+    let isAIResponding: Bool
     let submitAction: () -> Void
     let handoffAction: (AgentProposal) -> Void
 
@@ -22,6 +24,7 @@ struct AgentChatView: View {
                         GorkhStatusChip(title: safetyPolicy.mainWalletAccess.label, systemImage: "xmark.shield", color: GorkhColors.warning)
                         GorkhStatusChip(title: "Proposals only", systemImage: "doc.badge.gearshape", color: GorkhColors.accent)
                         GorkhStatusChip(title: "Destination approval", systemImage: "checkmark.shield", color: GorkhColors.warning)
+                        GorkhStatusChip(title: aiStatus.mode.title, systemImage: aiStatus.mode == .hostedDeepSeek ? "cloud" : "lock.shield", color: aiStatus.mode == .hostedDeepSeek ? GorkhColors.accent : GorkhColors.warning)
                     }
                 }
             }
@@ -50,6 +53,8 @@ struct AgentChatView: View {
                 .frame(minWidth: 420)
 
                 VStack(alignment: .leading, spacing: 12) {
+                    AgentAIStatusView(status: aiStatus, isResponding: isAIResponding)
+
                     if let lastIntent {
                         AgentIntentCardView(classification: lastIntent)
                     }

@@ -3959,8 +3959,16 @@ struct GORKHTests {
             "GORKH/Core/Agent/AgentProposalFactory.swift",
             "GORKH/Core/Agent/AgentProposalModels.swift",
             "GORKH/Core/Agent/AgentMemoryStore.swift",
+            "GORKH/Core/Agent/AgentAIStatusModels.swift",
+            "GORKH/Core/Agent/AgentLLMProvider.swift",
+            "GORKH/Core/Agent/HostedDeepSeekAgentProvider.swift",
+            "GORKH/Core/Agent/AgentHostedAPIClient.swift",
+            "GORKH/Core/Agent/AgentRedactedContextBuilder.swift",
+            "GORKH/Core/Agent/AgentToolBoundary.swift",
+            "GORKH/Core/Agent/AgentLLMResponseModels.swift",
             "GORKH/Modules/Agent/AgentView.swift",
             "GORKH/Modules/Agent/AgentChatView.swift",
+            "GORKH/Modules/Agent/AgentAIStatusView.swift",
             "GORKH/Modules/Agent/AgentIntentCardView.swift",
             "GORKH/Modules/Agent/AgentProposalCardView.swift",
             "GORKH/Modules/Agent/AgentOverviewView.swift",
@@ -3982,6 +3990,117 @@ struct GORKHTests {
         #expect(!source.contains("developer workstation"))
         #expect(!source.contains("transaction studio"))
         #expect(!source.contains("nft"))
+    }
+
+    @Test func agentHostedAIConfigurationAndFallbackNeedNoUserModelKey() async throws {
+        let configuration = AgentHostedAPIConfiguration(environment: [
+            AgentHostedAPIConfiguration.baseURLEnvironmentName: "https://agent.gorkh.example"
+        ])
+        #expect(configuration.endpointURL?.absoluteString == "https://agent.gorkh.example/v1/agent/chat")
+        #expect(configuration.apiKeyStatus == .missing)
+        var request = URLRequest(url: try #require(configuration.endpointURL))
+        configuration.applyAuthentication(to: &request)
+        #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+        #expect(AgentHostedAPIConfiguration(environment: [
+            AgentHostedAPIConfiguration.baseURLEnvironmentName: "http://agent.gorkh.example"
+        ]).endpointURL == nil)
+
+        let fallbackProvider = HostedDeepSeekProvider(client: AgentHostedAPIClient(
+            configuration: AgentHostedAPIConfiguration(environment: [:]),
+            transport: MockAgentHTTPTransport(payload: #"{"assistantMessage":"not used"}"#)
+        ))
+        let result = await fallbackProvider.respond(to: try sampleAgentLLMRequest(message: "summarize my portfolio"), redactionStatus: .clean)
+        #expect(result.status.mode == .localSafeMode)
+        #expect(result.response.assistantMessage.lowercased().contains("local safe mode"))
+    }
+
+    @Test func agentHostedAIRequestRedactionBlocksForbiddenFieldsAndMinimizesContext() throws {
+        let demoPublicAddress = "11111111111111111111111111111111"
+        #expect(throws: AgentRedactedContextError.self) {
+            _ = try AgentRedactedContextBuilder.redactedUserMessageForAI("use private key: abc")
+        }
+        #expect(throws: AgentRedactedContextError.self) {
+            _ = try AgentRedactedContextBuilder.redactedUserMessageForAI("runShell now")
+        }
+
+        let redacted = try AgentRedactedContextBuilder.redactedUserMessageForAI("summarize my portfolio")
+        #expect(redacted.status == .clean)
+
+        let context = try AgentRedactedContextBuilder.build(
+            portfolioSummary: .empty(),
+            pnlSummary: .empty(),
+            pusdCirculationSnapshot: .idle(),
+            auditEvents: [
+                AuditEvent(
+                    kind: .walletCreated,
+                    walletID: nil,
+                    network: .mainnetBeta,
+                    publicAddress: demoPublicAddress,
+                    message: "safe event",
+                    details: ["public": "ok"]
+                )
+            ],
+            selectedProfile: WalletProfile(label: "Demo", publicAddress: demoPublicAddress, walletOrigin: .watchOnly),
+            selectedNetwork: .mainnetBeta,
+            rpcSecurityStatus: RPCProviderSecurityStatus(
+                provider: .rpcFast,
+                network: .mainnetBeta,
+                tokenStatus: .missing,
+                tokenEnvironmentNames: [RPCFastConfiguration.mainnetTokenEnvironmentName],
+                beamStatus: "locked"
+            ),
+            zerionStatus: .unchecked,
+            builtAt: Date(timeIntervalSince1970: 0)
+        )
+        let payload = try #require(String(data: JSONEncoder().encode(context), encoding: .utf8)).lowercased()
+        #expect(payload.contains("context_minimized"))
+        #expect(payload.contains("gorkh_rpcfast_mainnet_token") == false)
+        for forbidden in ["privatekey", "secretkey", "seedphrase", "signingseed", "walletjson", "transactionpayload", "serializedtransaction", "unsignedtransaction", "agenttoken", "nft"] {
+            #expect(!payload.contains(forbidden))
+        }
+    }
+
+    @Test func agentHostedAIToolBoundaryBlocksExecutionSuggestions() async throws {
+        let decision = AgentToolBoundary.evaluate([
+            "summarizePortfolio",
+            "draftSwapProposal",
+            "executeSwap",
+            "sendTransaction",
+            "runShell",
+            "arbitraryCommand"
+        ])
+        #expect(decision.allowed == ["summarizePortfolio", "draftSwapProposal"])
+        #expect(decision.blocked == ["executeSwap", "sendTransaction", "runShell", "arbitraryCommand"])
+
+        let responseJSON = """
+        {
+          "assistantMessage": "I can explain this, but execution must use review.",
+          "suggestedIntent": "tokenSwapRequest",
+          "proposalDraft": {"title":"Swap draft","explanation":"Review in Wallet.","riskNotes":["Policy required"],"missingFields":[]},
+          "missingFields": [],
+          "toolCallSuggestions": ["draftSwapProposal", "executeSwap"],
+          "safetyWarnings": ["No direct execution"]
+        }
+        """
+        let provider = HostedDeepSeekProvider(client: AgentHostedAPIClient(
+            configuration: AgentHostedAPIConfiguration(environment: [
+                AgentHostedAPIConfiguration.baseURLEnvironmentName: "https://agent.gorkh.example"
+            ]),
+            transport: MockAgentHTTPTransport(payload: responseJSON)
+        ))
+        let result = await provider.respond(to: try sampleAgentLLMRequest(message: "swap 1 USDC to SOL"), redactionStatus: .clean)
+        #expect(result.status.mode == .hostedDeepSeek)
+        #expect(result.status.providerState == .degraded)
+        #expect(result.toolBoundaryDecision.allowed == ["draftSwapProposal"])
+        #expect(result.toolBoundaryDecision.blocked == ["executeSwap"])
+
+        let classification = AgentIntentClassifier().classify("swap 100 USDC to SOL")
+        let policy = AgentPolicyEngine.evaluate(
+            classification: classification,
+            lane: AgentExecutionLaneRouter.route(classification),
+            context: AgentPolicyContext(walletCanSign: false, walletIsWatchOnly: true, selectedNetwork: .mainnetBeta, zerionStatus: .unchecked)
+        )
+        #expect(policy.status == .blocked)
     }
 
     @Test func zerionCommandAllowlistBlocksTradingSigningAndUnsafeArguments() throws {
@@ -4487,6 +4606,8 @@ struct GORKHTests {
         let smoke = try sourceText(relativePath: "../../../docs/qa/agent-zerion-foundation-smoke.md").lowercased()
         let tinySmoke = try sourceText(relativePath: "../../../docs/qa/zerion-tiny-transaction-smoke.md").lowercased()
         let operatorSmoke = try sourceText(relativePath: "../../../docs/qa/agent-policy-wallet-operator-smoke.md").lowercased()
+        let hostedArchitecture = try sourceText(relativePath: "../../../docs/architecture/agent-hosted-ai.md").lowercased()
+        let hostedSmoke = try sourceText(relativePath: "../../../docs/qa/agent-hosted-ai-smoke.md").lowercased()
 
         #expect(architecture.contains("a2 allows one policy-validated tiny same-chain zerion swap only"))
         #expect(architecture.contains("phase a3 adds agent chat as a proposal and handoff layer"))
@@ -4504,10 +4625,17 @@ struct GORKHTests {
         #expect(tinySmoke.contains("do not run bridge, send, sign-message, or sign-typed-data"))
         #expect(operatorSmoke.contains("agent policy wallet operator smoke"))
         #expect(operatorSmoke.contains("chat never executes"))
+        #expect(hostedArchitecture.contains("gorkh hosted agent api"))
+        #expect(hostedArchitecture.contains("local safe mode"))
+        #expect(hostedArchitecture.contains("cannot approve, execute, sign"))
+        #expect(hostedSmoke.contains("agent hosted ai smoke"))
+        #expect(hostedSmoke.contains("no proposal execution"))
         #expect(!architecture.contains("nft"))
         #expect(!tinySmoke.contains("nft"))
         #expect(!operatorArchitecture.contains("nft"))
         #expect(!operatorSmoke.contains("nft"))
+        #expect(!hostedArchitecture.contains("nft"))
+        #expect(!hostedSmoke.contains("nft"))
     }
 
     @Test func sharedXcodeSchemeContainsNoSecretEnvironmentValues() throws {
@@ -4518,6 +4646,8 @@ struct GORKHTests {
             "GORKH_RPCFAST",
             "JUPITER",
             "API_KEY",
+            "GORKH_AGENT_API_KEY",
+            "GORKH_AGENT_API_BASE_URL",
             "PRIVATE_KEY",
             "SECRET_KEY",
             "MNEMONIC",
@@ -6453,6 +6583,53 @@ private func sourceText(relativePath: String) throws -> String {
     let testsDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
     let projectDirectory = testsDirectory.deletingLastPathComponent()
     return try String(contentsOf: projectDirectory.appendingPathComponent(relativePath), encoding: .utf8)
+}
+
+private struct MockAgentHTTPTransport: AgentHTTPTransport {
+    let payload: String
+    var statusCode: Int = 200
+
+    func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let response = HTTPURLResponse(
+            url: request.url ?? URL(string: "https://agent.gorkh.example/v1/agent/chat")!,
+            statusCode: statusCode,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        return (Data(payload.utf8), response)
+    }
+}
+
+private func sampleAgentLLMRequest(message: String) throws -> AgentLLMChatRequest {
+    let demoPublicAddress = "11111111111111111111111111111111"
+    let classification = AgentIntentClassifier().classify(message)
+    let context = try AgentRedactedContextBuilder.build(
+        portfolioSummary: .empty(),
+        pnlSummary: .empty(),
+        pusdCirculationSnapshot: .idle(),
+        auditEvents: [],
+        selectedProfile: WalletProfile(label: "Demo", publicAddress: demoPublicAddress, walletOrigin: .watchOnly),
+        selectedNetwork: .mainnetBeta,
+        rpcSecurityStatus: RPCProviderSecurityStatus(
+            provider: .rpcFast,
+            network: .mainnetBeta,
+            tokenStatus: .missing,
+            tokenEnvironmentNames: [RPCFastConfiguration.mainnetTokenEnvironmentName],
+            beamStatus: "locked"
+        ),
+        zerionStatus: .unchecked,
+        builtAt: Date(timeIntervalSince1970: 0)
+    )
+    let redacted = try AgentRedactedContextBuilder.redactedUserMessageForAI(message)
+    return AgentLLMChatRequest(
+        conversationID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+        userMessage: redacted.message,
+        deterministicIntent: classification,
+        redactedContext: context,
+        enabledLocalTools: AgentToolBoundary.enabledLocalTools,
+        policyState: .current,
+        safetyMode: "test"
+    )
 }
 
 private extension Data {

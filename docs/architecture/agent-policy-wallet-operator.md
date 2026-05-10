@@ -2,6 +2,8 @@
 
 Phase A3 adds a deterministic Agent chat/operator layer for Wallet and Zerion workflows. The Agent can classify requests, summarize existing wallet data, create proposal cards, and hand the user to the correct destination module. It does not execute transactions from chat.
 
+Phase A4 adds a hosted AI explanation layer backed by DeepSeek through GORKH's hosted endpoint. The hosted model is advisory only: deterministic classification, local policy, proposal creation, and destination approval remain authoritative.
+
 ## Source Guidance
 
 The local Zerion documentation in `/Users/gorkhmazbeydullayev/Downloads/zerion-docs.md` was reviewed for the A3 boundary. It confirms JSON-first CLI behavior, `ZERION_API_KEY`, manual wallet and policy setup, agent-token spending power, policy flags, and the distinction between read/status commands and trading commands. A3 does not add new Zerion command families; executable Zerion swap intents are routed to the existing A2 tiny-swap review flow.
@@ -51,6 +53,8 @@ Cloak Private:
 
 The classifier extracts amount, source asset, target asset, chain, recipient, confidence, missing fields, and risk flags. Low-confidence or incomplete executable requests become missing-field proposals, not executable requests.
 
+Hosted AI may improve the explanation or wording after this classifier runs, but it cannot override the local classification or approve execution.
+
 ## Policy Engine
 
 `AgentPolicyEngine` enforces local rules before a proposal can become reviewable:
@@ -77,6 +81,14 @@ The policy decision is stored with every proposal and shown in chat.
 - none for blocked/unsupported requests.
 
 The handoff changes UI navigation only. It does not build, sign, submit, or confirm a transaction.
+
+## Hosted AI Boundary
+
+Agent Chat can call GORKH Hosted Agent API when `GORKH_AGENT_API_BASE_URL` is configured. The app does not contain a model-provider secret and users do not supply one. Optional app-to-backend authentication uses `GORKH_AGENT_API_KEY` from the local process environment only.
+
+Before a hosted request, GORKH builds a minimized context from safe Wallet summaries and blocks forbidden fields. The hosted response can suggest copy, missing fields, and local tool names. Tool suggestions outside the allowlist are blocked and audited.
+
+If the hosted endpoint is unavailable, Agent Chat shows Local Safe Mode and continues using deterministic local classification, policy, and handoff behavior.
 
 ## Read-Only DeFi Analysis
 

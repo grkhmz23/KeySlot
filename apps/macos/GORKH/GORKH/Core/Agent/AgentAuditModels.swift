@@ -26,6 +26,13 @@ struct AgentAuditEvent: Codable, Equatable, Identifiable {
         case agentReadOnlyAnalysisPerformed = "agent_read_only_analysis_performed"
         case agentUnsupportedRequestBlocked = "agent_unsupported_request_blocked"
         case agentUnsafeRequestBlocked = "agent_unsafe_request_blocked"
+        case hostedAIRequestPrepared = "hosted_ai_request_prepared"
+        case hostedAIRequestBlockedByRedaction = "hosted_ai_request_blocked_by_redaction"
+        case hostedAIResponseReceived = "hosted_ai_response_received"
+        case hostedAIUnavailableFallback = "hosted_ai_unavailable_fallback"
+        case localSafeModeUsed = "local_safe_mode_used"
+        case aiProposalSuggestionAcceptedAsDraft = "ai_proposal_suggestion_accepted_as_draft"
+        case aiToolSuggestionBlocked = "ai_tool_suggestion_blocked"
 
         var label: String {
             switch self {
@@ -77,6 +84,20 @@ struct AgentAuditEvent: Codable, Equatable, Identifiable {
                 return "Agent unsupported request blocked"
             case .agentUnsafeRequestBlocked:
                 return "Agent unsafe request blocked"
+            case .hostedAIRequestPrepared:
+                return "Hosted AI request prepared"
+            case .hostedAIRequestBlockedByRedaction:
+                return "Hosted AI request blocked by redaction"
+            case .hostedAIResponseReceived:
+                return "Hosted AI response received"
+            case .hostedAIUnavailableFallback:
+                return "Hosted AI unavailable fallback"
+            case .localSafeModeUsed:
+                return "Local safe mode used"
+            case .aiProposalSuggestionAcceptedAsDraft:
+                return "AI proposal suggestion accepted as draft"
+            case .aiToolSuggestionBlocked:
+                return "AI tool suggestion blocked"
             }
         }
     }
