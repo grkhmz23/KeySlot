@@ -99,6 +99,51 @@ Capture screenshots with no secrets, no recovery phrase, no private key material
     - Yield unavailable.
     - Lending/LP partial data.
 
+14. Agent Chat
+    - Guardrail banner says Agent can prepare/review but cannot move funds from chat.
+    - Chat timeline, intent cards, tool-result cards, and proposal cards render without clipping.
+    - Hosted AI unavailable state shows Local Safe Mode honestly when no endpoint is configured.
+    - No proposal card offers direct execution.
+
+15. Agent Approval Queue
+    - Draft, blocked, ready-for-review, and handed-off states are visually distinct.
+    - Filters for Wallet, Zerion, Private, read-only, and blocked items are usable.
+    - Blocked reasons are visible.
+    - Queue items provide handoff buttons only.
+
+16. Zerion Executor
+    - Separate Zerion wallet copy is visible.
+    - CLI, API key, policy, and agent-token states are redacted.
+    - Missing prerequisites block live execution.
+    - Bridge, direct send, and signing commands are not available.
+
+17. Transaction Studio
+    - Decode, Simulate, Risk Review, Explanation, and History remain accessible.
+    - Persistent review-only banner is visible.
+    - Input empty state explains that Studio does not sign or broadcast.
+    - Unknown instruction and simulation-unavailable states are honest.
+
+18. Shield Review Card
+    - Approval screens show action summary, programs, signers/writable counts, simulation status, unknown instruction count, and risk flags.
+    - Payload mode is visible: Exact transaction, Summary only, or Unavailable.
+    - Approval copy says review is required where applicable.
+    - Existing approval gates remain visible below/around the card.
+
+19. Studio Handoff Exact Mode
+    - Opening from SOL/SPL/swap/Orca approval with a transient payload shows exact decode in Transaction Studio.
+    - Source flow and payload mode are visible.
+    - Exact payload is not saved to Studio history by default.
+
+20. Studio Handoff Summary-Only Mode
+    - Opening from Cloak/Zerion or unavailable raw payload shows a summary-only explanation.
+    - The UI states exact decode is unavailable and does not fake raw transaction details.
+    - Review-only banner remains visible.
+
+21. Hosted AI Local Safe Mode
+    - Agent status shows hosted endpoint missing/unavailable without crashing.
+    - Redaction/no-secrets indicator is visible.
+    - Local deterministic classifier still handles core prompts.
+
 ## Scheme And Secret Hygiene
 
 Before release, verify:

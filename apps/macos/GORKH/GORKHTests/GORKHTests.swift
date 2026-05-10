@@ -6699,6 +6699,106 @@ struct GORKHTests {
         #expect(!vault.containsSecret(for: walletID))
     }
 
+    @Test func releaseCandidateEvidencePackCoversMajorModulesAndPreservesReviewBoundaries() throws {
+        let rc = try sourceText(relativePath: "../../../docs/qa/release-candidate-smoke.md")
+        let matrix = try sourceText(relativePath: "../../../docs/qa/release-evidence-matrix.md")
+        let crossModule = try sourceText(relativePath: "../../../docs/qa/cross-module-regression-smoke.md")
+        let visual = try sourceText(relativePath: "../../../docs/qa/wallet-visual-regression-checklist.md")
+        let combinedDocs = [rc, matrix, crossModule, visual].joined(separator: "\n")
+        let lowercasedDocs = combinedDocs.lowercased()
+
+        #expect(rc.contains("Release Candidate Smoke"))
+        #expect(matrix.contains("Release Evidence Matrix"))
+        #expect(crossModule.contains("Cross-Module Regression Smoke"))
+        #expect(visual.contains("Agent Chat"))
+        #expect(visual.contains("Transaction Studio"))
+        #expect(visual.contains("Shield Review Card"))
+        #expect(visual.contains("Hosted AI Local Safe Mode"))
+
+        for required in [
+            "wallet",
+            "portfolio",
+            "pusd",
+            "send",
+            "swap",
+            "private / cloak",
+            "security",
+            "activity",
+            "agent",
+            "zerion",
+            "hosted ai",
+            "transaction studio",
+            "shield review",
+            "rpc fast",
+            "secret hygiene"
+        ] {
+            #expect(lowercasedDocs.contains(required))
+        }
+
+        #expect(lowercasedDocs.contains("agent chat creates proposals"))
+        #expect(lowercasedDocs.contains("transaction studio is review-only"))
+        #expect(lowercasedDocs.contains("shield review is review-only"))
+        #expect(lowercasedDocs.contains("live funded flows were not run"))
+        #expect(lowercasedDocs.contains("do not claim release-ready production behavior"))
+        #expect(!lowercasedDocs.contains("nft"))
+
+        for suspiciousValuePattern in [
+            "zk_live",
+            "zk_test",
+            "authorization: basic ",
+            "bearer ",
+            "-----begin",
+            "\"privatekey\"",
+            "\"secretkey\"",
+            "wallet.json"
+        ] {
+            #expect(!lowercasedDocs.contains(suspiciousValuePattern))
+        }
+
+        for blockedTool in [
+            AgentToolID.executeSwap,
+            .executeSend,
+            .executeBridge,
+            .executeCloakPayment,
+            .signTransaction,
+            .sendTransaction,
+            .runShell,
+            .exportSeed,
+            .revealPrivateKey,
+            .arbitraryCommand
+        ] {
+            let declaration = try #require(AgentToolRegistry.declaration(for: blockedTool))
+            #expect(declaration.mode == .blocked)
+            #expect(!AgentToolRegistry.allowedToolNames.contains(blockedTool.rawValue))
+        }
+
+        let transactionStudioSource = try [
+            "GORKH/Core/TransactionStudio/TransactionStudioModels.swift",
+            "GORKH/Core/TransactionStudio/TransactionSimulationService.swift",
+            "GORKH/Core/TransactionStudio/TransactionStudioHistoryStore.swift",
+            "GORKH/Modules/TransactionStudio/TransactionStudioView.swift"
+        ].map(sourceText(relativePath:)).joined(separator: "\n").lowercased()
+        let shieldReviewSource = try [
+            "GORKH/Core/ShieldReview/ShieldReviewModels.swift",
+            "GORKH/Core/ShieldReview/ShieldReviewService.swift",
+            "GORKH/Core/ShieldReview/ShieldReviewPayloadPolicy.swift",
+            "GORKH/Modules/ShieldReview/ShieldReviewCard.swift"
+        ].map(sourceText(relativePath:)).joined(separator: "\n").lowercased()
+
+        for forbidden in [
+            "sendtransaction(",
+            "requestairdrop(",
+            "signtransaction(",
+            "broadcast(",
+            "buildbundle",
+            "/bin/sh",
+            "eval("
+        ] {
+            #expect(!transactionStudioSource.contains(forbidden))
+            #expect(!shieldReviewSource.contains(forbidden))
+        }
+    }
+
     @Test func userDefaultsStorageIsLimitedToPublicMetadataKeys() throws {
         let suiteName = "ai.gorkh.tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
