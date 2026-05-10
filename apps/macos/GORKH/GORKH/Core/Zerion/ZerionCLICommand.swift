@@ -7,6 +7,8 @@ enum ZerionCLICommand: Equatable {
     case agentListPolicies
     case agentListTokens
     case configList
+    case swapHelp
+    case agentHelp
     case portfolio(address: String)
     case positions(address: String)
     case history(address: String)
@@ -26,6 +28,10 @@ enum ZerionCLICommand: Equatable {
             return "agent_list_tokens"
         case .configList:
             return "config_list"
+        case .swapHelp:
+            return "swap_help"
+        case .agentHelp:
+            return "agent_help"
         case .portfolio:
             return "portfolio"
         case .positions:
@@ -51,6 +57,10 @@ enum ZerionCLICommand: Equatable {
             return ["agent", "list-tokens"]
         case .configList:
             return ["config", "list"]
+        case .swapHelp:
+            return ["swap", "--help"]
+        case .agentHelp:
+            return ["agent", "--help"]
         case .portfolio(let address):
             return ["portfolio", address]
         case .positions(let address):
@@ -66,7 +76,7 @@ enum ZerionCLICommand: Equatable {
         switch self {
         case .portfolio, .positions, .history, .pnl:
             return true
-        case .help, .chains, .walletList, .agentListPolicies, .agentListTokens, .configList:
+        case .help, .chains, .walletList, .agentListPolicies, .agentListTokens, .configList, .swapHelp, .agentHelp:
             return false
         }
     }
@@ -117,13 +127,22 @@ enum ZerionCLICommandBuilder {
         try validateNoUnsafeArgument(arguments)
 
         let lowered = arguments.map { $0.lowercased() }
+        switch lowered {
+        case ["--help"], ["help"]:
+            return .help
+        case ["swap", "--help"]:
+            return .swapHelp
+        case ["agent", "--help"]:
+            return .agentHelp
+        default:
+            break
+        }
+
         for term in ZerionCLICommand.blockedRuntimeTerms where lowered.contains(term) {
             throw ZerionCLICommandValidationError.blocked(term)
         }
 
         switch lowered {
-        case ["--help"], ["help"]:
-            return .help
         case ["chains"]:
             return .chains
         case ["wallet", "list"]:

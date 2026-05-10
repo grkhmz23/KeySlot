@@ -73,6 +73,33 @@ enum ZerionCommandRunStatus: String, Codable, Equatable {
     case timedOut = "timed_out"
 }
 
+enum ZerionSwapCommandShape: String, Codable, Equatable {
+    case unchecked
+    case chainFirst = "chain_first"
+    case tokenFirstWithChainFlag = "token_first_chain_flag"
+    case unavailable
+    case ambiguous
+
+    var label: String {
+        switch self {
+        case .unchecked:
+            return "Not checked"
+        case .chainFirst:
+            return "chain amount from to"
+        case .tokenFirstWithChainFlag:
+            return "from to amount --chain"
+        case .unavailable:
+            return "Unavailable"
+        case .ambiguous:
+            return "Ambiguous"
+        }
+    }
+
+    var canBuildTinySwap: Bool {
+        self == .chainFirst || self == .tokenFirstWithChainFlag
+    }
+}
+
 struct ZerionCLIPathResolution: Codable, Equatable {
     let status: ZerionCLIInstallStatus
     let executablePath: String?
@@ -109,9 +136,12 @@ struct ZerionStatusSnapshot: Codable, Equatable {
     let cliStatus: ZerionCLIInstallStatus
     let executablePath: String?
     let nodeStatus: ZerionCLIInstallStatus
+    let nodeVersion: String?
     let apiKeyStatus: ZerionSecretStatus
     let agentTokenStatus: ZerionSecretStatus
     let policyStatus: ZerionPolicyReadStatus
+    let swapHelpStatus: ZerionCommandRunStatus?
+    let swapCommandShape: ZerionSwapCommandShape
     let walletCount: Int?
     let policyCount: Int?
     let tokenCount: Int?
@@ -123,9 +153,12 @@ struct ZerionStatusSnapshot: Codable, Equatable {
         cliStatus: .unchecked,
         executablePath: nil,
         nodeStatus: .unchecked,
+        nodeVersion: nil,
         apiKeyStatus: .unknown,
         agentTokenStatus: .unknown,
         policyStatus: .unchecked,
+        swapHelpStatus: nil,
+        swapCommandShape: .unchecked,
         walletCount: nil,
         policyCount: nil,
         tokenCount: nil,

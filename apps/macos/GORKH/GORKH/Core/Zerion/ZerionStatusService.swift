@@ -14,13 +14,17 @@ struct ZerionStatusService {
 
     func localSnapshot() -> ZerionStatusSnapshot {
         let resolution = pathResolver.resolve()
+        let node = ZerionNodeVersionProbe(environment: environment).probe()
         return ZerionStatusSnapshot(
             cliStatus: resolution.status,
             executablePath: resolution.executablePath,
-            nodeStatus: .unchecked,
+            nodeStatus: node.status,
+            nodeVersion: node.version,
             apiKeyStatus: ZerionRedaction.apiKeyStatus(from: environment),
             agentTokenStatus: .unknown,
             policyStatus: .unchecked,
+            swapHelpStatus: nil,
+            swapCommandShape: .unchecked,
             walletCount: nil,
             policyCount: nil,
             tokenCount: nil,
@@ -42,9 +46,11 @@ struct ZerionStatusService {
         let wallets = runner.run(.walletList)
         let policies = runner.run(.agentListPolicies)
         let tokens = runner.run(.agentListTokens)
+        let swapHelp = runner.run(.swapHelp)
+        let agentHelp = runner.run(.agentHelp)
         _ = runner.run(.configList)
 
-        let commandResults = [help, chains, wallets, policies, tokens]
+        let commandResults = [help, chains, wallets, policies, tokens, swapHelp, agentHelp]
         let errors = commandResults
             .filter { $0.status != .succeeded }
             .map { "\($0.command): \($0.stderrSummary)" }
@@ -60,19 +66,81 @@ struct ZerionStatusService {
             }
             return errors.isEmpty ? .unchecked : .error
         }()
+        let node = ZerionNodeVersionProbe(environment: environment).probe()
+        let helpProbe = ZerionCLIHelpParser.parse(
+            topHelp: help.stdoutSummary,
+            swapHelp: swapHelp.stdoutSummary,
+            agentHelp: agentHelp.stdoutSummary,
+            checkedAt: Date()
+        )
 
         return ZerionStatusSnapshot(
             cliStatus: cliStatus,
             executablePath: executablePath,
-            nodeStatus: .unchecked,
+            nodeStatus: node.status,
+            nodeVersion: node.version,
             apiKeyStatus: ZerionRedaction.apiKeyStatus(from: environment),
             agentTokenStatus: ZerionRedaction.agentTokenStatus(from: tokens.stdoutSummary),
             policyStatus: policyStatus,
+            swapHelpStatus: swapHelp.status,
+            swapCommandShape: helpProbe.swapCommandShape,
             walletCount: ZerionJSONSummary.itemCount(from: wallets.stdoutSummary),
             policyCount: ZerionJSONSummary.itemCount(from: policies.stdoutSummary),
             tokenCount: ZerionJSONSummary.itemCount(from: tokens.stdoutSummary),
             supportedChains: supportedChains(from: chains.stdoutSummary),
             errors: errors,
+            checkedAt: Date()
+        )
+    }
+
+    func loadPolicyCenter() -> ZerionPolicyCenterSnapshot {
+        let resolution = pathResolver.resolve()
+        guard resolution.status == .installed, let executablePath = resolution.executablePath else {
+            return ZerionPolicyCenterSnapshot(
+                policies: [],
+                tokens: [],
+                status: .unavailable,
+                unavailableReason: resolution.reason,
+                updatedAt: Date()
+            )
+        }
+
+        let runner = ZerionCLICommandRunner(executablePath: executablePath, environment: environment)
+        let policies = runner.run(.agentListPolicies)
+        let tokens = runner.run(.agentListTokens)
+
+        guard policies.status == .succeeded || tokens.status == .succeeded else {
+            return ZerionPolicyCenterSnapshot(
+                policies: [],
+                tokens: [],
+                status: .error,
+                unavailableReason: [policies.stderrSummary, tokens.stderrSummary]
+                    .filter { $0.isEmpty == false }
+                    .joined(separator: " "),
+                updatedAt: Date()
+            )
+        }
+
+        return ZerionPolicyParser.parsePolicyCenter(
+            policiesText: policies.stdoutSummary,
+            tokensText: tokens.stdoutSummary,
+            updatedAt: Date()
+        )
+    }
+
+    func loadHelpProbe() -> ZerionCLIHelpProbe {
+        let resolution = pathResolver.resolve()
+        guard resolution.status == .installed, let executablePath = resolution.executablePath else {
+            return .unchecked
+        }
+        let runner = ZerionCLICommandRunner(executablePath: executablePath, environment: environment)
+        let top = runner.run(.help)
+        let swap = runner.run(.swapHelp)
+        let agent = runner.run(.agentHelp)
+        return ZerionCLIHelpParser.parse(
+            topHelp: top.stdoutSummary,
+            swapHelp: swap.stdoutSummary,
+            agentHelp: agent.stdoutSummary,
             checkedAt: Date()
         )
     }

@@ -39,6 +39,7 @@ enum AgentMainWalletAccess: String, Codable, Equatable {
 enum AgentExecutionStatus: String, Codable, Equatable {
     case observeOnly
     case draftOnly
+    case tinySwapOnly
     case blocked
 
     var label: String {
@@ -47,6 +48,8 @@ enum AgentExecutionStatus: String, Codable, Equatable {
             return "Observe only"
         case .draftOnly:
             return "Draft only"
+        case .tinySwapOnly:
+            return "Tiny swap only"
         case .blocked:
             return "Execution blocked"
         }
@@ -74,6 +77,21 @@ struct AgentSafetyPolicy: Codable, Equatable {
             "No GORKH Keychain signer, recovery phrase, private key, or Cloak private state is exposed.",
             "A1 allows read/status Zerion CLI commands only.",
             "Draft proposals cannot execute or sign."
+        ]
+    )
+
+    static let zerionA2 = AgentSafetyPolicy(
+        mainWalletAccess: .disabled,
+        executionStatus: .tinySwapOnly,
+        canUseNativeSigner: false,
+        canReadCloakVault: false,
+        canRunTradingCommands: true,
+        safetyBanner: "GORKH Agent can observe, summarize, draft, and hand off. In A2, only an explicitly approved tiny Zerion swap can execute from a separate Zerion wallet.",
+        invariants: [
+            "Zerion wallet is separate from the GORKH wallet.",
+            "No GORKH Keychain signer, recovery phrase, private key, or Cloak private state is exposed.",
+            "A2 allows one policy-validated tiny same-chain Zerion swap only.",
+            "Bridge, send, signing, recurring automation, and main-wallet execution remain blocked."
         ]
     )
 }

@@ -16,23 +16,33 @@ struct ZerionCLICommandRunner {
     }
 
     func run(_ command: ZerionCLICommand) -> ZerionCommandResult {
-        if command.requiresAPIKey {
+        run(commandName: command.name, arguments: command.arguments, requiresAPIKey: command.requiresAPIKey)
+    }
+
+    func run(commandName: String, arguments: [String], requiresAPIKey: Bool) -> ZerionCommandResult {
+        do {
+            try ZerionCLICommandBuilder.validateNoUnsafeArgument(arguments)
+        } catch {
+            return .blocked(command: commandName, reason: error.localizedDescription)
+        }
+
+        if requiresAPIKey {
             let apiKeyStatus = ZerionRedaction.apiKeyStatus(from: environment)
             guard apiKeyStatus == .presentRedacted else {
                 return .blocked(
-                    command: command.name,
-                    reason: "ZERION_API_KEY is required for \(command.name), but the key is \(apiKeyStatus.label.lowercased())."
+                    command: commandName,
+                    reason: "ZERION_API_KEY is required for \(commandName), but the key is \(apiKeyStatus.label.lowercased())."
                 )
             }
         }
 
         guard ZerionCLIPathResolver(environment: environment).isValidExecutable(executablePath) else {
-            return .blocked(command: command.name, reason: "Zerion executable path failed validation.")
+            return .blocked(command: commandName, reason: "Zerion executable path failed validation.")
         }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executablePath)
-        process.arguments = command.arguments
+        process.arguments = arguments
         process.environment = environment
 
         let stdoutPipe = Pipe()
@@ -48,7 +58,7 @@ struct ZerionCLICommandRunner {
             try process.run()
         } catch {
             return ZerionCommandResult(
-                command: command.name,
+                command: commandName,
                 status: .failed,
                 exitCode: nil,
                 stdoutSummary: "",
@@ -60,7 +70,7 @@ struct ZerionCLICommandRunner {
         if semaphore.wait(timeout: .now() + timeoutSeconds) == .timedOut {
             process.terminate()
             return ZerionCommandResult(
-                command: command.name,
+                command: commandName,
                 status: .timedOut,
                 exitCode: nil,
                 stdoutSummary: "",
@@ -74,7 +84,7 @@ struct ZerionCLICommandRunner {
         let exitCode = process.terminationStatus
 
         return ZerionCommandResult(
-            command: command.name,
+            command: commandName,
             status: exitCode == 0 ? .succeeded : .failed,
             exitCode: exitCode,
             stdoutSummary: ZerionJSONSummary.safeSummary(from: stdout),

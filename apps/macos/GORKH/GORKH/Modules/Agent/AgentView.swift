@@ -6,9 +6,15 @@ struct AgentView: View {
     @State private var policySnapshot = ZerionPolicyCenterSnapshot.unchecked
     @State private var auditTimeline = AgentAuditTimeline.initial
     @State private var proposals: [ZerionProposal] = [.sampleDraft]
+    @State private var tinySwapProposals: [ZerionTinySwapProposal] = []
+    @State private var selectedTinySwap: ZerionTinySwapProposal?
+    @State private var helpProbe = ZerionCLIHelpProbe.unchecked
+    @State private var confirmationPhrase = ""
+    @State private var unknownValueAcknowledged = false
+    @State private var executionResult: ZerionExecutionResult?
     @State private var isRefreshing = false
 
-    private let safetyPolicy = AgentSafetyPolicy.zerionA1
+    private let safetyPolicy = AgentSafetyPolicy.zerionA2
     private let statusService = ZerionStatusService()
 
     var body: some View {
@@ -21,7 +27,7 @@ struct AgentView: View {
                 switch selectedSection {
                 case .overview:
                     AgentOverviewView(
-                        snapshot: AgentOverviewSnapshot.from(status: statusSnapshot, draftProposalCount: proposals.count),
+                        snapshot: AgentOverviewSnapshot.from(status: statusSnapshot, draftProposalCount: proposals.count + tinySwapProposals.count),
                         safetyPolicy: safetyPolicy,
                         refreshAction: refreshStatus
                     )
@@ -34,7 +40,29 @@ struct AgentView: View {
                 case .policyCenter:
                     ZerionPolicyCenterView(snapshot: policySnapshot)
                 case .proposals:
-                    ZerionProposalView(proposals: proposals)
+                    ZerionProposalView(
+                        legacyProposals: proposals,
+                        tinySwapProposals: tinySwapProposals,
+                        createSolanaProposal: createSolanaTinySwap,
+                        createBaseProposal: createBaseTinySwap,
+                        reviewProposal: reviewTinySwap
+                    )
+                    if let selectedTinySwap {
+                        ZerionExecutionReviewView(
+                            proposal: selectedTinySwap,
+                            decision: reviewDecision(for: selectedTinySwap),
+                            commandPlan: commandPlan(for: selectedTinySwap),
+                            confirmationPhrase: confirmationPhrase,
+                            unknownValueAcknowledged: unknownValueAcknowledged,
+                            updateConfirmationPhrase: { confirmationPhrase = $0 },
+                            updateUnknownValueAcknowledged: { unknownValueAcknowledged = $0 },
+                            executeAction: executeSelectedTinySwap,
+                            cancelAction: clearSelectedTinySwap
+                        )
+                    }
+                    if let executionResult {
+                        ZerionExecutionResultView(result: executionResult)
+                    }
                 case .audit:
                     AgentAuditView(timeline: auditTimeline)
                 }
@@ -44,7 +72,7 @@ struct AgentView: View {
         }
         .accessibilityIdentifier("agent.root")
         .onAppear {
-            appendAudit(.agentSectionViewed, "Agent section opened in A1 no-execution mode.")
+            appendAudit(.agentSectionViewed, "Agent section opened with A2 tiny-swap execution gate.")
         }
     }
 
@@ -55,13 +83,13 @@ struct AgentView: View {
                     .font(.largeTitle)
                     .fontWeight(.semibold)
                     .foregroundStyle(GorkhColors.primaryText)
-                Text("Observe wallet context, inspect Zerion readiness, and draft future policy-scoped actions.")
+                Text("Observe wallet context, inspect Zerion readiness, and review one policy-scoped tiny swap.")
                     .foregroundStyle(GorkhColors.secondaryText)
             }
 
             Spacer()
 
-            GorkhStatusChip(title: "A1 no execution", systemImage: "lock.shield", color: GorkhColors.warning)
+            GorkhStatusChip(title: "A2 tiny swap gated", systemImage: "lock.shield", color: GorkhColors.warning)
             GorkhStatusChip(title: "Main wallet disabled", systemImage: "wallet.pass", color: GorkhColors.accent)
         }
     }
@@ -74,8 +102,8 @@ struct AgentView: View {
                     .foregroundStyle(GorkhColors.primaryText)
                 HStack(spacing: 8) {
                     GorkhStatusChip(title: safetyPolicy.mainWalletAccess.label, systemImage: "xmark.shield", color: GorkhColors.warning)
-                    GorkhStatusChip(title: "No Zerion trading", systemImage: "lock", color: GorkhColors.warning)
-                    GorkhStatusChip(title: "Draft proposals only", systemImage: "doc.text", color: GorkhColors.accent)
+                    GorkhStatusChip(title: "Tiny swap only", systemImage: "arrow.left.arrow.right", color: GorkhColors.warning)
+                    GorkhStatusChip(title: "No bridge / send / signing", systemImage: "lock", color: GorkhColors.warning)
                 }
             }
         }
@@ -98,13 +126,8 @@ struct AgentView: View {
         isRefreshing = true
         let snapshot = statusService.refreshReadOnlyStatus()
         statusSnapshot = snapshot
-        policySnapshot = ZerionPolicyCenterSnapshot(
-            policies: [],
-            tokens: snapshot.agentTokenStatus == .presentRedacted ? [.unknown] : [],
-            status: snapshot.policyStatus,
-            unavailableReason: snapshot.errors.first,
-            updatedAt: snapshot.checkedAt
-        )
+        policySnapshot = statusService.loadPolicyCenter()
+        helpProbe = statusService.loadHelpProbe()
         appendAudit(.zerionCLIStatusChecked, "Zerion read/status refresh completed.")
         appendAudit(.zerionAPIKeyStatusChecked, "Zerion API key status: \(snapshot.apiKeyStatus.label).")
         if snapshot.policyStatus == .loaded {
@@ -113,9 +136,98 @@ struct AgentView: View {
         isRefreshing = false
     }
 
-    private func appendAudit(_ kind: AgentAuditEvent.Kind, _ message: String) {
+    private func createSolanaTinySwap() {
+        let proposal = ZerionTinySwapProposal.sampleSolanaTinySwap
+        tinySwapProposals.insert(proposal, at: 0)
+        appendAudit(.zerionProposalDrafted, "Solana tiny swap proposal drafted.", details: ["chain": proposal.chain.rawValue])
+    }
+
+    private func createBaseTinySwap() {
+        let proposal = ZerionTinySwapProposal.sampleBaseTinySwap
+        tinySwapProposals.insert(proposal, at: 0)
+        appendAudit(.zerionProposalDrafted, "Base tiny swap proposal drafted.", details: ["chain": proposal.chain.rawValue])
+    }
+
+    private func reviewTinySwap(_ proposal: ZerionTinySwapProposal) {
+        selectedTinySwap = proposal
+        confirmationPhrase = ""
+        unknownValueAcknowledged = false
+        executionResult = nil
+        let decision = reviewDecision(for: proposal)
+        if decision.canExecute == false {
+            appendAudit(.zerionProposalBlocked, decision.blockingReasons.first ?? "Zerion proposal blocked by policy.")
+        }
+    }
+
+    private func clearSelectedTinySwap() {
+        selectedTinySwap = nil
+        confirmationPhrase = ""
+        unknownValueAcknowledged = false
+    }
+
+    private func reviewDecision(for proposal: ZerionTinySwapProposal) -> ZerionExecutionPolicyDecision {
+        ZerionExecutionPolicy.validate(
+            proposal: proposal,
+            approval: ZerionExecutionApproval(
+                proposalID: proposal.id,
+                proposalFingerprint: proposal.fingerprint,
+                confirmationPhrase: confirmationPhrase,
+                unknownValueAcknowledged: unknownValueAcknowledged,
+                approvedAt: Date()
+            ),
+            context: executionContext()
+        )
+    }
+
+    private func commandPlan(for proposal: ZerionTinySwapProposal) -> ZerionSwapCommandPlan? {
+        try? ZerionSwapCommandBuilder.build(proposal: proposal, helpProbe: helpProbe)
+    }
+
+    private func executeSelectedTinySwap() {
+        guard let proposal = selectedTinySwap else {
+            return
+        }
+        guard let executablePath = statusSnapshot.executablePath else {
+            executionResult = .failed("Zerion CLI executable is unavailable.")
+            appendAudit(.zerionExecutionFailed, "Zerion CLI executable is unavailable.")
+            return
+        }
+
+        let approval = ZerionExecutionApproval(
+            proposalID: proposal.id,
+            proposalFingerprint: proposal.fingerprint,
+            confirmationPhrase: confirmationPhrase,
+            unknownValueAcknowledged: unknownValueAcknowledged,
+            approvedAt: Date()
+        )
+        let context = executionContext()
+        let decision = ZerionExecutionPolicy.validate(proposal: proposal, approval: approval, context: context)
+        guard decision.canExecute else {
+            executionResult = .failed(decision.blockingReasons.joined(separator: " "))
+            appendAudit(.zerionPolicyValidationFailed, decision.blockingReasons.first ?? "Zerion policy validation failed.")
+            return
+        }
+
+        appendAudit(.zerionProposalApproved, "Zerion tiny swap approved by exact phrase.", details: ["chain": proposal.chain.rawValue])
+        appendAudit(.zerionExecutionStarted, "Zerion tiny swap execution started.", details: ["chain": proposal.chain.rawValue])
+        let service = ZerionExecutionService(runner: ZerionCLICommandRunner(executablePath: executablePath))
+        let result = service.executeTinySwap(proposal: proposal, approval: approval, context: context)
+        executionResult = result
+        appendAudit(result.status == .executed ? .zerionExecutionSucceeded : .zerionExecutionFailed, result.message)
+    }
+
+    private func executionContext() -> ZerionExecutionPolicyContext {
+        ZerionExecutionPolicyContext(
+            statusSnapshot: statusSnapshot,
+            policySnapshot: policySnapshot,
+            helpProbe: helpProbe,
+            safetyPolicy: safetyPolicy
+        )
+    }
+
+    private func appendAudit(_ kind: AgentAuditEvent.Kind, _ message: String, details: [String: String] = [:]) {
         var events = auditTimeline.events
-        events.insert(AgentAuditEvent(kind: kind, message: message), at: 0)
+        events.insert(AgentAuditEvent(kind: kind, message: message, details: details), at: 0)
         auditTimeline = AgentAuditTimeline(events: Array(events.prefix(50)))
     }
 }

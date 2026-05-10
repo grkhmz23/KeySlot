@@ -9,6 +9,12 @@ struct AgentAuditEvent: Codable, Equatable, Identifiable {
         case zerionPoliciesChecked = "zerion_policies_checked"
         case zerionTokensChecked = "zerion_tokens_checked"
         case zerionProposalDrafted = "zerion_proposal_drafted"
+        case zerionProposalBlocked = "zerion_proposal_blocked"
+        case zerionProposalApproved = "zerion_proposal_approved"
+        case zerionExecutionStarted = "zerion_execution_started"
+        case zerionExecutionSucceeded = "zerion_execution_succeeded"
+        case zerionExecutionFailed = "zerion_execution_failed"
+        case zerionPolicyValidationFailed = "zerion_policy_validation_failed"
         case zerionCommandBlocked = "zerion_command_blocked"
         case zerionCommandFailed = "zerion_command_failed"
 
@@ -28,6 +34,18 @@ struct AgentAuditEvent: Codable, Equatable, Identifiable {
                 return "Zerion tokens checked"
             case .zerionProposalDrafted:
                 return "Zerion proposal drafted"
+            case .zerionProposalBlocked:
+                return "Zerion proposal blocked"
+            case .zerionProposalApproved:
+                return "Zerion proposal approved"
+            case .zerionExecutionStarted:
+                return "Zerion execution started"
+            case .zerionExecutionSucceeded:
+                return "Zerion execution succeeded"
+            case .zerionExecutionFailed:
+                return "Zerion execution failed"
+            case .zerionPolicyValidationFailed:
+                return "Zerion policy validation failed"
             case .zerionCommandBlocked:
                 return "Zerion command blocked"
             case .zerionCommandFailed:
@@ -63,7 +81,7 @@ struct AgentAuditTimeline: Codable, Equatable {
     static let initial = AgentAuditTimeline(events: [
         AgentAuditEvent(
             kind: .agentSectionViewed,
-            message: "Agent foundation loaded in no-execution A1 mode.",
+            message: "Agent foundation loaded with A2 tiny-swap execution gated.",
             details: ["mainWalletAccess": AgentMainWalletAccess.disabled.rawValue]
         )
     ])

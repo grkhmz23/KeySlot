@@ -3945,7 +3945,7 @@ struct GORKHTests {
         }
     }
 
-    @Test func agentSectionAndZerionFoundationAreNoExecution() throws {
+    @Test func agentSectionAndZerionFoundationGateTinySwapOnly() throws {
         #expect(GORKHModule.allCases.map(\.title) == ["Wallet", "Agent", "Settings"])
 
         let sourceFiles = [
@@ -3956,16 +3956,18 @@ struct GORKHTests {
             "GORKH/Modules/Agent/AgentOverviewView.swift",
             "GORKH/Modules/Agent/ZerionExecutorView.swift",
             "GORKH/Modules/Agent/ZerionPolicyCenterView.swift",
-            "GORKH/Modules/Agent/ZerionProposalView.swift"
+            "GORKH/Modules/Agent/ZerionProposalView.swift",
+            "GORKH/Modules/Agent/ZerionExecutionReviewView.swift"
         ]
         let source = try sourceFiles.map(sourceText(relativePath:)).joined(separator: "\n").lowercased()
 
         #expect(source.contains("agent"))
         #expect(source.contains("zerion executor"))
         #expect(source.contains("policy center"))
-        #expect(source.contains("draft proposals only") || source.contains("draft-only"))
-        #expect(source.contains("cannot directly sign, execute, trade"))
+        #expect(source.contains("tiny swap only"))
+        #expect(source.contains("separate zerion wallet"))
         #expect(source.contains("main wallet disabled"))
+        #expect(source.contains("no bridge / send / signing"))
         #expect(!source.contains("developer workstation"))
         #expect(!source.contains("transaction studio"))
         #expect(!source.contains("nft"))
@@ -3977,6 +3979,8 @@ struct GORKHTests {
         #expect(try ZerionCLICommandBuilder.command(from: ["wallet", "list"]) == .walletList)
         #expect(try ZerionCLICommandBuilder.command(from: ["agent", "list-policies"]) == .agentListPolicies)
         #expect(try ZerionCLICommandBuilder.command(from: ["agent", "list-tokens"]) == .agentListTokens)
+        #expect(try ZerionCLICommandBuilder.command(from: ["swap", "--help"]) == .swapHelp)
+        #expect(try ZerionCLICommandBuilder.command(from: ["agent", "--help"]) == .agentHelp)
         #expect(try ZerionCLICommandBuilder.command(from: ["portfolio", "0x0000000000000000000000000000000000000000"]) == .portfolio(address: "0x0000000000000000000000000000000000000000"))
 
         for blocked in [
@@ -4053,6 +4057,9 @@ struct GORKHTests {
         #expect(AgentSafetyPolicy.zerionA1.canUseNativeSigner == false)
         #expect(AgentSafetyPolicy.zerionA1.canReadCloakVault == false)
         #expect(AgentSafetyPolicy.zerionA1.canRunTradingCommands == false)
+        #expect(AgentSafetyPolicy.zerionA2.mainWalletAccess == .disabled)
+        #expect(AgentSafetyPolicy.zerionA2.canUseNativeSigner == false)
+        #expect(AgentSafetyPolicy.zerionA2.canReadCloakVault == false)
 
         let payload = try JSONEncoder().encode([
             String(data: JSONEncoder().encode(proposal), encoding: .utf8) ?? "",
@@ -4076,18 +4083,255 @@ struct GORKHTests {
         }
     }
 
-    @Test func agentZerionDocsExistAndStateA1Boundaries() throws {
+    @Test func zerionHelpParserAndTinySwapCommandBuilderValidateFixedShape() throws {
+        let chainFirst = ZerionCLIHelpParser.parse(
+            topHelp: "--json --wallet",
+            swapHelp: "zerion swap <chain> <amount> <from-token> <to-token>\nzerion swap base 1 USDC ETH",
+            agentHelp: "agent list-tokens"
+        )
+        #expect(chainFirst.swapCommandShape == .chainFirst)
+        #expect(chainFirst.supportsJSONFlag)
+        #expect(chainFirst.supportsWalletFlag)
+
+        let proposal = ZerionTinySwapProposal.sampleBaseTinySwap
+        let plan = try ZerionSwapCommandBuilder.build(proposal: proposal, helpProbe: chainFirst)
+        #expect(plan.arguments == ["swap", "base", "1", "USDC", "ETH", "--wallet", "manual-zerion-wallet", "--json"])
+        #expect(plan.redactedPreview.contains("zerion swap base 1 USDC ETH"))
+        #expect(!plan.redactedPreview.contains("ZERION_API_KEY"))
+
+        let tokenFirst = ZerionCLIHelpParser.parse(
+            topHelp: "--json --wallet --chain",
+            swapHelp: "zerion swap <from> <to> <amount> --chain <chain>\nzerion swap usdc eth 100 --chain base",
+            agentHelp: ""
+        )
+        let tokenFirstPlan = try ZerionSwapCommandBuilder.build(proposal: proposal, helpProbe: tokenFirst)
+        #expect(tokenFirstPlan.arguments == ["swap", "USDC", "ETH", "1", "--chain", "base", "--wallet", "manual-zerion-wallet", "--json"])
+
+        #expect(throws: ZerionSwapCommandBuilderError.self) {
+            try ZerionSwapCommandBuilder.build(proposal: proposal, helpProbe: .unchecked)
+        }
+    }
+
+    @Test func zerionTinySwapPolicyBlocksUnsafeOrUnreadyExecution() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let policy = ZerionPolicySummary(
+            id: "manual-policy",
+            name: "manual-policy",
+            allowedChains: ["base"],
+            expiresAt: Date(timeIntervalSince1970: 2_000),
+            deniesTransfers: true,
+            deniesApprovals: true,
+            allowlistCount: 1,
+            walletBinding: "manual-zerion-wallet",
+            status: .loaded
+        )
+        let token = ZerionAgentTokenSummary(id: "token-redacted", policyID: "manual-policy", status: .presentRedacted, expiresAt: nil)
+        let policySnapshot = ZerionPolicyCenterSnapshot(
+            policies: [policy],
+            tokens: [token],
+            status: .loaded,
+            unavailableReason: nil,
+            updatedAt: now
+        )
+        let status = ZerionStatusSnapshot(
+            cliStatus: .installed,
+            executablePath: "/opt/homebrew/bin/zerion",
+            nodeStatus: .installed,
+            nodeVersion: "v22.22.2",
+            apiKeyStatus: .presentRedacted,
+            agentTokenStatus: .presentRedacted,
+            policyStatus: .loaded,
+            swapHelpStatus: .succeeded,
+            swapCommandShape: .chainFirst,
+            walletCount: 1,
+            policyCount: 1,
+            tokenCount: 1,
+            supportedChains: ["base"],
+            errors: [],
+            checkedAt: now
+        )
+        let help = ZerionCLIHelpProbe(
+            topHelpAvailable: true,
+            swapHelpAvailable: true,
+            agentHelpAvailable: true,
+            swapCommandShape: .chainFirst,
+            supportsJSONFlag: true,
+            supportsWalletFlag: true,
+            supportsChainFlag: true,
+            checkedAt: now
+        )
+        let proposal = ZerionTinySwapProposal(
+            zerionWalletName: "manual-zerion-wallet",
+            chain: .base,
+            fromToken: "USDC",
+            toToken: "ETH",
+            amount: 1,
+            estimatedNotionalUSD: 1,
+            policyID: "manual-policy",
+            policyName: "manual-policy",
+            expiresAt: nil,
+            riskNotes: [],
+            createdAt: now
+        )
+        let approval = ZerionExecutionApproval(
+            proposalID: proposal.id,
+            proposalFingerprint: proposal.fingerprint,
+            confirmationPhrase: ZerionTinySwapProposal.requiredConfirmationPhrase,
+            unknownValueAcknowledged: false,
+            approvedAt: now
+        )
+        let context = ZerionExecutionPolicyContext(
+            statusSnapshot: status,
+            policySnapshot: policySnapshot,
+            helpProbe: help,
+            now: now
+        )
+        #expect(ZerionExecutionPolicy.validate(proposal: proposal, approval: approval, context: context).canExecute)
+
+        let wrongChain = ZerionTinySwapProposal(
+            zerionWalletName: "manual-zerion-wallet",
+            chain: .solana,
+            fromToken: "SOL",
+            toToken: "USDC",
+            amount: Decimal(string: "0.001") ?? 0,
+            estimatedNotionalUSD: 1,
+            policyID: "manual-policy",
+            policyName: "manual-policy",
+            expiresAt: nil,
+            riskNotes: [],
+            createdAt: now
+        )
+        let wrongChainDecision = ZerionExecutionPolicy.validate(proposal: wrongChain, approval: ZerionExecutionApproval(
+            proposalID: wrongChain.id,
+            proposalFingerprint: wrongChain.fingerprint,
+            confirmationPhrase: ZerionTinySwapProposal.requiredConfirmationPhrase,
+            unknownValueAcknowledged: false,
+            approvedAt: now
+        ), context: context)
+        #expect(!wrongChainDecision.canExecute)
+        #expect(wrongChainDecision.blockingReasons.contains { $0.lowercased().contains("chain") })
+
+        let aboveCap = ZerionTinySwapProposal(
+            zerionWalletName: "manual-zerion-wallet",
+            chain: .base,
+            fromToken: "USDC",
+            toToken: "ETH",
+            amount: 10,
+            estimatedNotionalUSD: 10,
+            policyID: "manual-policy",
+            policyName: "manual-policy",
+            expiresAt: nil,
+            riskNotes: [],
+            createdAt: now
+        )
+        #expect(!ZerionExecutionPolicy.validate(proposal: aboveCap, approval: ZerionExecutionApproval(
+            proposalID: aboveCap.id,
+            proposalFingerprint: aboveCap.fingerprint,
+            confirmationPhrase: ZerionTinySwapProposal.requiredConfirmationPhrase,
+            unknownValueAcknowledged: false,
+            approvedAt: now
+        ), context: context).canExecute)
+
+        let stale = ZerionTinySwapProposal(
+            zerionWalletName: "manual-zerion-wallet",
+            chain: .base,
+            fromToken: "USDC",
+            toToken: "ETH",
+            amount: 1,
+            estimatedNotionalUSD: 1,
+            policyID: "manual-policy",
+            policyName: "manual-policy",
+            expiresAt: nil,
+            riskNotes: [],
+            createdAt: now.addingTimeInterval(-3600)
+        )
+        #expect(!ZerionExecutionPolicy.validate(proposal: stale, approval: ZerionExecutionApproval(
+            proposalID: stale.id,
+            proposalFingerprint: "mismatch",
+            confirmationPhrase: ZerionTinySwapProposal.requiredConfirmationPhrase,
+            unknownValueAcknowledged: false,
+            approvedAt: now
+        ), context: context).canExecute)
+
+        var missingAPI = status
+        missingAPI = ZerionStatusSnapshot(
+            cliStatus: missingAPI.cliStatus,
+            executablePath: missingAPI.executablePath,
+            nodeStatus: missingAPI.nodeStatus,
+            nodeVersion: missingAPI.nodeVersion,
+            apiKeyStatus: .missing,
+            agentTokenStatus: missingAPI.agentTokenStatus,
+            policyStatus: missingAPI.policyStatus,
+            swapHelpStatus: missingAPI.swapHelpStatus,
+            swapCommandShape: missingAPI.swapCommandShape,
+            walletCount: missingAPI.walletCount,
+            policyCount: missingAPI.policyCount,
+            tokenCount: missingAPI.tokenCount,
+            supportedChains: missingAPI.supportedChains,
+            errors: [],
+            checkedAt: now
+        )
+        #expect(!ZerionExecutionPolicy.validate(proposal: proposal, approval: approval, context: ZerionExecutionPolicyContext(
+            statusSnapshot: missingAPI,
+            policySnapshot: policySnapshot,
+            helpProbe: help,
+            now: now
+        )).canExecute)
+    }
+
+    @Test func zerionExecutionResultParsingAndModelsStaySafe() throws {
+        let success = ZerionCommandResult(
+            command: "zerion_tiny_swap",
+            status: .succeeded,
+            exitCode: 0,
+            stdoutSummary: #"{"status":"submitted","chain":"base","txHash":"0xabc123"}"#,
+            stderrSummary: "",
+            completedAt: Date(timeIntervalSince1970: 0)
+        )
+        let parsed = ZerionExecutionResultParser.parse(commandResult: success, fallbackChain: .base)
+        #expect(parsed.status == .executed)
+        #expect(parsed.transactionHash == "0xabc123")
+        #expect(parsed.explorerURL?.absoluteString.contains("basescan.org") == true)
+
+        let failure = ZerionCommandResult(
+            command: "zerion_tiny_swap",
+            status: .failed,
+            exitCode: 1,
+            stdoutSummary: "",
+            stderrSummary: #"{"errors":[{"code":"POLICY_DENIED","message":"policy rejected"}]}"#,
+            completedAt: Date(timeIntervalSince1970: 0)
+        )
+        let failed = ZerionExecutionResultParser.parse(commandResult: failure, fallbackChain: .base)
+        #expect(failed.status == .failed)
+        #expect(failed.message.lowercased().contains("policy"))
+
+        let encoded = try JSONEncoder().encode([
+            String(data: JSONEncoder().encode(ZerionTinySwapProposal.sampleBaseTinySwap), encoding: .utf8) ?? "",
+            String(data: JSONEncoder().encode(parsed), encoding: .utf8) ?? ""
+        ])
+        let json = try #require(String(data: encoded, encoding: .utf8)).lowercased()
+        for forbidden in ["privatekey", "secretkey", "seedphrase", "signingseed", "walletjson", "zerion_api_key", "agenttoken", "nft"] {
+            #expect(!json.contains(forbidden))
+        }
+    }
+
+    @Test func agentZerionDocsExistAndStateExecutionBoundaries() throws {
         let architecture = try sourceText(relativePath: "../../../docs/architecture/agent-zerion-executor.md").lowercased()
         let smoke = try sourceText(relativePath: "../../../docs/qa/agent-zerion-foundation-smoke.md").lowercased()
+        let tinySmoke = try sourceText(relativePath: "../../../docs/qa/zerion-tiny-transaction-smoke.md").lowercased()
 
-        #expect(architecture.contains("no-execution"))
+        #expect(architecture.contains("a2 allows one policy-validated tiny same-chain zerion swap only"))
         #expect(architecture.contains("separate from the gorkh wallet"))
         #expect(architecture.contains("a1 allows read/status zerion cli commands only"))
-        #expect(architecture.contains("draft proposals cannot execute or sign"))
+        #expect(architecture.contains("if help is unavailable or ambiguous, live execution remains locked"))
         #expect(smoke.contains("zerion executor"))
         #expect(smoke.contains("do not add"))
         #expect(smoke.contains("a2"))
+        #expect(tinySmoke.contains("zerion tiny transaction smoke"))
+        #expect(tinySmoke.contains("separate zerion wallet"))
+        #expect(tinySmoke.contains("do not run bridge, send, sign-message, or sign-typed-data"))
         #expect(!architecture.contains("nft"))
+        #expect(!tinySmoke.contains("nft"))
     }
 
     @Test func sharedXcodeSchemeContainsNoSecretEnvironmentValues() throws {
@@ -4102,7 +4346,12 @@ struct GORKHTests {
             "SECRET_KEY",
             "MNEMONIC",
             "SEED",
-            "WALLET_JSON"
+            "WALLET_JSON",
+            "ZERION_API_KEY",
+            "WALLET_PRIVATE_KEY",
+            "EVM_PRIVATE_KEY",
+            "SOLANA_PRIVATE_KEY",
+            "TEMPO_PRIVATE_KEY"
         ] {
             #expect(!uppercased.contains(forbidden))
         }
