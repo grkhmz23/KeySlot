@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 final class AppState: ObservableObject {
     @Published var selectedModule: GORKHModule = .wallet
+    @Published var requestedWalletSection: WalletSection?
 
     let walletManager: WalletManager
 
@@ -13,6 +14,11 @@ final class AppState: ObservableObject {
 
     init(walletManager: WalletManager) {
         self.walletManager = walletManager
+    }
+
+    func requestWalletSection(_ section: WalletSection) {
+        requestedWalletSection = section
+        selectedModule = .wallet
     }
 }
 

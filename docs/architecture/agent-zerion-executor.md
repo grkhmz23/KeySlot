@@ -1,6 +1,6 @@
 # Agent Zerion Executor
 
-Phase A1 added the top-level Agent section and Zerion Executor foundation. Phase A2 adds one tightly scoped execution path: an explicitly approved tiny same-chain Zerion swap from a separate Zerion wallet.
+Phase A1 added the top-level Agent section and Zerion Executor foundation. Phase A2 adds one tightly scoped execution path: an explicitly approved tiny same-chain Zerion swap from a separate Zerion wallet. Phase A3 adds Agent chat as a proposal and handoff layer; chat does not execute.
 
 ## Source Guidance
 
@@ -90,12 +90,26 @@ If help is unavailable or ambiguous, live execution remains locked with a clear 
 The Agent section contains:
 
 - Overview
+- Chat
 - Zerion Executor
 - Policy Center
 - Proposals
 - Audit
 
-The Zerion Executor shows CLI status, API key status, token status, policy status, wallet count, supported chains, last check time, and safe errors. Policy Center reads policy/token status when the CLI is configured. Legacy proposals remain draft-only; A2 adds a separate tiny-swap proposal type with a guarded execution flow.
+The Zerion Executor shows CLI status, API key status, token status, policy status, wallet count, supported chains, last check time, and safe errors. Policy Center reads policy/token status when the CLI is configured. Legacy proposals remain draft-only; A2 adds a separate tiny-swap proposal type with a guarded execution flow. A3 chat can create a Zerion tiny-swap proposal only by handing off to this existing review flow.
+
+## Agent Chat Boundary
+
+Agent chat classifies wallet, DeFi, and trading intents with local deterministic parsing. It can create:
+
+- Wallet swap draft handoffs,
+- Wallet send draft handoffs,
+- PUSD payment draft handoffs,
+- Cloak private payment draft handoffs,
+- Zerion tiny-swap handoffs,
+- read-only yield, LP, PnL, activity, risk, and portfolio analysis.
+
+Chat cannot sign, simulate, submit, or confirm transactions. It cannot call raw Zerion commands, add new Zerion execution commands, or access GORKH wallet secrets. Every executable proposal must continue in the destination module with that module's normal approval controls.
 
 ## Proposal Model
 
@@ -127,6 +141,14 @@ The required phrase is:
 Agent/Zerion audit events are safe local timeline entries:
 
 - Agent section viewed
+- Agent chat message received
+- Agent intent classified
+- Agent policy decision made
+- Agent proposal created
+- Agent proposal handed off
+- Agent read-only analysis performed
+- Agent unsupported request blocked
+- Agent unsafe request blocked
 - Zerion CLI status checked
 - API key status checked
 - wallet list checked

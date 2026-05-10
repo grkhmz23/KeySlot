@@ -1,12 +1,25 @@
 import SwiftUI
 
 struct AgentView: View {
+    @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var walletManager: WalletManager
     @State private var selectedSection: AgentSection = .overview
     @State private var statusSnapshot = ZerionStatusService().localSnapshot()
     @State private var policySnapshot = ZerionPolicyCenterSnapshot.unchecked
     @State private var auditTimeline = AgentAuditTimeline.initial
     @State private var proposals: [ZerionProposal] = [.sampleDraft]
     @State private var tinySwapProposals: [ZerionTinySwapProposal] = []
+    @State private var agentProposals: [AgentProposal] = []
+    @State private var chatMessages: [AgentChatMessage] = [
+        AgentChatMessage(
+            role: .assistant,
+            text: "Ask me to summarize your portfolio, review yield or LP positions, draft a Wallet handoff, or prepare a policy-scoped Zerion tiny swap. I create proposals only."
+        )
+    ]
+    @State private var chatDraft = ""
+    @State private var lastIntent: AgentIntentClassification?
+    @State private var toolResults: [AgentToolResult] = []
+    @State private var agentMemory = AgentMemoryStore()
     @State private var selectedTinySwap: ZerionTinySwapProposal?
     @State private var helpProbe = ZerionCLIHelpProbe.unchecked
     @State private var confirmationPhrase = ""
@@ -27,9 +40,21 @@ struct AgentView: View {
                 switch selectedSection {
                 case .overview:
                     AgentOverviewView(
-                        snapshot: AgentOverviewSnapshot.from(status: statusSnapshot, draftProposalCount: proposals.count + tinySwapProposals.count),
+                        snapshot: AgentOverviewSnapshot.from(status: statusSnapshot, draftProposalCount: proposals.count + tinySwapProposals.count + agentProposals.count),
                         safetyPolicy: safetyPolicy,
                         refreshAction: refreshStatus
+                    )
+                case .chat:
+                    AgentChatView(
+                        safetyPolicy: safetyPolicy,
+                        messages: $chatMessages,
+                        draftText: $chatDraft,
+                        lastIntent: lastIntent,
+                        proposals: agentProposals,
+                        toolResults: toolResults,
+                        memoryEntries: agentMemory.entries,
+                        submitAction: submitChatMessage,
+                        handoffAction: handoffAgentProposal
                     )
                 case .zerionExecutor:
                     ZerionExecutorView(
@@ -83,13 +108,13 @@ struct AgentView: View {
                     .font(.largeTitle)
                     .fontWeight(.semibold)
                     .foregroundStyle(GorkhColors.primaryText)
-                Text("Observe wallet context, inspect Zerion readiness, and review one policy-scoped tiny swap.")
+                Text("Classify intents, prepare proposals, and hand off to Wallet or Zerion review.")
                     .foregroundStyle(GorkhColors.secondaryText)
             }
 
             Spacer()
 
-            GorkhStatusChip(title: "A2 tiny swap gated", systemImage: "lock.shield", color: GorkhColors.warning)
+            GorkhStatusChip(title: "Policy-gated proposals", systemImage: "lock.shield", color: GorkhColors.warning)
             GorkhStatusChip(title: "Main wallet disabled", systemImage: "wallet.pass", color: GorkhColors.accent)
         }
     }
@@ -102,7 +127,7 @@ struct AgentView: View {
                     .foregroundStyle(GorkhColors.primaryText)
                 HStack(spacing: 8) {
                     GorkhStatusChip(title: safetyPolicy.mainWalletAccess.label, systemImage: "xmark.shield", color: GorkhColors.warning)
-                    GorkhStatusChip(title: "Tiny swap only", systemImage: "arrow.left.arrow.right", color: GorkhColors.warning)
+                    GorkhStatusChip(title: "Chat proposals only", systemImage: "doc.badge.gearshape", color: GorkhColors.warning)
                     GorkhStatusChip(title: "No bridge / send / signing", systemImage: "lock", color: GorkhColors.warning)
                 }
             }
@@ -134,6 +159,121 @@ struct AgentView: View {
             appendAudit(.zerionPoliciesChecked, "Zerion policies/tokens checked.")
         }
         isRefreshing = false
+    }
+
+    private func submitChatMessage() {
+        let input = chatDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard input.isEmpty == false else {
+            return
+        }
+
+        chatDraft = ""
+        let userMessage = AgentChatMessage(role: .user, text: input)
+        chatMessages.append(userMessage)
+        appendAudit(.agentChatMessageReceived, "Agent chat message received.", details: ["length": "\(input.count)"])
+
+        let classification = AgentIntentClassifier().classify(input)
+        lastIntent = classification
+        appendAudit(
+            .agentIntentClassified,
+            "Intent classified as \(classification.intentType.title).",
+            details: ["intent": classification.intentType.rawValue]
+        )
+
+        let lane = AgentExecutionLaneRouter.route(
+            classification,
+            walletIsWatchOnly: walletManager.selectedProfile?.isWatchOnly == true
+        )
+
+        if lane == .readOnlyAnalysis {
+            let result = AgentDeFiOpportunityAnalyzer.analyze(
+                classification: classification,
+                portfolioSummary: walletManager.portfolioSummary,
+                pnlSummary: walletManager.portfolioPnLSummary,
+                auditEvents: walletManager.auditEvents
+            )
+            toolResults.insert(result, at: 0)
+            agentMemory.remember(intent: classification, result: result)
+            chatMessages.append(AgentChatMessage(role: .assistant, text: result.summary))
+            appendAudit(.agentReadOnlyAnalysisPerformed, result.title, details: ["intent": classification.intentType.rawValue])
+            return
+        }
+
+        let decision = AgentPolicyEngine.evaluate(
+            classification: classification,
+            lane: lane,
+            context: AgentPolicyContext(
+                walletCanSign: walletManager.selectedProfile?.canSign == true,
+                walletIsWatchOnly: walletManager.selectedProfile?.isWatchOnly == true,
+                selectedNetwork: walletManager.selectedNetwork,
+                zerionStatus: statusSnapshot
+            )
+        )
+        appendAudit(
+            .agentPolicyDecisionMade,
+            "Agent policy decision: \(decision.status.rawValue).",
+            details: ["lane": lane.rawValue, "intent": classification.intentType.rawValue]
+        )
+
+        let proposal = AgentProposalFactory.makeProposal(classification: classification, lane: lane, decision: decision)
+        agentProposals.insert(proposal, at: 0)
+        agentMemory.remember(intent: classification, proposal: proposal)
+
+        switch decision.status {
+        case .allowed:
+            chatMessages.append(AgentChatMessage(role: .assistant, text: "\(proposal.title) is ready for destination-module review. I will not execute it from chat."))
+            appendAudit(.agentProposalCreated, proposal.title, details: ["handoff": proposal.handoffTarget.rawValue])
+        case .needsMoreInput:
+            chatMessages.append(AgentChatMessage(role: .assistant, text: "I need more details before creating a reviewable proposal: \(decision.reasons.joined(separator: " "))"))
+            appendAudit(.agentProposalCreated, "Agent created a missing-fields proposal.", details: ["intent": classification.intentType.rawValue])
+        case .blocked:
+            chatMessages.append(AgentChatMessage(role: .assistant, text: "Blocked by local policy: \(decision.reasons.joined(separator: " "))"))
+            let kind: AgentAuditEvent.Kind = classification.intentType == .unsafe ? .agentUnsafeRequestBlocked : (classification.intentType == .unsupported ? .agentUnsupportedRequestBlocked : .agentProposalBlocked)
+            appendAudit(kind, decision.reasons.first ?? "Agent proposal blocked.", details: ["intent": classification.intentType.rawValue])
+        }
+    }
+
+    private func handoffAgentProposal(_ proposal: AgentProposal) {
+        guard proposal.status == .readyForReview, proposal.isExpired == false else {
+            appendAudit(.agentProposalBlocked, "Agent handoff blocked because proposal is not ready or has expired.")
+            return
+        }
+
+        switch proposal.handoffTarget {
+        case .walletSwap:
+            markAgentProposalHandedOff(proposal)
+            appState.requestWalletSection(.swap)
+        case .walletSend:
+            markAgentProposalHandedOff(proposal)
+            appState.requestWalletSection(.send)
+        case .walletPrivate:
+            markAgentProposalHandedOff(proposal)
+            appState.requestWalletSection(.privateWallet)
+        case .walletPortfolio:
+            markAgentProposalHandedOff(proposal)
+            appState.requestWalletSection(.portfolio)
+        case .zerionReview:
+            guard let tinySwap = AgentProposalFactory.makeZerionTinySwap(from: proposal) else {
+                appendAudit(.zerionProposalBlocked, "Agent Zerion handoff failed validation.")
+                return
+            }
+            tinySwapProposals.insert(tinySwap, at: 0)
+            selectedTinySwap = tinySwap
+            selectedSection = .proposals
+            confirmationPhrase = ""
+            unknownValueAcknowledged = false
+            executionResult = nil
+            markAgentProposalHandedOff(proposal)
+        case .none:
+            appendAudit(.agentProposalBlocked, "Agent proposal has no destination handoff.")
+        }
+    }
+
+    private func markAgentProposalHandedOff(_ proposal: AgentProposal) {
+        if let index = agentProposals.firstIndex(where: { $0.id == proposal.id }) {
+            agentProposals[index] = proposal.replacingStatus(.handedOff)
+        }
+        appendAudit(.agentProposalHandedOff, "\(proposal.title) handed off.", details: ["target": proposal.handoffTarget.rawValue])
     }
 
     private func createSolanaTinySwap() {

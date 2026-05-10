@@ -2,6 +2,7 @@ import Combine
 import SwiftUI
 
 struct WalletView: View {
+    @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var walletManager: WalletManager
     @State private var selectedSection: WalletSection = .overview
     private let autoLockTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
@@ -41,6 +42,17 @@ struct WalletView: View {
         }
         .onChange(of: walletManager.selectedWalletID) { _, _ in
             normalizeSelectedSection()
+        }
+        .onChange(of: appState.requestedWalletSection) { _, section in
+            guard let section else {
+                return
+            }
+            if availableSections.contains(section) {
+                selectedSection = section
+            } else {
+                selectedSection = .overview
+            }
+            appState.requestedWalletSection = nil
         }
     }
 

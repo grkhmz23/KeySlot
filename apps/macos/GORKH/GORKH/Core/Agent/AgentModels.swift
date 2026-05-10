@@ -2,6 +2,7 @@ import Foundation
 
 enum AgentSection: String, CaseIterable, Identifiable, Codable {
     case overview
+    case chat
     case zerionExecutor
     case policyCenter
     case proposals
@@ -13,6 +14,8 @@ enum AgentSection: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .overview:
             return "Overview"
+        case .chat:
+            return "Chat"
         case .zerionExecutor:
             return "Zerion Executor"
         case .policyCenter:
@@ -86,11 +89,12 @@ struct AgentSafetyPolicy: Codable, Equatable {
         canUseNativeSigner: false,
         canReadCloakVault: false,
         canRunTradingCommands: true,
-        safetyBanner: "GORKH Agent can observe, summarize, draft, and hand off. In A2, only an explicitly approved tiny Zerion swap can execute from a separate Zerion wallet.",
+        safetyBanner: "GORKH Agent can observe, summarize, draft, and hand off. Chat creates proposals only; execution stays inside Wallet or Zerion review.",
         invariants: [
             "Zerion wallet is separate from the GORKH wallet.",
             "No GORKH Keychain signer, recovery phrase, private key, or Cloak private state is exposed.",
-            "A2 allows one policy-validated tiny same-chain Zerion swap only.",
+            "Zerion execution remains limited to the existing policy-validated tiny same-chain swap flow.",
+            "Main-wallet, Private, Send, and Swap intents require destination-module approval.",
             "Bridge, send, signing, recurring automation, and main-wallet execution remain blocked."
         ]
     )

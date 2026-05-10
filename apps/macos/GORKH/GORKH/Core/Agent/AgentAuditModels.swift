@@ -17,6 +17,15 @@ struct AgentAuditEvent: Codable, Equatable, Identifiable {
         case zerionPolicyValidationFailed = "zerion_policy_validation_failed"
         case zerionCommandBlocked = "zerion_command_blocked"
         case zerionCommandFailed = "zerion_command_failed"
+        case agentChatMessageReceived = "agent_chat_message_received"
+        case agentIntentClassified = "agent_intent_classified"
+        case agentProposalCreated = "agent_proposal_created"
+        case agentProposalBlocked = "agent_proposal_blocked"
+        case agentProposalHandedOff = "agent_proposal_handed_off"
+        case agentPolicyDecisionMade = "agent_policy_decision_made"
+        case agentReadOnlyAnalysisPerformed = "agent_read_only_analysis_performed"
+        case agentUnsupportedRequestBlocked = "agent_unsupported_request_blocked"
+        case agentUnsafeRequestBlocked = "agent_unsafe_request_blocked"
 
         var label: String {
             switch self {
@@ -50,6 +59,24 @@ struct AgentAuditEvent: Codable, Equatable, Identifiable {
                 return "Zerion command blocked"
             case .zerionCommandFailed:
                 return "Zerion command failed"
+            case .agentChatMessageReceived:
+                return "Agent chat message received"
+            case .agentIntentClassified:
+                return "Agent intent classified"
+            case .agentProposalCreated:
+                return "Agent proposal created"
+            case .agentProposalBlocked:
+                return "Agent proposal blocked"
+            case .agentProposalHandedOff:
+                return "Agent proposal handed off"
+            case .agentPolicyDecisionMade:
+                return "Agent policy decision made"
+            case .agentReadOnlyAnalysisPerformed:
+                return "Agent read-only analysis performed"
+            case .agentUnsupportedRequestBlocked:
+                return "Agent unsupported request blocked"
+            case .agentUnsafeRequestBlocked:
+                return "Agent unsafe request blocked"
             }
         }
     }

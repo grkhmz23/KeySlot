@@ -3952,7 +3952,17 @@ struct GORKHTests {
             "GORKH/App/AppState.swift",
             "GORKH/App/GORKHShellView.swift",
             "GORKH/Core/Agent/AgentModels.swift",
+            "GORKH/Core/Agent/AgentChatModels.swift",
+            "GORKH/Core/Agent/AgentIntentClassifier.swift",
+            "GORKH/Core/Agent/AgentExecutionLaneRouter.swift",
+            "GORKH/Core/Agent/AgentPolicyEngine.swift",
+            "GORKH/Core/Agent/AgentProposalFactory.swift",
+            "GORKH/Core/Agent/AgentProposalModels.swift",
+            "GORKH/Core/Agent/AgentMemoryStore.swift",
             "GORKH/Modules/Agent/AgentView.swift",
+            "GORKH/Modules/Agent/AgentChatView.swift",
+            "GORKH/Modules/Agent/AgentIntentCardView.swift",
+            "GORKH/Modules/Agent/AgentProposalCardView.swift",
             "GORKH/Modules/Agent/AgentOverviewView.swift",
             "GORKH/Modules/Agent/ZerionExecutorView.swift",
             "GORKH/Modules/Agent/ZerionPolicyCenterView.swift",
@@ -3962,9 +3972,10 @@ struct GORKHTests {
         let source = try sourceFiles.map(sourceText(relativePath:)).joined(separator: "\n").lowercased()
 
         #expect(source.contains("agent"))
+        #expect(source.contains("chat"))
         #expect(source.contains("zerion executor"))
         #expect(source.contains("policy center"))
-        #expect(source.contains("tiny swap only"))
+        #expect(source.contains("proposals only") || source.contains("tiny swap only"))
         #expect(source.contains("separate zerion wallet"))
         #expect(source.contains("main wallet disabled"))
         #expect(source.contains("no bridge / send / signing"))
@@ -4109,6 +4120,161 @@ struct GORKHTests {
 
         #expect(throws: ZerionSwapCommandBuilderError.self) {
             try ZerionSwapCommandBuilder.build(proposal: proposal, helpProbe: .unchecked)
+        }
+    }
+
+    @Test func agentIntentClassifierCoversWalletDeFiAndPrivateRequests() {
+        let classifier = AgentIntentClassifier()
+        let mint = "CZzgUBvxaMLwMhVSLgqJn3npmxoTo6nzMNQPAnwtHF3s"
+
+        let buy = classifier.classify("buy \(mint) for 5 SOL")
+        #expect(buy.intentType == .tokenBuyRequest)
+        #expect(buy.amount == Decimal(5))
+        #expect(buy.sourceAsset == "SOL")
+        #expect(buy.targetAsset == mint)
+        #expect(buy.chain == "solana")
+
+        let swap = classifier.classify("swap 100 USDC to SOL")
+        #expect(swap.intentType == .tokenSwapRequest)
+        #expect(swap.amount == Decimal(100))
+        #expect(swap.sourceAsset == "USDC")
+        #expect(swap.targetAsset == "SOL")
+
+        let pusd = classifier.classify("send 10 PUSD to \(SolanaConstants.systemProgramID)")
+        #expect(pusd.intentType == .pusdPaymentRequest)
+        #expect(pusd.sourceAsset == "PUSD")
+        #expect(pusd.recipient == SolanaConstants.systemProgramID)
+
+        let privatePayment = classifier.classify("prepare a private Cloak payment")
+        #expect(privatePayment.intentType == .cloakPrivatePaymentRequest)
+        #expect(privatePayment.missingFields.contains("amount"))
+        #expect(privatePayment.missingFields.contains("recipient"))
+
+        let lp = classifier.classify("check my LP pools and find better positions")
+        #expect(lp.intentType == .lpPositionReview)
+        #expect(lp.riskFlags.contains(.readOnlyOnly))
+
+        let yield = classifier.classify("find safer yield for USDC")
+        #expect(yield.intentType == .yieldSearch)
+        #expect(yield.sourceAsset == "USDC")
+
+        let recent = classifier.classify("show what changed today")
+        #expect(recent.intentType == .recentActivitySummary)
+    }
+
+    @Test func agentPolicyRoutesProposalsWithoutChatExecution() throws {
+        let classifier = AgentIntentClassifier()
+        let status = ZerionStatusSnapshot(
+            cliStatus: .installed,
+            executablePath: "/opt/homebrew/bin/zerion",
+            nodeStatus: .installed,
+            nodeVersion: "v22.22.2",
+            apiKeyStatus: .presentRedacted,
+            agentTokenStatus: .presentRedacted,
+            policyStatus: .loaded,
+            swapHelpStatus: .succeeded,
+            swapCommandShape: .chainFirst,
+            walletCount: 1,
+            policyCount: 1,
+            tokenCount: 1,
+            supportedChains: ["base", "solana"],
+            errors: [],
+            checkedAt: Date(timeIntervalSince1970: 0)
+        )
+
+        let mainSwap = classifier.classify("swap 1 USDC to SOL")
+        let mainLane = AgentExecutionLaneRouter.route(mainSwap, walletIsWatchOnly: false)
+        #expect(mainLane == .mainWallet)
+        let mainDecision = AgentPolicyEngine.evaluate(
+            classification: mainSwap,
+            lane: mainLane,
+            context: AgentPolicyContext(walletCanSign: true, walletIsWatchOnly: false, selectedNetwork: .mainnetBeta, zerionStatus: status)
+        )
+        let proposal = AgentProposalFactory.makeProposal(classification: mainSwap, lane: mainLane, decision: mainDecision)
+        #expect(proposal.status == .readyForReview)
+        #expect(proposal.handoffTarget == .walletSwap)
+        #expect(proposal.policyDecision.warnings.contains { $0.contains("destination Wallet module") })
+
+        let watchOnlyLane = AgentExecutionLaneRouter.route(mainSwap, walletIsWatchOnly: true)
+        let watchOnlyDecision = AgentPolicyEngine.evaluate(
+            classification: mainSwap,
+            lane: watchOnlyLane,
+            context: AgentPolicyContext(walletCanSign: false, walletIsWatchOnly: true, selectedNetwork: .mainnetBeta, zerionStatus: status)
+        )
+        #expect(watchOnlyLane == .watchOnlyAnalysis)
+        #expect(watchOnlyDecision.status == .blocked)
+
+        let highZerion = classifier.classify("zerion swap 100 USDC to ETH on base")
+        let zerionDecision = AgentPolicyEngine.evaluate(
+            classification: highZerion,
+            lane: AgentExecutionLaneRouter.route(highZerion),
+            context: AgentPolicyContext(walletCanSign: true, walletIsWatchOnly: false, selectedNetwork: .mainnetBeta, zerionStatus: status)
+        )
+        #expect(zerionDecision.status == .blocked)
+        #expect(zerionDecision.reasons.contains { $0.lowercased().contains("cap") })
+
+        let safeZerion = classifier.classify("zerion swap 1 USDC to ETH on base")
+        let safeDecision = AgentPolicyEngine.evaluate(
+            classification: safeZerion,
+            lane: AgentExecutionLaneRouter.route(safeZerion),
+            context: AgentPolicyContext(walletCanSign: true, walletIsWatchOnly: false, selectedNetwork: .mainnetBeta, zerionStatus: status)
+        )
+        let safeProposal = AgentProposalFactory.makeProposal(classification: safeZerion, lane: .zerionAgentWallet, decision: safeDecision)
+        #expect(safeProposal.status == .readyForReview)
+        #expect(safeProposal.handoffTarget == .zerionReview)
+        let tiny = try #require(AgentProposalFactory.makeZerionTinySwap(from: safeProposal))
+        #expect(tiny.chain == .base)
+        #expect(tiny.fromToken == "USDC")
+        #expect(tiny.toToken == "ETH")
+    }
+
+    @Test func agentBlocksUnsupportedUnsafeAndMissingFieldRequests() {
+        let classifier = AgentIntentClassifier()
+        let missing = classifier.classify("buy this token for 5 SOL")
+        #expect(missing.intentType == .tokenBuyRequest)
+        #expect(missing.missingFields.contains("token or mint"))
+        let missingProposal = AgentProposalFactory.makeProposal(
+            classification: missing,
+            lane: .mainWallet,
+            decision: AgentPolicyDecision.needsMoreInput(missing.missingFields.map { "Missing \($0)." })
+        )
+        #expect(missingProposal.status == .missingFields)
+
+        let bridge = classifier.classify("bridge 5 USDC")
+        #expect(bridge.intentType == .unsupported)
+        #expect(AgentExecutionLaneRouter.route(bridge) == .unsupported)
+
+        let unsafe = classifier.classify("run /bin/sh with private key: abc")
+        #expect(unsafe.intentType == .unsafe)
+        #expect(unsafe.riskFlags.contains(.unsafeSecretRequest))
+    }
+
+    @Test func agentMemoryAndAuditRedactionContainNoSecrets() throws {
+        let sensitive = "ZERION_API_KEY=zk_unit_test_secret agent token: spend-power private key: abc"
+        let message = AgentChatMessage(role: .user, text: sensitive)
+        #expect(!message.text.contains("zk_unit_test_secret"))
+        #expect(!message.text.contains("spend-power"))
+        #expect(!message.text.contains("abc"))
+
+        let classification = AgentIntentClassifier().classify("swap 1 USDC to SOL")
+        let decision = AgentPolicyDecision.allowed(warnings: ["Agent cannot execute from chat."])
+        let proposal = AgentProposalFactory.makeProposal(classification: classification, lane: .mainWallet, decision: decision)
+        var memory = AgentMemoryStore()
+        memory.remember(intent: classification, proposal: proposal)
+
+        let event = AgentAuditEvent(kind: .agentChatMessageReceived, message: sensitive, details: ["agentToken": "spend-power"])
+        let json = try #require(String(data: JSONEncoder().encode([message, AgentChatMessage(role: .assistant, text: event.message)]), encoding: .utf8)).lowercased()
+        let memoryJSON = try #require(String(data: JSONEncoder().encode(memory), encoding: .utf8)).lowercased()
+        let eventJSON = try #require(String(data: JSONEncoder().encode(event), encoding: .utf8)).lowercased()
+
+        for payload in [json, memoryJSON, eventJSON] {
+            #expect(!payload.contains("zk_unit_test_secret"))
+            #expect(!payload.contains("spend-power"))
+            #expect(!payload.contains("privatekey"))
+            #expect(!payload.contains("walletjson"))
+            #expect(!payload.contains("serializedtransaction"))
+            #expect(!payload.contains("transactionpayload"))
+            #expect(!payload.contains("nft"))
         }
     }
 
@@ -4317,21 +4483,31 @@ struct GORKHTests {
 
     @Test func agentZerionDocsExistAndStateExecutionBoundaries() throws {
         let architecture = try sourceText(relativePath: "../../../docs/architecture/agent-zerion-executor.md").lowercased()
+        let operatorArchitecture = try sourceText(relativePath: "../../../docs/architecture/agent-policy-wallet-operator.md").lowercased()
         let smoke = try sourceText(relativePath: "../../../docs/qa/agent-zerion-foundation-smoke.md").lowercased()
         let tinySmoke = try sourceText(relativePath: "../../../docs/qa/zerion-tiny-transaction-smoke.md").lowercased()
+        let operatorSmoke = try sourceText(relativePath: "../../../docs/qa/agent-policy-wallet-operator-smoke.md").lowercased()
 
         #expect(architecture.contains("a2 allows one policy-validated tiny same-chain zerion swap only"))
+        #expect(architecture.contains("phase a3 adds agent chat as a proposal and handoff layer"))
         #expect(architecture.contains("separate from the gorkh wallet"))
         #expect(architecture.contains("a1 allows read/status zerion cli commands only"))
         #expect(architecture.contains("if help is unavailable or ambiguous, live execution remains locked"))
+        #expect(operatorArchitecture.contains("chat does not execute transactions"))
+        #expect(operatorArchitecture.contains("watch-only wallets remain analysis-only"))
+        #expect(operatorArchitecture.contains("zerion uses a separate policy-scoped agent wallet"))
         #expect(smoke.contains("zerion executor"))
         #expect(smoke.contains("do not add"))
         #expect(smoke.contains("a2"))
         #expect(tinySmoke.contains("zerion tiny transaction smoke"))
         #expect(tinySmoke.contains("separate zerion wallet"))
         #expect(tinySmoke.contains("do not run bridge, send, sign-message, or sign-typed-data"))
+        #expect(operatorSmoke.contains("agent policy wallet operator smoke"))
+        #expect(operatorSmoke.contains("chat never executes"))
         #expect(!architecture.contains("nft"))
         #expect(!tinySmoke.contains("nft"))
+        #expect(!operatorArchitecture.contains("nft"))
+        #expect(!operatorSmoke.contains("nft"))
     }
 
     @Test func sharedXcodeSchemeContainsNoSecretEnvironmentValues() throws {
