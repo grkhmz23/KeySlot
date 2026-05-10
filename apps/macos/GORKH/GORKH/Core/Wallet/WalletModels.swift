@@ -391,6 +391,16 @@ struct AuditEvent: Codable, Equatable, Identifiable {
         case rpcProviderTokenMissing = "rpc_provider_token_missing"
         case rpcMethodBlocked = "rpc_method_blocked"
         case rpcRateLimited = "rpc_rate_limited"
+        case transactionStudioOpened = "transaction_studio_opened"
+        case transactionStudioDecodeAttempted = "transaction_studio_decode_attempted"
+        case transactionStudioDecodeSucceeded = "transaction_studio_decode_succeeded"
+        case transactionStudioDecodeFailed = "transaction_studio_decode_failed"
+        case transactionStudioSimulationAttempted = "transaction_studio_simulation_attempted"
+        case transactionStudioSimulationSucceeded = "transaction_studio_simulation_succeeded"
+        case transactionStudioSimulationFailed = "transaction_studio_simulation_failed"
+        case transactionStudioRiskReviewGenerated = "transaction_studio_risk_review_generated"
+        case transactionStudioExplanationGenerated = "transaction_studio_explanation_generated"
+        case transactionStudioHandoffCreated = "transaction_studio_handoff_created"
     }
 
     let id: UUID

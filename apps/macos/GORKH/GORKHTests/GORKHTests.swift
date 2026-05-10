@@ -3946,7 +3946,7 @@ struct GORKHTests {
     }
 
     @Test func agentSectionAndZerionFoundationGateTinySwapOnly() throws {
-        #expect(GORKHModule.allCases.map(\.title) == ["Wallet", "Agent", "Settings"])
+        #expect(GORKHModule.allCases.map(\.title) == ["Wallet", "Agent", "Transaction Studio", "Settings"])
 
         let sourceFiles = [
             "GORKH/App/AppState.swift",
@@ -4004,7 +4004,6 @@ struct GORKHTests {
         #expect(source.contains("main wallet disabled"))
         #expect(source.contains("no bridge / send / signing"))
         #expect(!source.contains("developer workstation"))
-        #expect(!source.contains("transaction studio"))
         #expect(!source.contains("nft"))
     }
 
@@ -4738,6 +4737,94 @@ struct GORKHTests {
 
         #expect(AgentToolRegistry.evaluate(toolID: .executeSend).blocked == ["executeSend"])
         #expect(AgentToolRegistry.evaluate(toolID: .sendTransaction).blocked == ["sendTransaction"])
+    }
+
+    @Test func transactionStudioDetectsDecodesReviewsAndStaysReadOnly() throws {
+        let signature = Base58.encode(Data(repeating: 2, count: 64))
+        let signatureInput = try TransactionStudioInputDetector.detect(signature)
+        #expect(signatureInput.kind == .signature)
+        #expect(signatureInput.encoding == .base58)
+
+        let addressInput = try TransactionStudioInputDetector.detect(SolanaConstants.systemProgramID)
+        #expect(addressInput.kind == .address)
+
+        let blockhash = Base58.encode(Data(repeating: 7, count: 32))
+        let recipient = Base58.encode(Data(repeating: 9, count: 32))
+        let draft = TransactionDraft(
+            network: .devnet,
+            fromAddress: SolanaConstants.systemProgramID,
+            toAddress: recipient,
+            amountLamports: 5_000
+        )
+        let message = try SolanaTransactionBuilder.makeTransferMessage(draft: draft, recentBlockhash: blockhash)
+        let rawBase64 = SolanaTransactionBuilder.makeUnsignedTransactionBase64(message: message)
+        let rawInput = try TransactionStudioInputDetector.detect(rawBase64)
+        #expect(rawInput.kind == .rawTransaction)
+        #expect(rawInput.encoding == .base64)
+
+        let decoded = try TransactionDecoder.decode(input: rawInput, network: .mainnetBeta)
+        #expect(decoded.transactionVersion == "legacy")
+        #expect(decoded.instructions.count == 1)
+        #expect(decoded.instructions.first?.programLabel == "System Program")
+        #expect(decoded.instructions.first?.decodedAction == "System transfer")
+        #expect(decoded.signerSummaries.first?.address == SolanaConstants.systemProgramID)
+        #expect(decoded.writableAccounts.contains { $0.address == recipient })
+
+        #expect(TransactionInstructionLabeler.label(for: SolanaConstants.splTokenProgramID) == "SPL Token")
+        #expect(TransactionInstructionLabeler.label(for: TransactionInstructionLabeler.orcaWhirlpoolProgramID) == "Orca Whirlpool")
+        #expect(TransactionInstructionLabeler.label(for: "Bad111111111111111111111111111111111111111") == "Unknown Program")
+
+        let unavailableSimulation = TransactionStudioSimulationSummary.unavailable("RPC unavailable")
+        let risk = TransactionRiskAnalyzer.review(decoded: decoded, simulation: unavailableSimulation)
+        #expect(risk.flags.contains { $0.kind == .nativeSOLTransfer })
+        #expect(risk.flags.contains { $0.kind == .mainnetTransaction })
+        #expect(risk.flags.contains { $0.kind == .missingSimulation })
+
+        let explanation = TransactionExplanationBuilder.build(decoded: decoded, simulation: unavailableSimulation, risk: risk)
+        #expect(explanation.summary.contains("System Program"))
+        #expect(explanation.reviewChecklist.contains { $0.contains("does not sign") })
+
+        let entry = TransactionStudioHistoryEntry(
+            inputKind: .rawTransaction,
+            publicReference: rawInput.safePreview,
+            summary: explanation.summary,
+            riskLevel: risk.level,
+            simulationStatus: unavailableSimulation.status
+        )
+        let json = try #require(String(data: JSONEncoder().encode(entry), encoding: .utf8)).lowercased()
+        for forbidden in ["privatekey", "secretkey", "seedphrase", "mnemonic", "walletjson", "signingseed", "transactionpayload", "serializedtransaction"] {
+            #expect(!json.contains(forbidden))
+        }
+
+        let studioCoreFiles = try [
+            "GORKH/Core/TransactionStudio/TransactionStudioModels.swift",
+            "GORKH/Core/TransactionStudio/TransactionStudioInputDetector.swift",
+            "GORKH/Core/TransactionStudio/TransactionDecoder.swift",
+            "GORKH/Core/TransactionStudio/TransactionInstructionLabeler.swift",
+            "GORKH/Core/TransactionStudio/TransactionRiskAnalyzer.swift",
+            "GORKH/Core/TransactionStudio/TransactionSimulationService.swift",
+            "GORKH/Core/TransactionStudio/TransactionExplanationBuilder.swift",
+            "GORKH/Core/TransactionStudio/TransactionStudioHistoryStore.swift",
+            "GORKH/Core/TransactionStudio/TransactionStudioHandoffModels.swift",
+            "GORKH/Modules/TransactionStudio/TransactionStudioView.swift",
+            "GORKH/Modules/TransactionStudio/TransactionStudioInputView.swift",
+            "GORKH/Modules/TransactionStudio/TransactionInstructionTimelineView.swift",
+            "GORKH/Modules/TransactionStudio/TransactionRiskReviewView.swift",
+            "GORKH/Modules/TransactionStudio/TransactionSimulationView.swift",
+            "GORKH/Modules/TransactionStudio/TransactionExplanationView.swift",
+            "GORKH/Modules/TransactionStudio/TransactionStudioHistoryView.swift"
+        ].map { try sourceText(relativePath: $0) }.joined(separator: "\n").lowercased()
+        for forbidden in ["sendtransaction(", "requestairdrop(", "signtransaction(", "jito", "beam", "buildbundle", "/bin/sh", "eval("] {
+            #expect(!studioCoreFiles.contains(forbidden))
+        }
+        #expect(!studioCoreFiles.contains("nft"))
+
+        let architecture = try sourceText(relativePath: "../../../docs/architecture/transaction-studio.md").lowercased()
+        let smoke = try sourceText(relativePath: "../../../docs/qa/transaction-studio-smoke.md").lowercased()
+        #expect(architecture.contains("decode, simulation, explanation, risk review"))
+        #expect(smoke.contains("transaction studio v0.1 is decode/simulate/review only"))
+        #expect(!architecture.contains("nft"))
+        #expect(!smoke.contains("nft"))
     }
 
     @Test func agentMemoryAndAuditRedactionContainNoSecrets() throws {

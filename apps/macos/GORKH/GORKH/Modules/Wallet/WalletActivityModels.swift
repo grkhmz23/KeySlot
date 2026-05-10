@@ -14,6 +14,7 @@ enum WalletActivityCategory: String, CaseIterable, Identifiable {
     case pnl
     case security
     case rpc
+    case transactionStudio
 
     var id: String { rawValue }
 
@@ -45,6 +46,8 @@ enum WalletActivityCategory: String, CaseIterable, Identifiable {
             return "Security"
         case .rpc:
             return "RPC"
+        case .transactionStudio:
+            return "Studio"
         }
     }
 
@@ -76,6 +79,8 @@ enum WalletActivityCategory: String, CaseIterable, Identifiable {
             return "lock.shield"
         case .rpc:
             return "bolt.horizontal"
+        case .transactionStudio:
+            return "doc.text.magnifyingglass"
         }
     }
 
@@ -83,6 +88,8 @@ enum WalletActivityCategory: String, CaseIterable, Identifiable {
         switch self {
         case .security, .rpc:
             return GorkhColors.warning
+        case .transactionStudio:
+            return GorkhColors.accent
         case .pusd, .yield, .pnl:
             return GorkhColors.success
         default:
@@ -139,6 +146,12 @@ enum WalletActivityCategory: String, CaseIterable, Identifiable {
         case .rpcProviderHealthChecked, .rpcProviderDegraded, .rpcProviderTokenMissing,
                 .rpcMethodBlocked, .rpcRateLimited:
             return .rpc
+        case .transactionStudioOpened, .transactionStudioDecodeAttempted,
+                .transactionStudioDecodeSucceeded, .transactionStudioDecodeFailed,
+                .transactionStudioSimulationAttempted, .transactionStudioSimulationSucceeded,
+                .transactionStudioSimulationFailed, .transactionStudioRiskReviewGenerated,
+                .transactionStudioExplanationGenerated, .transactionStudioHandoffCreated:
+            return .transactionStudio
         default:
             return .portfolio
         }

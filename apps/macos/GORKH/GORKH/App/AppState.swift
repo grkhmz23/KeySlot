@@ -25,6 +25,7 @@ final class AppState: ObservableObject {
 enum GORKHModule: String, CaseIterable, Identifiable {
     case wallet
     case agent
+    case transactionStudio
     case settings
 
     var id: String { rawValue }
@@ -35,6 +36,8 @@ enum GORKHModule: String, CaseIterable, Identifiable {
             return "Wallet"
         case .agent:
             return "Agent"
+        case .transactionStudio:
+            return "Transaction Studio"
         case .settings:
             return "Settings"
         }
@@ -46,6 +49,8 @@ enum GORKHModule: String, CaseIterable, Identifiable {
             return "wallet.pass"
         case .agent:
             return "sparkles"
+        case .transactionStudio:
+            return "doc.text.magnifyingglass"
         case .settings:
             return "gearshape"
         }

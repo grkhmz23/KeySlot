@@ -143,6 +143,7 @@ enum RPCMethodAvailability: String, Codable, Equatable {
             "getMinimumBalanceForRentExemption",
             "getParsedAccountInfo",
             "getProgramAccounts",
+            "getTransaction",
             "getSignatureStatuses",
             "getSlot",
             "getTokenAccountsByOwner",

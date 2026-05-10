@@ -379,6 +379,177 @@ struct SolanaRPCClient {
         )
     }
 
+    func simulateTransactionForStudio(transactionBase64: String, network: WalletNetwork) async throws -> TransactionStudioSimulationSummary {
+        let result = try await request(
+            method: "simulateTransaction",
+            params: [
+                transactionBase64,
+                [
+                    "encoding": "base64",
+                    "sigVerify": false,
+                    "replaceRecentBlockhash": false,
+                    "commitment": "processed"
+                ]
+            ],
+            network: network
+        )
+
+        guard let dictionary = result as? [String: Any],
+              let value = dictionary["value"] as? [String: Any] else {
+            throw SolanaRPCError.invalidResponse
+        }
+
+        let logs = value["logs"] as? [String] ?? []
+        let errorValue = value["err"]
+        let hasError = !(errorValue is NSNull) && errorValue != nil
+        let unitsConsumed: UInt64?
+        if let number = value["unitsConsumed"] as? NSNumber {
+            unitsConsumed = number.uint64Value
+        } else if let intValue = value["unitsConsumed"] as? UInt64 {
+            unitsConsumed = intValue
+        } else {
+            unitsConsumed = nil
+        }
+
+        return TransactionStudioSimulationSummary(
+            status: hasError ? .failed : .success,
+            logs: logs,
+            unitsConsumed: unitsConsumed,
+            errorMessage: hasError ? String(describing: errorValue ?? "Simulation failed") : nil,
+            replacementBlockhashUsed: false,
+            simulatedAt: Date()
+        )
+    }
+
+    func getTransactionForStudio(signature: String, network: WalletNetwork) async throws -> TransactionStudioFetchedTransaction? {
+        guard let decoded = Base58.decode(signature), decoded.count == 64 else {
+            throw SolanaRPCError.invalidResponse
+        }
+        let result = try await request(
+            method: "getTransaction",
+            params: [
+                signature,
+                [
+                    "encoding": "base64",
+                    "commitment": "confirmed",
+                    "maxSupportedTransactionVersion": 0
+                ]
+            ],
+            network: network
+        )
+
+        if result is NSNull {
+            return nil
+        }
+        guard let dictionary = result as? [String: Any] else {
+            throw SolanaRPCError.invalidResponse
+        }
+        let slot: UInt64?
+        if let number = dictionary["slot"] as? NSNumber {
+            slot = number.uint64Value
+        } else {
+            slot = nil
+        }
+        let blockTime: Date?
+        if let number = dictionary["blockTime"] as? NSNumber {
+            blockTime = Date(timeIntervalSince1970: number.doubleValue)
+        } else {
+            blockTime = nil
+        }
+        guard let transaction = dictionary["transaction"] else {
+            throw SolanaRPCError.invalidResponse
+        }
+        let transactionBase64: String?
+        if let array = transaction as? [Any] {
+            transactionBase64 = array.first as? String
+        } else if let txDictionary = transaction as? [String: Any],
+                  let message = txDictionary["message"] as? String {
+            transactionBase64 = message
+        } else {
+            transactionBase64 = nil
+        }
+        guard let transactionBase64 else {
+            throw SolanaRPCError.invalidResponse
+        }
+        return TransactionStudioFetchedTransaction(
+            signature: signature,
+            transactionBase64: transactionBase64,
+            slot: slot,
+            blockTime: blockTime
+        )
+    }
+
+    func getAccountSummaryForStudio(address: String, network: WalletNetwork) async throws -> TransactionStudioAddressSummary? {
+        guard SolanaAddressValidator.isValidAddress(address) else {
+            throw SolanaRPCError.invalidResponse
+        }
+        let result = try await request(
+            method: "getParsedAccountInfo",
+            params: [
+                address,
+                [
+                    "encoding": "jsonParsed",
+                    "commitment": "confirmed"
+                ]
+            ],
+            network: network
+        )
+
+        guard let dictionary = result as? [String: Any] else {
+            throw SolanaRPCError.invalidResponse
+        }
+        if dictionary["value"] is NSNull || dictionary["value"] == nil {
+            return nil
+        }
+        guard let value = dictionary["value"] as? [String: Any] else {
+            throw SolanaRPCError.invalidResponse
+        }
+
+        let owner = value["owner"] as? String
+        let lamports: UInt64?
+        if let number = value["lamports"] as? NSNumber {
+            lamports = number.uint64Value
+        } else {
+            lamports = nil
+        }
+        let executable = value["executable"] as? Bool
+        let dataLength: Int?
+        if let space = value["space"] as? NSNumber {
+            dataLength = space.intValue
+        } else if let space = value["space"] as? Int {
+            dataLength = space
+        } else {
+            dataLength = nil
+        }
+
+        var tokenAccountSummary: String?
+        if let data = value["data"] as? [String: Any],
+           let parsed = data["parsed"] as? [String: Any],
+           let type = parsed["type"] as? String,
+           let info = parsed["info"] as? [String: Any] {
+            if type == "account" {
+                let mint = info["mint"] as? String ?? "unknown mint"
+                let owner = info["owner"] as? String ?? "unknown owner"
+                tokenAccountSummary = "Token account for mint \(mint), owner \(owner)."
+            } else if type == "mint" {
+                tokenAccountSummary = "Token mint account."
+            }
+        }
+
+        let ownerLabel = owner.map(TransactionInstructionLabeler.label(for:))
+        return TransactionStudioAddressSummary(
+            address: address,
+            ownerProgram: owner,
+            ownerLabel: ownerLabel,
+            lamports: lamports,
+            executable: executable,
+            dataLength: dataLength,
+            tokenAccountSummary: tokenAccountSummary,
+            warning: executable == true ? "Executable account. Treat as a program, not a wallet." : nil,
+            fetchedAt: Date()
+        )
+    }
+
     func sendTransaction(transactionBase64: String, network: WalletNetwork) async throws -> String {
         let result = try await request(
             method: "sendTransaction",
