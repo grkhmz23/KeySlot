@@ -30,6 +30,8 @@ struct GORKHShellView: View {
                     AgentView()
                 case .transactionStudio:
                     TransactionStudioView()
+                case .developerWorkstation:
+                    DeveloperWorkstationView()
                 case .settings:
                     SettingsView()
                 }

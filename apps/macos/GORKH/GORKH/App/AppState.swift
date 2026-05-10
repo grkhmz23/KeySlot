@@ -54,6 +54,7 @@ enum GORKHModule: String, CaseIterable, Identifiable {
     case wallet
     case agent
     case transactionStudio
+    case developerWorkstation
     case settings
 
     var id: String { rawValue }
@@ -66,6 +67,8 @@ enum GORKHModule: String, CaseIterable, Identifiable {
             return "Agent"
         case .transactionStudio:
             return "Transaction Studio"
+        case .developerWorkstation:
+            return "Developer Workstation"
         case .settings:
             return "Settings"
         }
@@ -79,6 +82,8 @@ enum GORKHModule: String, CaseIterable, Identifiable {
             return "sparkles"
         case .transactionStudio:
             return "doc.text.magnifyingglass"
+        case .developerWorkstation:
+            return "hammer"
         case .settings:
             return "gearshape"
         }

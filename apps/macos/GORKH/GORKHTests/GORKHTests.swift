@@ -3946,7 +3946,7 @@ struct GORKHTests {
     }
 
     @Test func agentSectionAndZerionFoundationGateTinySwapOnly() throws {
-        #expect(GORKHModule.allCases.map(\.title) == ["Wallet", "Agent", "Transaction Studio", "Settings"])
+        #expect(GORKHModule.allCases.map(\.title) == ["Wallet", "Agent", "Transaction Studio", "Developer Workstation", "Settings"])
 
         let sourceFiles = [
             "GORKH/App/AppState.swift",
@@ -4003,7 +4003,7 @@ struct GORKHTests {
         #expect(source.contains("separate zerion wallet"))
         #expect(source.contains("main wallet disabled"))
         #expect(source.contains("no bridge / send / signing"))
-        #expect(!source.contains("developer workstation"))
+        #expect(GORKHModule.allCases.contains(.developerWorkstation))
         #expect(!source.contains("nft"))
     }
 
@@ -6796,6 +6796,195 @@ struct GORKHTests {
         ] {
             #expect(!transactionStudioSource.contains(forbidden))
             #expect(!shieldReviewSource.contains(forbidden))
+        }
+    }
+
+    @Test func developerWorkstationTrustToolchainProgramOpsAndRPCStayGated() throws {
+        let tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("gorkh-workstation-tests-\(UUID().uuidString)", isDirectory: true)
+        let projectRoot = tempRoot.appendingPathComponent("anchor-project", isDirectory: true)
+        let idlRoot = projectRoot.appendingPathComponent("target/idl", isDirectory: true)
+        let binRoot = tempRoot.appendingPathComponent("bin", isDirectory: true)
+        try FileManager.default.createDirectory(at: idlRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: binRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        try "provider = {}\n".write(to: projectRoot.appendingPathComponent("Anchor.toml"), atomically: true, encoding: .utf8)
+        try "[package]\nname = \"demo\"\n".write(to: projectRoot.appendingPathComponent("Cargo.toml"), atomically: true, encoding: .utf8)
+        try "{}".write(to: projectRoot.appendingPathComponent("package.json"), atomically: true, encoding: .utf8)
+        try "{\"name\":\"demo\",\"instructions\":[],\"accounts\":[]}"
+            .write(to: idlRoot.appendingPathComponent("demo.json"), atomically: true, encoding: .utf8)
+
+        let importer = WorkstationProjectImporter()
+        let imported = try importer.inspectFolder(projectRoot)
+        #expect(imported.trustStatus == .untrusted)
+        #expect(imported.detectedFramework == .anchor)
+        #expect(imported.detectedFiles.anchorToml)
+        #expect(WorkstationTrustPolicy.blocksExecution(project: imported) != nil)
+        #expect(!WorkstationTrustPolicy.canTrust(project: imported, phrase: "trust me"))
+
+        let trusted = WorkstationTrustPolicy.trustedCopy(of: imported, phrase: WorkstationTrustPolicy.requiredPhrase)
+        #expect(trusted.trustStatus == .trusted)
+
+        let solanaPath = binRoot.appendingPathComponent("solana")
+        try "#!/usr/bin/env false\n".write(to: solanaPath, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: Int16(0o755))], ofItemAtPath: solanaPath.path)
+        let resolver = WorkstationToolchainResolver(environment: [:], bundleRoot: nil, managedRoot: tempRoot.appendingPathComponent("managed"), systemDirectories: [binRoot.path])
+        let snapshot = resolver.resolveAll(now: Date(timeIntervalSince1970: 1))
+        #expect(snapshot.isAvailable(.solana))
+        #expect(!resolver.isValidExecutable("/bin/sh", expectedName: "solana"))
+
+        let vault = InMemoryDeveloperKeyVault()
+        let metadata = try vault.generateDeveloperWallet(now: Date(timeIntervalSince1970: 2))
+        let seed = try vault.loadSeed(for: metadata.id)
+        let publicKey = try #require(SolanaAddressValidator.decodeAddress(metadata.publicAddress))
+        let temporaryKeypair = try WorkstationTemporaryKeypairFilePolicy.write(seed: seed, publicKey: publicKey)
+        #expect(FileManager.default.fileExists(atPath: temporaryKeypair.url.path))
+        #expect(!WorkstationTemporaryKeypairFilePolicy.redactedPath(temporaryKeypair).contains("developer-authority.json"))
+        WorkstationTemporaryKeypairFilePolicy.delete(temporaryKeypair)
+        #expect(!FileManager.default.fileExists(atPath: temporaryKeypair.url.path))
+
+        let untrustedDeploy = WorkstationProgramManager.evaluate(
+            WorkstationProgramOperationRequest(
+                operation: .solanaProgramDeploy,
+                cluster: .devnet,
+                project: imported,
+                toolchain: snapshot,
+                developerWallet: metadata,
+                artifactPath: "/tmp/program.so",
+                programID: nil,
+                exactPhrase: nil
+            )
+        )
+        #expect(!untrustedDeploy.isAllowed)
+
+        let trustedDeploy = WorkstationProgramManager.evaluate(
+            WorkstationProgramOperationRequest(
+                operation: .solanaProgramDeploy,
+                cluster: .devnet,
+                project: trusted,
+                toolchain: snapshot,
+                developerWallet: metadata,
+                artifactPath: "/tmp/program.so",
+                programID: nil,
+                exactPhrase: nil
+            )
+        )
+        #expect(trustedDeploy.isAllowed)
+
+        let mainnetDeploy = WorkstationProgramManager.evaluate(
+            WorkstationProgramOperationRequest(
+                operation: .solanaProgramDeploy,
+                cluster: .mainnetBeta,
+                project: trusted,
+                toolchain: snapshot,
+                developerWallet: metadata,
+                artifactPath: "/tmp/program.so",
+                programID: nil,
+                exactPhrase: nil
+            )
+        )
+        #expect(mainnetDeploy.reasons.contains("Locked pending reviewed mainnet program-ops phase."))
+
+        let plan = WorkstationCommandBuilders.solanaProgramDeploy(
+            solanaPath: solanaPath.path,
+            artifactPath: "/tmp/program.so",
+            cluster: .devnet,
+            keyFilePath: "/tmp/keypair.json"
+        )
+        try WorkstationCommandRunner().validate(plan)
+        #expect(plan.arguments == ["program", "deploy", "/tmp/program.so", "--url", WorkstationCluster.devnet.rpcURL.absoluteString, "--keypair", "/tmp/keypair.json"])
+
+        #expect(!WorkstationRPCPlaygroundService.permission(for: .sendTransaction, cluster: .devnet).isAllowed)
+        #expect(!WorkstationRPCPlaygroundService.permission(for: .getProgramAccounts, cluster: .devnet).isAllowed)
+        #expect(!WorkstationFaucetPolicy.validate(WorkstationFaucetRequest(cluster: .mainnetBeta, publicAddress: metadata.publicAddress, amountSOL: 0.5)).isAllowed)
+        #expect(WorkstationFaucetPolicy.validate(WorkstationFaucetRequest(cluster: .devnet, publicAddress: metadata.publicAddress, amountSOL: 0.5)).isAllowed)
+    }
+
+    @Test func developerWorkstationIDLLogsDocsAndSourceSafetyRemainReadOnly() throws {
+        let idl = try WorkstationIDLParser.parse(string: """
+        {
+          "version": "0.1.0",
+          "name": "demo_program",
+          "instructions": [
+            {
+              "name": "setValue",
+              "accounts": [{"name":"authority","isMut":false,"isSigner":true}],
+              "args": [{"name":"value","type":"u64"}]
+            }
+          ],
+          "accounts": [
+            {"name":"State","type":{"kind":"struct","fields":[{"name":"value","type":"u64"}]}}
+          ],
+          "types": [],
+          "errors": [{"code":6000,"name":"InvalidValue","msg":"Invalid value"}]
+        }
+        """)
+        #expect(idl.name == "demo_program")
+        #expect(idl.instructions.first?.name == "setValue")
+        #expect(idl.accounts.first?.fields.first?.name == "value")
+        #expect(idl.errors.first?.code == 6000)
+
+        let decode = WorkstationAccountDecoder.decode(
+            WorkstationAccountDecodeRequest(
+                address: SolanaConstants.systemProgramID,
+                ownerProgram: SolanaConstants.systemProgramID,
+                lamports: 10,
+                dataBase64: Data([1, 2, 3, 4]).base64EncodedString(),
+                idlAccount: idl.accounts.first
+            )
+        )
+        #expect(decode.dataLength == 4)
+        #expect(decode.status == .ready)
+        #expect(decode.fields.first?.value.contains("Decode unavailable") == true)
+
+        var logState = WorkstationLogStreamState.idle(cluster: .devnet, maxEntries: 2).started(programID: SolanaConstants.systemProgramID)
+        logState = logState.appending(WorkstationLogEntry(cluster: .devnet, programID: SolanaConstants.systemProgramID, signature: nil, line: "first"))
+        logState = logState.appending(WorkstationLogEntry(cluster: .devnet, programID: SolanaConstants.systemProgramID, signature: nil, line: "second"))
+        logState = logState.appending(WorkstationLogEntry(cluster: .devnet, programID: SolanaConstants.systemProgramID, signature: nil, line: "privateKey: abc"))
+        #expect(logState.entries.count == 2)
+        #expect(!logState.entries.last!.line.contains("abc"))
+
+        let docs = try [
+            "../../../docs/architecture/developer-workstation.md",
+            "../../../docs/security/developer-workstation-trust-boundary.md",
+            "../../../docs/qa/developer-workstation-smoke.md",
+            "../../../docs/qa/developer-workstation-program-ops-smoke.md"
+        ].map(sourceText(relativePath:)).joined(separator: "\n")
+        let lowercasedDocs = docs.lowercased()
+        for required in [
+            "developer workstation",
+            "trust gate",
+            "managed toolchain",
+            "separate",
+            "localnet/devnet",
+            "mainnet program ops locked",
+            "no arbitrary shell",
+            "offline signing foundation"
+        ] {
+            #expect(lowercasedDocs.contains(required))
+        }
+        #expect(!lowercasedDocs.contains("nft"))
+
+        let shell = try sourceText(relativePath: "GORKH/App/GORKHShellView.swift")
+        let appState = try sourceText(relativePath: "GORKH/App/AppState.swift")
+        #expect(shell.contains("DeveloperWorkstationView"))
+        #expect(appState.contains("developerWorkstation"))
+
+        let workstationSource = try [
+            "GORKH/Core/DeveloperWorkstation/WorkstationCommandRunner.swift",
+            "GORKH/Core/DeveloperWorkstation/WorkstationCommandBuilders.swift",
+            "GORKH/Core/DeveloperWorkstation/WorkstationRPCPlaygroundService.swift",
+            "GORKH/Modules/DeveloperWorkstation/DeveloperWorkstationView.swift"
+        ].map(sourceText(relativePath:)).joined(separator: "\n").lowercased()
+        for forbidden in [
+            "/bin/sh",
+            "eval(",
+            "arbitrarycommand",
+            "sendtransaction(",
+            "requestairdrop("
+        ] {
+            #expect(!workstationSource.contains(forbidden))
         }
     }
 
