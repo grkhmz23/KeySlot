@@ -15,6 +15,10 @@
       "executableRelativePath": "bin/solana",
       "installStrategy": "prebuilt_archive",
       "installStatus": "planned_blocked_missing_artifact",
+      "compatibilityStrategy": "detected_system_or_verified_prebuilt_only",
+      "recommendedAnchorCandidates": [],
+      "rustToolchainPinningNote": null,
+      "prebuiltArtifactStatus": "blocked_without_verified_artifact_and_sha256",
       "notes": "System Solana CLI can be detected. Managed install is blocked until an official artifact URL and sha256 are pinned.",
       "licenseNote": "Package according to the upstream Agave/Solana license."
     },
@@ -31,6 +35,10 @@
       "executableRelativePath": "bin/avm",
       "installStrategy": "avm_cargo_install",
       "installStatus": "detected_only",
+      "compatibilityStrategy": "fixed_cargo_install_from_official_anchor_repo_with_explicit_approval",
+      "recommendedAnchorCandidates": ["0.31.1", "0.30.1"],
+      "rustToolchainPinningNote": "If current Rust cannot compile Anchor, use RUSTUP_TOOLCHAIN with a fixed candidate for the AVM install command only.",
+      "prebuiltArtifactStatus": "not_applicable_source_build",
       "notes": "No archive download is enabled. If Cargo is present, GORKH can prepare fixed AVM install commands for explicit approval.",
       "licenseNote": "Package according to upstream Anchor license terms."
     },
@@ -47,6 +55,10 @@
       "executableRelativePath": "bin/anchor",
       "installStrategy": "avm_managed_anchor",
       "installStatus": "detected_only",
+      "compatibilityStrategy": "prefer_anchor_0_31_1_with_fixed_rust_pin_if_anchor_0_30_1_fails_current_rust",
+      "recommendedAnchorCandidates": ["0.31.1", "0.30.1"],
+      "rustToolchainPinningNote": "Do not mutate the global Rust default. Use RUSTUP_TOOLCHAIN=1.79.0 only for fixed AVM/Cargo commands when explicitly approved.",
+      "prebuiltArtifactStatus": "blocked_without_official_artifact_and_sha256",
       "notes": "Anchor managed install is driven by AVM, not an unverified archive. If AVM/Cargo are missing, localnet Anchor smoke skips safely.",
       "licenseNote": "Package according to upstream Anchor license terms."
     },
@@ -63,6 +75,10 @@
       "executableRelativePath": "bin/rustc",
       "installStrategy": "unavailable",
       "installStatus": "detected_only",
+      "compatibilityStrategy": "detect_current_and_optionally_prepare_fixed_rustup_toolchain_install_if_rustup_exists",
+      "recommendedAnchorCandidates": ["0.31.1", "0.30.1"],
+      "rustToolchainPinningNote": "Rust 1.94 failed the D4 Anchor 0.30.1 AVM install path. D5 fixed candidate is 1.79.0 via rustup, with no global default mutation.",
+      "prebuiltArtifactStatus": "blocked_without_verified_rust_distribution_artifact_and_sha256",
       "notes": "Rust is detected from trusted paths in D3. Managed Rust install remains blocked pending a verified archive strategy.",
       "licenseNote": "Package according to upstream Rust license terms."
     },
@@ -79,6 +95,10 @@
       "executableRelativePath": "bin/cargo",
       "installStrategy": "unavailable",
       "installStatus": "detected_only",
+      "compatibilityStrategy": "use_current_cargo_or_cargo_plus_fixed_rust_toolchain_for_approved_anchor_install",
+      "recommendedAnchorCandidates": ["0.31.1", "0.30.1"],
+      "rustToolchainPinningNote": "cargo +1.79.0 --version is a fixed probe; approved AVM install commands may use RUSTUP_TOOLCHAIN=1.79.0.",
+      "prebuiltArtifactStatus": "blocked_without_verified_rust_distribution_artifact_and_sha256",
       "notes": "Cargo is detected from trusted paths. It is not bootstrapped by GORKH.",
       "licenseNote": "Package according to upstream Rust license terms."
     },
@@ -95,6 +115,10 @@
       "executableRelativePath": "bin/node",
       "installStrategy": "prebuilt_archive",
       "installStatus": "planned_blocked_missing_artifact",
+      "compatibilityStrategy": "detected_only_for_anchor_sample",
+      "recommendedAnchorCandidates": [],
+      "rustToolchainPinningNote": null,
+      "prebuiltArtifactStatus": "blocked_without_verified_artifact_and_sha256",
       "notes": "Managed Node install is blocked until release engineering pins an official archive and checksum.",
       "licenseNote": "Package according to upstream Node.js license terms."
     },
@@ -111,6 +135,10 @@
       "executableRelativePath": "bin/npm",
       "installStrategy": "unavailable",
       "installStatus": "detected_only",
+      "compatibilityStrategy": "detected_only_no_project_scripts_auto_run",
+      "recommendedAnchorCandidates": [],
+      "rustToolchainPinningNote": null,
+      "prebuiltArtifactStatus": "not_applicable_detected_only",
       "notes": "npm is detected only. GORKH does not run project npm scripts automatically.",
       "licenseNote": "Package according to upstream npm license terms."
     },
@@ -127,6 +155,10 @@
       "executableRelativePath": "bin/git",
       "installStrategy": "unavailable",
       "installStatus": "detected_only",
+      "compatibilityStrategy": "detected_system_git_only",
+      "recommendedAnchorCandidates": [],
+      "rustToolchainPinningNote": null,
+      "prebuiltArtifactStatus": "not_applicable_detected_only",
       "notes": "D3 prefers validated system Git and does not package managed Git by default.",
       "licenseNote": "Use system Git or package according to upstream Git license terms."
     }

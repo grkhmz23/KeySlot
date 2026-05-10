@@ -4,6 +4,7 @@ enum DeveloperWorkstationSection: String, CaseIterable, Identifiable, Codable {
     case overview
     case projects
     case toolchain
+    case compatibility
     case idlBrowser
     case programManager
     case logs
@@ -24,6 +25,8 @@ enum DeveloperWorkstationSection: String, CaseIterable, Identifiable, Codable {
             return "Projects"
         case .toolchain:
             return "Toolchain"
+        case .compatibility:
+            return "Compatibility"
         case .idlBrowser:
             return "IDL Browser"
         case .programManager:
@@ -97,6 +100,9 @@ enum WorkstationActivityKind: String, Codable, CaseIterable {
     case projectTrusted = "project_trusted"
     case toolchainChecked = "toolchain_checked"
     case toolchainInstallPlanCreated = "toolchain_install_plan_created"
+    case compatibilityCheckStarted = "compatibility_check_started"
+    case compatibilityCheckCompleted = "compatibility_check_completed"
+    case compatibilityStrategyPrepared = "compatibility_strategy_prepared"
     case avmInstallPlanCreated = "avm_install_plan_created"
     case avmInstallStarted = "avm_install_started"
     case avmInstallSucceeded = "avm_install_succeeded"

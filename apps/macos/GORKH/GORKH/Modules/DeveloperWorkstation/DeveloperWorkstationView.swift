@@ -7,6 +7,8 @@ struct DeveloperWorkstationView: View {
     @State private var toolchainSnapshot: WorkstationToolchainSnapshot = .unchecked
     @State private var toolchainPlans: [WorkstationToolchainInstallPlan] = []
     @State private var anchorInstallPlan: WorkstationAnchorInstallPlan = WorkstationAnchorInstaller.plan(snapshot: .unchecked)
+    @State private var compatibilityMatrix: WorkstationCompatibilityMatrix = .unchecked
+    @State private var anchorStrategy: WorkstationAnchorStrategyDecision = WorkstationAnchorStrategySelector.select(matrix: .unchecked, avmPath: nil, rustupPath: nil)
     @State private var developerWallet: DeveloperWalletMetadata = .missing
     @State private var localValidatorStatus: WorkstationLocalValidatorStatus = .unchecked
     @State private var localValidatorResetPhrase = ""
@@ -109,6 +111,8 @@ struct DeveloperWorkstationView: View {
             projectsSection
         case .toolchain:
             toolchainSection
+        case .compatibility:
+            compatibilitySection
         case .idlBrowser:
             idlSection
         case .programManager:
@@ -144,6 +148,7 @@ struct DeveloperWorkstationView: View {
             GorkhPanel("Quick Actions") {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 10)], spacing: 10) {
                     quickAction("Import Project", systemImage: "folder.badge.plus", target: .projects)
+                    quickAction("Check Compatibility", systemImage: "checklist.checked", target: .compatibility)
                     quickAction("Open IDL", systemImage: "curlybraces.square", target: .idlBrowser)
                     quickAction("Decode Account", systemImage: "doc.text.magnifyingglass", target: .accountDecoder)
                     quickAction("View Logs", systemImage: "text.alignleft", target: .logs)
@@ -272,6 +277,25 @@ struct DeveloperWorkstationView: View {
             Divider().overlay(GorkhColors.border)
 
             VStack(alignment: .leading, spacing: 8) {
+                Text("Compatibility Snapshot")
+                    .font(.headline)
+                WorkstationStatusChip(
+                    title: compatibilityMatrix.result.status.title,
+                    systemImage: compatibilityMatrix.result.status == .compatible ? "checkmark.circle" : "exclamationmark.triangle",
+                    color: compatibilityMatrix.result.status == .compatible ? GorkhColors.success : GorkhColors.warning
+                )
+                Text(compatibilityMatrix.result.summary)
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.secondaryText)
+                Button("Run Compatibility Check") {
+                    refreshCompatibility()
+                }
+                .buttonStyle(.bordered)
+            }
+
+            Divider().overlay(GorkhColors.border)
+
+            VStack(alignment: .leading, spacing: 8) {
                 Text("Anchor / AVM Install Wizard")
                     .font(.headline)
                 WorkstationStatusChip(
@@ -291,6 +315,127 @@ struct DeveloperWorkstationView: View {
                 Text("AVM/Anchor install is never automatic. Cargo-based AVM install is treated as a trusted tooling install and must be explicitly approved before running.")
                     .font(.caption)
                     .foregroundStyle(GorkhColors.warning)
+            }
+        }
+    }
+
+    private var compatibilitySection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            GorkhPanel("Anchor / Rust Compatibility") {
+                HStack {
+                    Text("Compatibility checks use fixed commands only. GORKH does not mutate the global Rust default and does not install unverified artifacts.")
+                        .font(.caption)
+                        .foregroundStyle(GorkhColors.secondaryText)
+                    Spacer()
+                    Button("Run Compatibility Check") {
+                        refreshCompatibility()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+
+                WorkstationStatusChip(
+                    title: compatibilityMatrix.result.status.title,
+                    systemImage: compatibilityMatrix.result.status == .compatible ? "checkmark.shield" : "lock.shield",
+                    color: compatibilityMatrix.result.status == .compatible ? GorkhColors.success : GorkhColors.warning
+                )
+                Text(compatibilityMatrix.result.summary)
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.secondaryText)
+
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 10)], spacing: 10) {
+                    compatibilityVersionCard("Rust", compatibilityMatrix.probe.rustcVersion)
+                    compatibilityVersionCard("Cargo", compatibilityMatrix.probe.cargoVersion)
+                    compatibilityVersionCard("rustup", compatibilityMatrix.probe.rustupVersion)
+                    compatibilityVersionCard("AVM", compatibilityMatrix.probe.avmVersion)
+                    compatibilityVersionCard("Anchor", compatibilityMatrix.probe.anchorVersion ?? compatibilityMatrix.probe.anchorError)
+                    compatibilityVersionCard("Solana", compatibilityMatrix.probe.solanaVersion)
+                }
+
+                if !compatibilityMatrix.result.blockers.isEmpty {
+                    DisclosureGroup("Blockers") {
+                        ForEach(compatibilityMatrix.result.blockers) { blocker in
+                            keyValue(blocker.component, blocker.message)
+                        }
+                    }
+                }
+            }
+
+            GorkhPanel("Recommended Strategy") {
+                WorkstationStatusChip(
+                    title: anchorStrategy.status.title,
+                    systemImage: anchorStrategy.status == .installPlanAvailable || anchorStrategy.status == .compatible ? "hammer.circle" : "lock",
+                    color: anchorStrategy.status == .installPlanAvailable || anchorStrategy.status == .compatible ? GorkhColors.success : GorkhColors.warning
+                )
+                keyValue("Strategy", anchorStrategy.strategy.rawValue.replacingOccurrences(of: "_", with: " "))
+                Text(anchorStrategy.message)
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.secondaryText)
+                if let environmentPreview = anchorStrategy.environmentPreview {
+                    keyValue("Environment", environmentPreview)
+                }
+                ForEach(anchorStrategy.commandPreviews, id: \.self) { preview in
+                    Text(preview)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(GorkhColors.secondaryText)
+                        .textSelection(.enabled)
+                }
+                Text("Preparation remains explicit. These previews do not run automatically and do not change the global Rust default.")
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.warning)
+            }
+
+            GorkhPanel("Fixed Candidate Matrix") {
+                DisclosureGroup("Anchor candidates") {
+                    ForEach(compatibilityMatrix.anchorCandidates) { candidate in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("\(candidate.version)\(candidate.recommended ? " · recommended" : "")")
+                                .fontWeight(.semibold)
+                            Text(candidate.source)
+                                .font(.caption)
+                                .foregroundStyle(GorkhColors.secondaryText)
+                            Text(candidate.installStrategy)
+                                .font(.caption)
+                                .foregroundStyle(GorkhColors.secondaryText)
+                        }
+                        .padding(.vertical, 3)
+                    }
+                }
+                DisclosureGroup("Rust candidates") {
+                    ForEach(compatibilityMatrix.rustCandidates) { candidate in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("\(candidate.version) · \(candidate.installed ? "installed" : "not installed")")
+                                .fontWeight(.semibold)
+                            Text(candidate.source)
+                                .font(.caption)
+                                .foregroundStyle(GorkhColors.secondaryText)
+                            if let preview = candidate.installCommandPreview {
+                                Text(preview)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(GorkhColors.secondaryText)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                        .padding(.vertical, 3)
+                    }
+                }
+                DisclosureGroup("Compatibility candidates") {
+                    ForEach(compatibilityMatrix.compatibilityCandidates) { candidate in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Anchor \(candidate.anchorVersion) + Rust \(candidate.rustToolchainVersion)")
+                                .fontWeight(.semibold)
+                            keyValue("Status", candidate.status.title)
+                            Text(candidate.installStrategy)
+                                .font(.caption)
+                                .foregroundStyle(GorkhColors.secondaryText)
+                            if let blocker = candidate.blocker {
+                                Text(blocker)
+                                    .font(.caption)
+                                    .foregroundStyle(GorkhColors.warning)
+                            }
+                        }
+                        .padding(.vertical, 3)
+                    }
+                }
             }
         }
     }
@@ -654,6 +799,21 @@ struct DeveloperWorkstationView: View {
         }
     }
 
+    private func compatibilityVersionCard(_ title: String, _ value: String?) -> some View {
+        GorkhPanel {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.secondaryText)
+                Text(value ?? "Unavailable")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(value == nil ? GorkhColors.warning : GorkhColors.primaryText)
+                    .lineLimit(3)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
     private func quickAction(_ title: String, systemImage: String, target: DeveloperWorkstationSection) -> some View {
         Button {
             selectedSection = target
@@ -700,6 +860,27 @@ struct DeveloperWorkstationView: View {
         appendActivity(.toolchainChecked, "Toolchain status checked.")
         appendActivity(.toolchainInstallPlanCreated, "Managed toolchain install plans refreshed.")
         appendActivity(.avmInstallPlanCreated, "Anchor/AVM install plan refreshed.")
+    }
+
+    private func refreshCompatibility() {
+        appendActivity(.compatibilityCheckStarted, "Anchor/Rust compatibility check started.")
+        let resolver = WorkstationToolchainResolver()
+        toolchainSnapshot = resolver.resolveAll()
+        let wizard = WorkstationToolchainInstallWizardSnapshot.build(
+            manifest: .d3Default,
+            snapshot: toolchainSnapshot
+        )
+        toolchainPlans = wizard.plans
+        anchorInstallPlan = wizard.anchorPlan
+        let probe = WorkstationCompatibilityProbe().probe(snapshot: toolchainSnapshot)
+        compatibilityMatrix = WorkstationCompatibilityMatrix.build(probe: probe)
+        anchorStrategy = WorkstationAnchorStrategySelector.select(
+            matrix: compatibilityMatrix,
+            avmPath: toolchainSnapshot.resolution(for: .avm)?.executablePath,
+            rustupPath: WorkstationCompatibilityProbe.resolveExecutable(named: "rustup")
+        )
+        appendActivity(.compatibilityCheckCompleted, "Anchor/Rust compatibility check completed.", details: ["status": compatibilityMatrix.result.status.rawValue])
+        appendActivity(.compatibilityStrategyPrepared, "Anchor activation strategy prepared.", details: ["strategy": anchorStrategy.strategy.rawValue])
     }
 
     private func filteredInstructions(_ idl: WorkstationIDL) -> [WorkstationIDLInstruction] {

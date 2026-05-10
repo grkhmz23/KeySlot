@@ -14,6 +14,7 @@ struct WorkstationCommandPlan: Codable, Equatable, Identifiable {
     let name: String
     let executablePath: String
     let arguments: [String]
+    let environmentOverrides: [String: String]
     let workingDirectory: String?
     let cluster: WorkstationCluster?
     let requiresTrustedProject: Bool
@@ -25,6 +26,7 @@ struct WorkstationCommandPlan: Codable, Equatable, Identifiable {
         name: String,
         executablePath: String,
         arguments: [String],
+        environmentOverrides: [String: String] = [:],
         workingDirectory: String? = nil,
         cluster: WorkstationCluster? = nil,
         requiresTrustedProject: Bool = false,
@@ -34,6 +36,7 @@ struct WorkstationCommandPlan: Codable, Equatable, Identifiable {
         self.name = name
         self.executablePath = executablePath
         self.arguments = arguments
+        self.environmentOverrides = environmentOverrides
         self.workingDirectory = workingDirectory
         self.cluster = cluster
         self.requiresTrustedProject = requiresTrustedProject
@@ -77,7 +80,7 @@ struct WorkstationCommandRunner {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: plan.executablePath)
         process.arguments = plan.arguments
-        process.environment = environment
+        process.environment = environment.merging(plan.environmentOverrides) { _, override in override }
         if let workingDirectory = plan.workingDirectory {
             process.currentDirectoryURL = URL(fileURLWithPath: workingDirectory, isDirectory: true)
         }
@@ -146,6 +149,7 @@ struct WorkstationCommandRunner {
             throw WorkstationCommandValidationError.unsafeExecutable
         }
         try plan.arguments.forEach(Self.validateArgument)
+        try WorkstationRustToolchainPolicy.validateEnvironmentOverrides(plan.environmentOverrides)
         if let workingDirectory = plan.workingDirectory {
             try Self.validateArgument(workingDirectory)
             guard workingDirectory.hasPrefix("/") else {

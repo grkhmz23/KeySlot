@@ -72,6 +72,10 @@ struct WorkstationToolchainManifestEntry: Codable, Equatable, Identifiable {
     let executableRelativePath: String
     let installStrategy: WorkstationToolchainInstallStrategy
     let installStatus: WorkstationToolchainManifestInstallStatus
+    let compatibilityStrategy: String?
+    let recommendedAnchorCandidates: [String]?
+    let rustToolchainPinningNote: String?
+    let prebuiltArtifactStatus: String?
     let notes: String
     let licenseNote: String
 
@@ -112,6 +116,10 @@ struct WorkstationToolchainManifest: Codable, Equatable {
                 executableRelativePath: "bin/\($0.executableName)",
                 installStrategy: .unavailable,
                 installStatus: .plannedBlockedMissingArtifact,
+                compatibilityStrategy: nil,
+                recommendedAnchorCandidates: nil,
+                rustToolchainPinningNote: nil,
+                prebuiltArtifactStatus: "blocked_without_verified_artifact_and_sha256",
                 notes: "Managed install is blocked until release engineering fills a verified HTTPS source and sha256.",
                 licenseNote: "See upstream tool license before packaging."
             )

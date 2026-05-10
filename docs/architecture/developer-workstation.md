@@ -65,7 +65,7 @@ Allowed RPC methods are read-only. `requestAirdrop` is available only through th
 
 ## Managed Toolchain Install
 
-D2 added an explicit managed toolchain manifest at `docs/toolchains/gorkh-toolchain-manifest.json`; D3 adds explicit install statuses and an Anchor/AVM install plan.
+D2 added an explicit managed toolchain manifest at `docs/toolchains/gorkh-toolchain-manifest.json`; D3 adds explicit install statuses and an Anchor/AVM install plan. D5 adds a fixed Anchor/Rust compatibility matrix and Rust pinning strategy.
 
 Managed installs are allowed only when a manifest entry has:
 
@@ -80,11 +80,26 @@ Entries with missing source or checksum are shown as blocked. This repository do
 Anchor/AVM follows a separate verified-tooling path:
 
 - existing `anchor` is detected and verified with `anchor --version`
-- existing `avm` can run fixed `avm install 0.30.1` / `avm use 0.30.1`
+- existing `avm` can run fixed `avm install 0.31.1` / `avm use 0.31.1` or `avm install 0.30.1` / `avm use 0.30.1`
 - Cargo can prepare a fixed AVM install command from the official Anchor repository only after explicit tooling approval
+- if current Rust cannot compile the chosen Anchor candidate, `rustup toolchain install 1.79.0` can be prepared as a fixed command when rustup is present
+- AVM/Cargo commands may use `RUSTUP_TOOLCHAIN=1.79.0` as a scoped command environment override
+- GORKH does not run `rustup default` and does not mutate the global Rust default
 - no Cargo/AVM command runs automatically
 
 Archive extraction must reject absolute paths, parent traversal, backslashes, and null bytes. No unverified installer execution is allowed.
+
+## Compatibility Matrix
+
+The compatibility panel records current versions, fixed candidates, and blockers:
+
+- Anchor candidates are fixed to `0.31.1` and `0.30.1`
+- the D5 recommended candidate is Anchor `0.31.1`
+- Rust candidates are current detected stable and pinned `1.79.0`
+- arbitrary Anchor or Rust version strings are rejected
+- prebuilt Anchor artifacts stay blocked until official source URL and SHA-256 are pinned
+
+D4 proved that Anchor `0.30.1` does not activate under local Rust/Cargo `1.94.0`; D5 therefore recommends the fixed Rust pin strategy rather than retrying arbitrary versions.
 
 ## Local Validator
 

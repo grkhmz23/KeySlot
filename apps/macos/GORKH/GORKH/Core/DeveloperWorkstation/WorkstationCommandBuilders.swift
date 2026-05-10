@@ -20,6 +20,47 @@ enum WorkstationCommandBuilders {
         )
     }
 
+    static func rustupVersion(rustupPath: String) -> WorkstationCommandPlan {
+        WorkstationCommandPlan(
+            name: "rustup version",
+            executablePath: rustupPath,
+            arguments: ["--version"]
+        )
+    }
+
+    static func rustupToolchainList(rustupPath: String) -> WorkstationCommandPlan {
+        WorkstationCommandPlan(
+            name: "rustup toolchain list",
+            executablePath: rustupPath,
+            arguments: ["toolchain", "list"]
+        )
+    }
+
+    static func rustupToolchainInstall(rustupPath: String, rustToolchain: String) -> WorkstationCommandPlan {
+        WorkstationCommandPlan(
+            name: "Install pinned Rust toolchain",
+            executablePath: rustupPath,
+            arguments: ["toolchain", "install", rustToolchain]
+        )
+    }
+
+    static func cargoVersionWithRustToolchain(cargoPath: String, rustToolchain: String) -> WorkstationCommandPlan {
+        WorkstationCommandPlan(
+            name: "Cargo version with pinned Rust",
+            executablePath: cargoPath,
+            arguments: ["+\(rustToolchain)", "--version"],
+            environmentOverrides: ["RUSTUP_TOOLCHAIN": rustToolchain]
+        )
+    }
+
+    static func avmList(avmPath: String) -> WorkstationCommandPlan {
+        WorkstationCommandPlan(
+            name: "AVM list",
+            executablePath: avmPath,
+            arguments: ["list"]
+        )
+    }
+
     static func gitClone(url: String, destination: String, gitPath: String = "/usr/bin/git") -> WorkstationCommandPlan {
         WorkstationCommandPlan(
             name: "Git clone",
@@ -138,11 +179,12 @@ enum WorkstationCommandBuilders {
         )
     }
 
-    static func avmInstallAnchor(avmPath: String, anchorVersion: String) -> WorkstationCommandPlan {
+    static func avmInstallAnchor(avmPath: String, anchorVersion: String, rustToolchain: String? = nil) -> WorkstationCommandPlan {
         WorkstationCommandPlan(
             name: "Install Anchor with AVM",
             executablePath: avmPath,
             arguments: ["install", anchorVersion],
+            environmentOverrides: rustToolchain.map { ["RUSTUP_TOOLCHAIN": $0] } ?? [:],
             requiresTrustedProject: false,
             writesToCluster: false
         )

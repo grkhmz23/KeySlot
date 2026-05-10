@@ -100,3 +100,18 @@ Recorded D4 result:
 - Program id: none.
 - Temporary keypair: not created by the final full-localnet smoke path.
 - Mainnet program operations: still locked.
+
+## D5 Compatibility Path
+
+Phase D5 adds a fixed compatibility matrix:
+
+- Anchor candidates: `0.31.1`, `0.30.1`
+- recommended Anchor candidate: `0.31.1`
+- Rust pin candidate: `1.79.0`
+- detected local Rust/Cargo: `1.94.0`
+- detected rustup: `1.29.0`
+- detected AVM: `0.30.1`
+
+The selected strategy is to prepare `rustup toolchain install 1.79.0` with explicit tooling approval, then run fixed AVM install/use commands for Anchor `0.31.1` with `RUSTUP_TOOLCHAIN=1.79.0` scoped to that command environment. GORKH does not run `rustup default`, does not accept arbitrary version strings, and does not use unverified install scripts.
+
+D5 did not produce a localnet deploy. Anchor remains inactive, so localnet build/deploy continues to skip safely before validator startup.

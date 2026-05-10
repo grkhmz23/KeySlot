@@ -24,6 +24,12 @@ Expected:
 
 Run live modes only when local toolchains are intentionally available.
 
+Optional fixed Rust pin:
+
+`GORKH_WORKSTATION_RUST_TOOLCHAIN=1.79.0 scripts/workstation-localnet-smoke.sh --full-localnet`
+
+Only fixed candidates are accepted. Arbitrary `GORKH_WORKSTATION_RUST_TOOLCHAIN` values skip safely before build/deploy.
+
 Expected:
 
 - local validator is reused or started with fixed arguments unless `--skip-start-validator` is set
@@ -63,6 +69,39 @@ Full localnet smoke result:
 Next action:
 
 - Provide a verified compatible Anchor/AVM artifact or pin a compatible Rust toolchain, then rerun `scripts/workstation-localnet-smoke.sh --full-localnet`.
+
+## D5 Compatibility Matrix
+
+Recorded during Phase D5 on 2026-05-10:
+
+- `rustc --version`: `rustc 1.94.0`
+- `cargo --version`: `cargo 1.94.0`
+- `rustup --version`: `rustup 1.29.0`
+- `rustup toolchain list`: `stable-aarch64-apple-darwin (active, default)`
+- `avm --version`: `avm 0.30.1`
+- `avm list`: failed in the local environment with an internal `reqwest`/system-configuration panic
+- `anchor --version`: failed with `Anchor version not set`
+- `solana --version`: `solana-cli 3.1.10`
+- `solana-test-validator --version`: `solana-test-validator 3.1.10`
+
+Fixed D5 candidates:
+
+- Anchor: `0.31.1` recommended, `0.30.1` existing D3/D4 candidate
+- Rust: current stable detected, pinned candidate `1.79.0`
+
+Selected safe path:
+
+- Prepare `rustup toolchain install 1.79.0` only after explicit tooling approval.
+- Run AVM install/use for Anchor `0.31.1` with `RUSTUP_TOOLCHAIN=1.79.0` scoped to the command environment.
+- Do not run `rustup default`.
+- Do not run unverified installer scripts.
+
+D5 full localnet smoke result:
+
+- Anchor did not activate during D5.
+- `scripts/workstation-localnet-smoke.sh --check` reports the active Rust/Cargo versions and Anchor blocker.
+- `scripts/workstation-localnet-smoke.sh --full-localnet` skips safely before validator startup while Anchor is unusable.
+- No localnet program id was recorded.
 
 ## Boundaries
 

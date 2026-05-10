@@ -27,6 +27,10 @@ Options:
   --help                  Show this message.
 
 No mainnet, no devnet by default, no arbitrary project path, and no unverified installer execution.
+
+Optional fixed Rust pin:
+  GORKH_WORKSTATION_RUST_TOOLCHAIN=1.79.0 scripts/workstation-localnet-smoke.sh \
+    --full-localnet
 USAGE
 }
 
@@ -86,11 +90,33 @@ have_tool() {
 
 tool_status() {
   if have_tool "$1"; then
-    echo "$1: found"
+    local version_output
+    if version_output="$("$1" --version 2>&1)"; then
+      echo "$1: found ($version_output)"
+    else
+      echo "$1: found"
+    fi
     return 0
   fi
   echo "$1: missing"
   return 1
+}
+
+validate_rust_pin() {
+  if [[ -z "${GORKH_WORKSTATION_RUST_TOOLCHAIN:-}" ]]; then
+    return 0
+  fi
+
+  case "$GORKH_WORKSTATION_RUST_TOOLCHAIN" in
+    1.79.0|stable-aarch64-apple-darwin)
+      export RUSTUP_TOOLCHAIN="$GORKH_WORKSTATION_RUST_TOOLCHAIN"
+      echo "rust pin: using fixed candidate $GORKH_WORKSTATION_RUST_TOOLCHAIN"
+      ;;
+    *)
+      echo "localnet smoke skipped because GORKH_WORKSTATION_RUST_TOOLCHAIN is not a fixed candidate"
+      exit 0
+      ;;
+  esac
 }
 
 anchor_status() {
@@ -108,6 +134,11 @@ anchor_status() {
   echo "anchor: found but unusable ($(printf '%s' "$version_output" | head -n 1))"
   return 1
 }
+
+validate_rust_pin
+
+tool_status rustc || true
+tool_status cargo || true
 
 SOLANA_OK=0
 VALIDATOR_OK=0
@@ -189,7 +220,7 @@ build_sample() {
 }
 
 deploy_sample() {
-  solana-keygen new --silent --no-bip39-passphrase --force -o "$KEYPAIR" >/dev/null
+  solana-keygen new --silent --force -o "$KEYPAIR" --no-bip39-passphrase >/dev/null
   chmod 0600 "$KEYPAIR"
   solana --url http://127.0.0.1:8899 airdrop 2 "$(solana-keygen pubkey "$KEYPAIR")" >/dev/null
 
