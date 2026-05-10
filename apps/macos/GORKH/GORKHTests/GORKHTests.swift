@@ -4640,6 +4640,106 @@ struct GORKHTests {
         #expect(smoke.contains("Agent Full-App Orchestrator Smoke"))
     }
 
+    @Test func agentInteractiveHandoffQADocQueueAndBlockedStatesStaySafe() throws {
+        let qa = try sourceText(relativePath: "../../../docs/qa/agent-orchestrator-interactive-qa.md")
+        for phrase in [
+            "summarize my portfolio",
+            "show what changed today",
+            "is my wallet safe?",
+            "check RPC status",
+            "prepare a swap of 0.1 SOL to USDC",
+            "prepare a PUSD payment request",
+            "prepare a private Cloak payment",
+            "find safer yield for USDC",
+            "check my LP positions",
+            "why is my PnL partial?",
+            "use Zerion to prepare a tiny swap",
+            "execute this swap now from chat",
+            "buy this token",
+            "send 10 SOL from watch-only wallet"
+        ] {
+            #expect(qa.contains(phrase))
+        }
+        #expect(qa.contains("Queue has no execution button."))
+        #expect(qa.lowercased().contains("agent chat cannot sign"))
+
+        let handoffExpectations: [(AgentIntentType, AgentHandoffTarget, WalletSection?)] = [
+            (.walletOverview, .walletOverview, .overview),
+            (.receiveAddress, .walletReceive, .overview),
+            (.prepareSend, .walletSend, .send),
+            (.prepareSwap, .walletSwap, .swap),
+            (.prepareCloakPrivatePayment, .walletPrivate, .privateWallet),
+            (.securityStatus, .walletSecurity, .security),
+            (.activitySummary, .walletActivity, .activity),
+            (.assetBreakdown, .portfolioAssets, .portfolio),
+            (.walletBreakdown, .portfolioWallets, .portfolio),
+            (.pusdTreasurySummary, .portfolioPUSD, .portfolio),
+            (.stakeLstSummary, .portfolioStake, .portfolio),
+            (.lendingSummary, .portfolioLending, .portfolio),
+            (.liquiditySummary, .portfolioLiquidity, .portfolio),
+            (.yieldSummary, .portfolioYield, .portfolio),
+            (.pnlSummary, .portfolioPnL, .portfolio),
+            (.portfolioHistorySummary, .portfolioHistory, .portfolio),
+            (.zerionPrepareTinySwap, .zerionReview, nil)
+        ]
+        for (intent, target, walletSection) in handoffExpectations {
+            #expect(AgentHandoffCoordinator.target(for: intent) == target)
+            let instruction = AgentHandoffCoordinator.instruction(for: target)
+            #expect(instruction.walletSection == walletSection)
+            let safeInstruction = instruction.instruction.lowercased()
+            #expect(safeInstruction.contains("approval") || safeInstruction.contains("review") || safeInstruction.contains("no funds move"))
+        }
+
+        let readyClassification = AgentIntentClassifier().classify("prepare a swap of 0.1 SOL to USDC")
+        let readyProposal = AgentProposalFactory.makeProposal(
+            classification: readyClassification,
+            lane: .mainWallet,
+            decision: .allowed(warnings: ["Destination review required."])
+        )
+        let blockedClassification = AgentIntentClassifier().classify("send 10 SOL to 11111111111111111111111111111111")
+        let blockedDecision = AgentPolicyEngine.evaluate(
+            classification: blockedClassification,
+            lane: .mainWallet,
+            context: AgentPolicyContext(
+                walletCanSign: false,
+                walletIsWatchOnly: true,
+                selectedNetwork: .mainnetBeta,
+                zerionStatus: .unchecked
+            )
+        )
+        let blockedProposal = AgentProposalFactory.makeProposal(classification: blockedClassification, lane: .mainWallet, decision: blockedDecision)
+        let queue = AgentApprovalQueue(proposals: [readyProposal, blockedProposal])
+        #expect(queue.filtered(by: .wallet).count == 2)
+        #expect(queue.filtered(by: .blocked).first?.canOpenHandoff == false)
+        #expect(queue.filtered(by: .blocked).first?.statusDetail.lowercased().contains("cannot sign") == true)
+        #expect(queue.filtered(by: .wallet).contains(where: { $0.canOpenHandoff && $0.handoffTarget == .walletSwap }))
+
+        let ambiguous = AgentIntentClassifier().classify("buy this token")
+        #expect(ambiguous.missingFields.isEmpty == false)
+        let ambiguousDecision = AgentPolicyEngine.evaluate(
+            classification: ambiguous,
+            lane: .mainWallet,
+            context: AgentPolicyContext(walletCanSign: true, walletIsWatchOnly: false, selectedNetwork: .mainnetBeta, zerionStatus: .unchecked)
+        )
+        #expect(ambiguousDecision.status == .needsMoreInput)
+
+        let hostedUnavailable = AgentAIStatus.localSafeMode(reason: "Hosted AI endpoint is not configured.")
+        #expect(hostedUnavailable.mode == .localSafeMode)
+        #expect(hostedUnavailable.message.contains("Hosted AI endpoint is not configured."))
+
+        let zerion = AgentIntentClassifier().classify("use Zerion to prepare a tiny swap of 1 USDC to ETH on base")
+        let zerionDecision = AgentPolicyEngine.evaluate(
+            classification: zerion,
+            lane: AgentExecutionLaneRouter.route(zerion),
+            context: AgentPolicyContext(walletCanSign: true, walletIsWatchOnly: false, selectedNetwork: .mainnetBeta, zerionStatus: .unchecked)
+        )
+        #expect(zerionDecision.status == .blocked)
+        #expect(zerionDecision.reasons.contains(where: { $0.contains("Zerion CLI") }))
+
+        #expect(AgentToolRegistry.evaluate(toolID: .executeSend).blocked == ["executeSend"])
+        #expect(AgentToolRegistry.evaluate(toolID: .sendTransaction).blocked == ["sendTransaction"])
+    }
+
     @Test func agentMemoryAndAuditRedactionContainNoSecrets() throws {
         let sensitive = "ZERION_API_KEY=zk_unit_test_secret agent token: spend-power private key: abc"
         let message = AgentChatMessage(role: .user, text: sensitive)

@@ -136,15 +136,15 @@ enum AgentProposalFactory {
         case .tokenBuyRequest:
             return "Prepare a wallet swap draft to buy \(classification.targetAsset ?? "token") using \(classification.sourceAsset ?? "source asset")."
         case .prepareSwap, .tokenSwapRequest, .zerionTinySwapRequest, .zerionPrepareTinySwap:
-            return "Prepare a \(lane.title) swap proposal from \(classification.sourceAsset ?? "source") to \(classification.targetAsset ?? "target")."
+            return "Prepare a \(lane.title) swap proposal from \(classification.sourceAsset ?? "source") to \(classification.targetAsset ?? "target"). Agent Chat will not execute it; review continues in the destination module."
         case .prepareSend, .tokenSendRequest:
-            return "Prepare a wallet send draft. The Wallet module must simulate and approve it."
+            return "Prepare a wallet send draft. Wallet must simulate, review, and approve it before anything can move."
         case .pusdPaymentRequest:
-            return "Prepare a PUSD payment handoff through the existing Wallet send/receive flow."
+            return "Prepare a PUSD payment handoff through the existing Wallet send/receive flow. Agent does not send from chat."
         case .prepareCloakDeposit:
-            return "Prepare a Cloak SOL shield/deposit draft for Wallet -> Private review."
+            return "Prepare a Cloak SOL shield/deposit draft for Wallet -> Private review. Private state remains local and approval-gated."
         case .cloakPrivatePaymentRequest, .prepareCloakPrivatePayment:
-            return "Prepare a Cloak private payment draft for Wallet -> Private review."
+            return "Prepare a Cloak private payment draft for Wallet -> Private review. Agent cannot execute private payments from chat."
         default:
             return classification.summary
         }

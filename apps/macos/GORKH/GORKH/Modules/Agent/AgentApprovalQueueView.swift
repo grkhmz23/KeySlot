@@ -36,8 +36,17 @@ struct AgentApprovalQueueView: View {
                                     Text("\(item.lane.title) -> \(item.handoffTarget.title)")
                                         .font(.caption2)
                                         .foregroundStyle(GorkhColors.secondaryText)
+                                    Text(item.statusDetail)
+                                        .font(.caption2)
+                                        .foregroundStyle(GorkhColors.secondaryText)
+                                        .lineLimit(2)
                                 }
                                 Spacer()
+                                GorkhStatusChip(
+                                    title: item.canOpenHandoff ? "Handoff only" : "No execute",
+                                    systemImage: item.canOpenHandoff ? "arrow.right.circle" : "lock",
+                                    color: item.canOpenHandoff ? GorkhColors.accent : GorkhColors.warning
+                                )
                             }
                         }
                     }

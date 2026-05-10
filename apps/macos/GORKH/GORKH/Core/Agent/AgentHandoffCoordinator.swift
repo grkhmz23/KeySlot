@@ -35,7 +35,7 @@ enum AgentHandoffCoordinator {
         case .walletOverview:
             return wallet(.overview, target: target, title: "Open Wallet Overview")
         case .walletReceive:
-            return wallet(.overview, target: target, title: "Open Receive", detail: "Use the Receive card in Wallet Overview.")
+            return wallet(.overview, target: target, title: "Open Receive", detail: "Use the Receive card in Wallet Overview. Receiving only displays public address details; no funds move from Agent Chat.")
         case .walletSwap:
             return wallet(.swap, target: target, title: "Open Swap Review")
         case .walletSend:
@@ -52,7 +52,7 @@ enum AgentHandoffCoordinator {
              .portfolioYield,
              .portfolioPnL,
              .portfolioHistory:
-            return wallet(.portfolio, target: target, title: target.title)
+            return wallet(.portfolio, target: target, title: target.title, detail: portfolioDetail(for: target))
         case .walletSecurity:
             return wallet(.security, target: target, title: "Open Security")
         case .walletActivity:
@@ -127,5 +127,32 @@ enum AgentHandoffCoordinator {
             title: title,
             instruction: detail ?? "Open Wallet -> \(section.title). The destination module keeps its own review and approval gates."
         )
+    }
+
+    private static func portfolioDetail(for target: AgentHandoffTarget) -> String {
+        let destination: String
+        switch target {
+        case .portfolioAssets:
+            destination = "Assets"
+        case .portfolioWallets:
+            destination = "Wallets"
+        case .portfolioPUSD:
+            destination = "PUSD Treasury"
+        case .portfolioStake:
+            destination = "Stake / LST"
+        case .portfolioLending:
+            destination = "Lending"
+        case .portfolioLiquidity:
+            destination = "Liquidity"
+        case .portfolioYield:
+            destination = "Yield"
+        case .portfolioPnL:
+            destination = "PnL"
+        case .portfolioHistory:
+            destination = "History"
+        default:
+            destination = "Summary"
+        }
+        return "Open Wallet -> Portfolio, then review the \(destination) section. Agent only hands off; Portfolio remains read-only unless an existing destination flow requires approval."
     }
 }
