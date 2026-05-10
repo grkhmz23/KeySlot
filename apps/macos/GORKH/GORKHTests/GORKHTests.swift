@@ -4802,6 +4802,57 @@ struct GORKHTests {
         #expect(!hostedSmoke.contains("nft"))
     }
 
+    @Test func zerionHackathonDemoPackExistsAndStaysSecretFree() throws {
+        let runbook = try sourceText(relativePath: "../../../docs/demo/zerion-agent-demo-runbook.md")
+        let policies = try sourceText(relativePath: "../../../docs/demo/zerion-policy-templates.md")
+        let video = try sourceText(relativePath: "../../../docs/demo/zerion-agent-video-script.md")
+        let submission = try sourceText(relativePath: "../../../docs/demo/zerion-submission-summary.md")
+        let e2e = try sourceText(relativePath: "../../../docs/qa/zerion-agent-e2e-smoke.md")
+        let release = try sourceText(relativePath: "../../../docs/qa/wallet-release-readiness.md")
+
+        let lowercasedDocs = [runbook, policies, video, submission, e2e, release].joined(separator: "\n").lowercased()
+        #expect(lowercasedDocs.contains("separate zerion wallet") || lowercasedDocs.contains("separate tiny-funded zerion wallet"))
+        #expect(lowercasedDocs.contains("scoped policy"))
+        #expect(lowercasedDocs.contains("agent tokens have spending power"))
+        #expect(lowercasedDocs.contains("transaction hash/signature"))
+        #expect(lowercasedDocs.contains("do not claim a live transaction"))
+        #expect(lowercasedDocs.contains("a7 demo pack"))
+
+        let demoDocs = [runbook, policies, video, submission, e2e].joined(separator: "\n")
+        for forbidden in [
+            "zk_",
+            "ZERION_API_KEY=",
+            "agent token value",
+            "PRIVATE_KEY",
+            "SECRET_KEY",
+            "MNEMONIC",
+            "SEED",
+            "WALLET_JSON",
+            "RPCFAST",
+            "DEEPSEEK_API_KEY"
+        ] {
+            #expect(!demoDocs.contains(forbidden))
+        }
+        #expect(!demoDocs.lowercased().contains("nft"))
+
+        let uiCopy = try [
+            "GORKH/Modules/Agent/ZerionExecutorView.swift",
+            "GORKH/Modules/Agent/ZerionPolicyCenterView.swift",
+            "GORKH/Modules/Agent/ZerionProposalView.swift",
+            "GORKH/Modules/Agent/ZerionExecutionReviewView.swift"
+        ].map(sourceText(relativePath:)).joined(separator: "\n").lowercased()
+        #expect(uiCopy.contains("separate zerion wallet") || uiCopy.contains("separate tiny-funded"))
+        #expect(uiCopy.contains("scoped policy"))
+        #expect(uiCopy.contains("gorkh main-wallet access") || uiCopy.contains("does not use the gorkh main wallet"))
+        #expect(uiCopy.contains("no arbitrary shell"))
+
+        let cliCommandSource = try sourceText(relativePath: "GORKH/Core/Zerion/ZerionCLICommand.swift")
+        #expect(!cliCommandSource.contains("case bridge"))
+        #expect(!cliCommandSource.contains("case send"))
+        #expect(!cliCommandSource.contains("case signMessage"))
+        #expect(!cliCommandSource.contains("case signTypedData"))
+    }
+
     @Test func sharedXcodeSchemeContainsNoSecretEnvironmentValues() throws {
         let scheme = try sourceText(relativePath: "GORKH.xcodeproj/xcshareddata/xcschemes/GORKH.xcscheme")
         let uppercased = scheme.uppercased()

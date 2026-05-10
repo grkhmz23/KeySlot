@@ -7,7 +7,7 @@ struct ZerionPolicyCenterView: View {
         VStack(alignment: .leading, spacing: 16) {
             GorkhPanel("Policy Center") {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Create the Zerion wallet, scoped policy, and agent token manually in terminal, then refresh here. A2 can execute only an approved tiny swap after policy validation.")
+                    Text("Create a separate tiny-funded Zerion wallet, scoped policy, and agent token manually in terminal, then refresh here. Agent tokens have spending power; GORKH keeps main-wallet access disabled.")
                         .foregroundStyle(GorkhColors.secondaryText)
                     HStack(spacing: 8) {
                         GorkhStatusChip(title: snapshot.status.label, systemImage: "checklist", color: snapshot.status == .loaded ? GorkhColors.accent : GorkhColors.warning)

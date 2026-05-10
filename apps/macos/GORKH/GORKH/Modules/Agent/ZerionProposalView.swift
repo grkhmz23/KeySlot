@@ -11,7 +11,7 @@ struct ZerionProposalView: View {
         VStack(alignment: .leading, spacing: 16) {
             GorkhPanel("Proposals") {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("A2 proposals can become reviewable only for one tiny same-chain Zerion swap from a separate Zerion wallet. Bridge, send, signing, and recurring automation remain blocked.")
+                    Text("A2 proposals can become reviewable only for one tiny same-chain Zerion swap from a separate tiny-funded Zerion wallet under a scoped policy. Bridge, send, signing, recurring automation, and GORKH main-wallet access remain blocked.")
                         .foregroundStyle(GorkhColors.secondaryText)
                     HStack {
                         Button(action: createSolanaProposal) {

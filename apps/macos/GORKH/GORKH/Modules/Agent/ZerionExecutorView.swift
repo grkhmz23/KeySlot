@@ -9,7 +9,7 @@ struct ZerionExecutorView: View {
         VStack(alignment: .leading, spacing: 16) {
             GorkhPanel("Zerion Executor") {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("A2 checks Zerion CLI, API key, wallet, policy, token, and swap command-shape readiness. Only an approved tiny swap can execute.")
+                    Text("A2 checks Zerion CLI, API key, separate tiny-funded wallet, scoped policy, token, and swap command-shape readiness. Only an approved tiny swap can execute; there is no GORKH main-wallet access and no arbitrary shell.")
                         .foregroundStyle(GorkhColors.secondaryText)
 
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 10)], spacing: 10) {
@@ -33,6 +33,7 @@ struct ZerionExecutorView: View {
                         .disabled(isRefreshing)
 
                         GorkhStatusChip(title: "Tiny swap gated", systemImage: "lock.open.trianglebadge.exclamationmark", color: GorkhColors.warning)
+                        GorkhStatusChip(title: "Separate wallet only", systemImage: "wallet.pass", color: GorkhColors.accent)
                         GorkhStatusChip(title: "No bridge / send / signing", systemImage: "lock", color: GorkhColors.warning)
                     }
                 }

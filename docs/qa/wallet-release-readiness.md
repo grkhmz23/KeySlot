@@ -59,6 +59,29 @@ These checks require a controlled real wallet or owned position and were not run
 
 Do not run mainnet smoke automatically. Use small amounts, explicit user approval, LocalAuthentication, simulation where required, and the mainnet confirmation phrase.
 
+## Agent/Zerion Demo Validation
+
+Agent/Zerion status:
+
+- A1 Agent + Zerion Executor foundation: implemented.
+- A2 Zerion tiny swap proposal/review/execution flow: implemented, live transaction not automatically run.
+- A3 Agent Chat + policy-gated wallet operator: implemented.
+- A4 Hosted Agent chat: implemented with local safe fallback.
+- A5 Hosted Agent API contract/mock smoke: implemented.
+- A6 Hosted Agent remote smoke/failure-mode QA: implemented, remote endpoint smoke pending unless `GORKH_AGENT_API_BASE_URL` is configured locally.
+- A7 Demo pack: runbook, policy templates, video script, submission summary, and E2E smoke checklist.
+
+Before hackathon submission, collect:
+
+- Zerion live tiny transaction hash/signature, if performed.
+- Policy setup screenshot/checklist with secrets redacted.
+- Agent/Zerion status screenshot showing CLI, API key, policy, and token redacted states.
+- Proposal review screenshot showing separate Zerion wallet, scoped policy, local cap, and redacted command preview.
+- Agent audit screenshot showing redacted result.
+- Confirmation that no keys, agent tokens, wallet files, or local environment values are committed.
+
+Do not claim a live Zerion transaction until the transaction hash/signature is recorded.
+
 ## Secret Hygiene
 
 Before release, inspect shared schemes, docs, scripts, helper configs, and package files for secret-like values:

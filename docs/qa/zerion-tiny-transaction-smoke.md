@@ -15,8 +15,8 @@ Phase A2 supports one real, same-chain, tiny Zerion swap from a separate Zerion 
 1. Install Node.js 20 or later.
 2. Install Zerion CLI:
    `npm install -g zerion-cli`
-3. Export the API key locally:
-   `export ZERION_API_KEY=...`
+3. Export the API key locally without writing it into docs, schemes, or scripts:
+   `read -s ZERION_API_KEY && export ZERION_API_KEY`
 4. Create a separate Zerion wallet manually in terminal.
 5. Fund it with only a tiny amount for the selected chain.
 6. Create a scoped policy manually:
