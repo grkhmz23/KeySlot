@@ -7,13 +7,15 @@ struct HostedDeepSeekProvider: AgentLLMProvider {
         guard let endpointHost = client.configuration.endpointHost else {
             return .localSafeMode(reason: "Hosted AI endpoint is not configured.")
         }
-        return .hosted(
-            state: .available,
-            redactionStatus: .clean,
-            endpointHost: endpointHost,
-            responseStatus: "ready",
-            message: "Hosted AI configured."
-        )
+            return .hosted(
+                state: .available,
+                redactionStatus: .clean,
+                endpointHost: endpointHost,
+                authStatus: client.configuration.apiKeyStatus,
+                responseStatus: "ready",
+                message: "Hosted AI configured.",
+                backendContractVersion: AgentHostedAPIContract.version
+            )
     }
 
     func respond(to request: AgentLLMChatRequest, redactionStatus: AgentRedactionStatus) async -> AgentLLMProviderResult {
@@ -23,17 +25,20 @@ struct HostedDeepSeekProvider: AgentLLMProvider {
         }
 
         do {
-            let response = try await client.send(request)
-            let boundary = AgentToolBoundary.evaluate(response.toolCallSuggestions)
-            let state: AgentLLMProviderState = boundary.hasBlockedTools ? .degraded : .available
+            let validated = try await client.sendValidated(request)
+            let response = validated.response
+            let boundary = validated.toolBoundaryDecision
+            let state: AgentLLMProviderState = boundary.hasBlockedTools || validated.ignoredProposalSuggestion ? .degraded : .available
             return AgentLLMProviderResult(
                 response: response,
                 status: .hosted(
                     state: state,
                     redactionStatus: redactionStatus,
                     endpointHost: endpointHost,
+                    authStatus: client.configuration.apiKeyStatus,
                     responseStatus: "received",
-                    message: boundary.hasBlockedTools ? "Hosted AI response received with blocked tool suggestions." : "Hosted AI response received."
+                    message: boundary.hasBlockedTools || validated.ignoredProposalSuggestion ? "Hosted AI response received with blocked advisory content." : "Hosted AI response received.",
+                    backendContractVersion: response.modelInfo?.contractVersion ?? AgentHostedAPIContract.version
                 ),
                 toolBoundaryDecision: boundary
             )
@@ -51,4 +56,3 @@ struct HostedDeepSeekProvider: AgentLLMProvider {
         }
     }
 }
-

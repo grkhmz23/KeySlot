@@ -47,6 +47,7 @@ enum AgentHostedAPIError: Error, Equatable {
     case invalidResponse
     case httpStatus(Int, String)
     case transport(String)
+    case validation(String)
 }
 
 protocol AgentHTTPTransport {
@@ -88,8 +89,19 @@ struct AgentHostedAPIClient {
     }
 
     func send(_ requestPayload: AgentLLMChatRequest) async throws -> AgentLLMChatResponse {
+        try await sendValidated(requestPayload).response
+    }
+
+    func sendValidated(_ requestPayload: AgentLLMChatRequest) async throws -> AgentHostedValidatedResponse {
         guard let url = configuration.endpointURL else {
             throw AgentHostedAPIError.missingEndpoint
+        }
+
+        let hostedRequest = AgentHostedChatRequest(llmRequest: requestPayload)
+        do {
+            try AgentHostedAPIValidator.validateOutbound(hostedRequest)
+        } catch {
+            throw AgentHostedAPIError.validation(AgentSafetyRedactor.redact(String(describing: error)))
         }
 
         var request = URLRequest(url: url, timeoutInterval: 15)
@@ -97,7 +109,7 @@ struct AgentHostedAPIClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         configuration.applyAuthentication(to: &request)
-        request.httpBody = try encoder.encode(requestPayload)
+        request.httpBody = try encoder.encode(hostedRequest)
 
         do {
             let (data, response) = try await transport.perform(request)
@@ -105,9 +117,12 @@ struct AgentHostedAPIClient {
                 let body = String(data: data.prefix(512), encoding: .utf8).map(AgentSafetyRedactor.redact) ?? ""
                 throw AgentHostedAPIError.httpStatus(response.statusCode, body)
             }
-            return try decoder.decode(AgentLLMChatResponse.self, from: data)
+            let hostedResponse = try decoder.decode(AgentHostedChatResponse.self, from: data)
+            return try AgentHostedResponseSanitizer.sanitize(hostedResponse)
         } catch let error as AgentHostedAPIError {
             throw error
+        } catch let error as AgentHostedAPIValidationError {
+            throw AgentHostedAPIError.validation(AgentSafetyRedactor.redact(String(describing: error)))
         } catch {
             throw AgentHostedAPIError.transport(AgentSafetyRedactor.redact(error.localizedDescription))
         }

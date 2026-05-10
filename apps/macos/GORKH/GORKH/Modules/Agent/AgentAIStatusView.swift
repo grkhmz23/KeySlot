@@ -31,10 +31,16 @@ struct AgentAIStatusView: View {
                     Text(status.redactionStatus.title)
                         .font(.caption)
                         .foregroundStyle(GorkhColors.primaryText)
-                    if let endpointHost = status.endpointHost {
-                        Text(endpointHost)
-                            .font(.caption)
-                            .foregroundStyle(GorkhColors.secondaryText)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    statusRow("Endpoint", status.endpointConfigured ? (status.endpointHost ?? "Configured") : "Missing")
+                    statusRow("Auth", status.authStatus.title)
+                    if let backendContractVersion = status.backendContractVersion {
+                        statusRow("Contract", backendContractVersion)
+                    }
+                    if let lastSmokeStatus = status.lastSmokeStatus {
+                        statusRow("Smoke", lastSmokeStatus)
                     }
                 }
 
@@ -46,5 +52,17 @@ struct AgentAIStatusView: View {
         }
         .accessibilityIdentifier("agent.ai.status")
     }
-}
 
+    private func statusRow(_ label: String, _ value: String) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(GorkhColors.secondaryText)
+            Text(value)
+                .font(.caption)
+                .foregroundStyle(GorkhColors.primaryText)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+    }
+}

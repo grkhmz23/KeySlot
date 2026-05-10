@@ -76,17 +76,31 @@ struct AgentAIStatus: Codable, Equatable {
     let redactionStatus: AgentRedactionStatus
     let lastResponseStatus: String
     let endpointHost: String?
+    let endpointConfigured: Bool
+    let authStatus: AgentHostedAPIKeyStatus
+    let lastSmokeStatus: String?
+    let backendContractVersion: String?
     let noSecretsSent: Bool
     let updatedAt: Date
     let message: String
 
-    static func localSafeMode(reason: String, updatedAt: Date = Date()) -> AgentAIStatus {
+    static func localSafeMode(
+        reason: String,
+        endpointConfigured: Bool = false,
+        authStatus: AgentHostedAPIKeyStatus = .missing,
+        lastSmokeStatus: String? = "Not run",
+        updatedAt: Date = Date()
+    ) -> AgentAIStatus {
         AgentAIStatus(
             mode: .localSafeMode,
             providerState: .unavailable,
             redactionStatus: .clean,
             lastResponseStatus: "fallback",
             endpointHost: nil,
+            endpointConfigured: endpointConfigured,
+            authStatus: authStatus,
+            lastSmokeStatus: lastSmokeStatus,
+            backendContractVersion: nil,
             noSecretsSent: true,
             updatedAt: updatedAt,
             message: AgentSafetyRedactor.redact(reason)
@@ -97,8 +111,11 @@ struct AgentAIStatus: Codable, Equatable {
         state: AgentLLMProviderState,
         redactionStatus: AgentRedactionStatus,
         endpointHost: String?,
+        authStatus: AgentHostedAPIKeyStatus = .missing,
         responseStatus: String,
         message: String,
+        lastSmokeStatus: String? = "Not run",
+        backendContractVersion: String? = nil,
         updatedAt: Date = Date()
     ) -> AgentAIStatus {
         AgentAIStatus(
@@ -107,10 +124,13 @@ struct AgentAIStatus: Codable, Equatable {
             redactionStatus: redactionStatus,
             lastResponseStatus: responseStatus,
             endpointHost: endpointHost,
+            endpointConfigured: endpointHost != nil,
+            authStatus: authStatus,
+            lastSmokeStatus: lastSmokeStatus,
+            backendContractVersion: backendContractVersion.map(AgentSafetyRedactor.redact),
             noSecretsSent: redactionStatus != .blocked,
             updatedAt: updatedAt,
             message: AgentSafetyRedactor.redact(message)
         )
     }
 }
-

@@ -49,6 +49,8 @@ struct AgentLLMChatResponse: Codable, Equatable {
     let missingFields: [String]
     let toolCallSuggestions: [String]
     let safetyWarnings: [String]
+    let modelInfo: AgentHostedModelInfo?
+    let requestID: String?
 
     init(
         assistantMessage: String,
@@ -56,7 +58,9 @@ struct AgentLLMChatResponse: Codable, Equatable {
         proposalDraft: AgentAIProposalDraft? = nil,
         missingFields: [String] = [],
         toolCallSuggestions: [String] = [],
-        safetyWarnings: [String] = []
+        safetyWarnings: [String] = [],
+        modelInfo: AgentHostedModelInfo? = nil,
+        requestID: String? = nil
     ) {
         self.assistantMessage = AgentSafetyRedactor.redact(assistantMessage)
         self.suggestedIntent = suggestedIntent.map(AgentSafetyRedactor.redact)
@@ -64,6 +68,8 @@ struct AgentLLMChatResponse: Codable, Equatable {
         self.missingFields = missingFields.map(AgentSafetyRedactor.redact)
         self.toolCallSuggestions = toolCallSuggestions.map(AgentSafetyRedactor.redact)
         self.safetyWarnings = safetyWarnings.map(AgentSafetyRedactor.redact)
+        self.modelInfo = modelInfo
+        self.requestID = requestID.map(AgentSafetyRedactor.redact)
     }
 }
 
@@ -72,4 +78,3 @@ struct AgentLLMProviderResult: Codable, Equatable {
     let status: AgentAIStatus
     let toolBoundaryDecision: AgentToolBoundaryDecision
 }
-

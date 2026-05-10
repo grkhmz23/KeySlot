@@ -1,6 +1,6 @@
 # Agent Hosted AI
 
-Phase A4 adds a hosted AI layer to Agent Chat while keeping the deterministic Wallet operator as the authority for proposals and policy.
+Phase A4 adds a hosted AI layer to Agent Chat while keeping the deterministic Wallet operator as the authority for proposals and policy. Phase A5 adds the explicit backend contract, response sanitizer, and smoke harness.
 
 ## Provider
 
@@ -17,6 +17,8 @@ The request path is:
 
 `POST /v1/agent/chat`
 
+The concrete request/response schema is documented in `docs/architecture/agent-hosted-api-contract.md`.
+
 If the hosted endpoint is not configured or fails, Agent Chat falls back to local safe mode. The deterministic intent classifier, local policy engine, and proposal handoff model continue to work.
 
 ## Request Boundary
@@ -28,7 +30,8 @@ Before every hosted request, GORKH:
 - redacts user text,
 - blocks known forbidden fields,
 - attaches safety metadata,
-- includes only allowed local tool names.
+- includes only allowed local tool names,
+- validates the hosted API contract version and context size.
 
 Allowed context is limited to public and summarized data:
 
@@ -61,6 +64,8 @@ The hosted response can improve:
 
 The hosted response cannot approve, execute, sign, or change deterministic execution fields. Any executable request still becomes a local proposal and must pass `AgentPolicyEngine`.
 
+If a hosted response claims approval or execution, GORKH ignores the claim, marks the response degraded, and audits a safe summary.
+
 ## Tool Boundary
 
 Allowed AI tool suggestions:
@@ -84,9 +89,13 @@ Agent Chat shows:
 - Hosted DeepSeek or Local Safe Mode,
 - provider status,
 - redaction status,
+- endpoint configured/missing,
+- auth configured/missing with redacted status,
+- backend contract version when returned,
+- last smoke status when available,
 - "No secrets sent" indicator,
 - fallback reason when the hosted endpoint is unavailable.
 
 ## Audit
 
-A4 adds safe Agent audit events for hosted request preparation, redaction blocks, hosted responses, fallback, local safe mode, accepted AI draft copy, and blocked AI tool suggestions. Prompt bodies and secrets are not stored.
+A4 adds safe Agent audit events for hosted request preparation, redaction blocks, hosted responses, fallback, local safe mode, accepted AI draft copy, and blocked AI tool suggestions. A5 adds contract validation, smoke, unsafe-suggestion, and malformed-response audit events. Prompt bodies and secrets are not stored.

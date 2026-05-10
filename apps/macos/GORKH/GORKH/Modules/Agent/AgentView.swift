@@ -269,6 +269,8 @@ struct AgentView: View {
                 policyState: .current,
                 safetyMode: "hosted_ai_advisory_policy_deterministic"
             )
+            try AgentHostedAPIValidator.validateOutbound(AgentHostedChatRequest(llmRequest: request))
+            appendAudit(.hostedBackendContractValidated, "Hosted Agent API contract validated locally.", details: ["version": AgentHostedAPIContract.version])
             appendAudit(.hostedAIRequestPrepared, "Hosted AI request prepared.", details: ["redaction": redactedInput.status.rawValue])
             isAIResponding = true
             defer { isAIResponding = false }
@@ -288,6 +290,10 @@ struct AgentView: View {
             }
             for blocked in result.toolBoundaryDecision.blocked {
                 appendAudit(.aiToolSuggestionBlocked, "AI tool suggestion blocked.", details: ["tool": blocked])
+                appendAudit(.unsafeBackendSuggestionBlocked, "Unsafe backend suggestion blocked.", details: ["tool": blocked])
+            }
+            if result.response.safetyWarnings.contains(where: { $0.lowercased().contains("execution approval was ignored") }) {
+                appendAudit(.malformedBackendResponseIgnored, "Backend execution approval was ignored.")
             }
             return result
         } catch {
@@ -295,9 +301,11 @@ struct AgentView: View {
             aiStatus = .hosted(
                 state: .disabled,
                 redactionStatus: .blocked,
-                endpointHost: nil,
+                endpointHost: AgentHostedAPIConfiguration().endpointHost,
+                authStatus: AgentHostedAPIConfiguration().apiKeyStatus,
                 responseStatus: "blocked",
-                message: "Hosted AI request blocked by redaction."
+                message: "Hosted AI request blocked by redaction.",
+                backendContractVersion: AgentHostedAPIContract.version
             )
             appendAudit(.hostedAIRequestBlockedByRedaction, reason)
             return nil

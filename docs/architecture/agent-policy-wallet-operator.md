@@ -86,7 +86,7 @@ The handoff changes UI navigation only. It does not build, sign, submit, or conf
 
 Agent Chat can call GORKH Hosted Agent API when `GORKH_AGENT_API_BASE_URL` is configured. The app does not contain a model-provider secret and users do not supply one. Optional app-to-backend authentication uses `GORKH_AGENT_API_KEY` from the local process environment only.
 
-Before a hosted request, GORKH builds a minimized context from safe Wallet summaries and blocks forbidden fields. The hosted response can suggest copy, missing fields, and local tool names. Tool suggestions outside the allowlist are blocked and audited.
+Before a hosted request, GORKH builds a minimized context from safe Wallet summaries and blocks forbidden fields. Phase A5 validates the explicit `/v1/agent/chat` request contract before sending and sanitizes the response before it reaches proposal logic. The hosted response can suggest copy, missing fields, and local tool names. Tool suggestions outside the allowlist are blocked and audited. Backend approval claims are ignored.
 
 If the hosted endpoint is unavailable, Agent Chat shows Local Safe Mode and continues using deterministic local classification, policy, and handoff behavior.
 

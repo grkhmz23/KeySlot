@@ -33,6 +33,12 @@ struct AgentAuditEvent: Codable, Equatable, Identifiable {
         case localSafeModeUsed = "local_safe_mode_used"
         case aiProposalSuggestionAcceptedAsDraft = "ai_proposal_suggestion_accepted_as_draft"
         case aiToolSuggestionBlocked = "ai_tool_suggestion_blocked"
+        case hostedBackendContractValidated = "hosted_backend_contract_validated"
+        case hostedSmokeStarted = "hosted_smoke_started"
+        case hostedSmokeSucceeded = "hosted_smoke_succeeded"
+        case hostedSmokeFailed = "hosted_smoke_failed"
+        case unsafeBackendSuggestionBlocked = "unsafe_backend_suggestion_blocked"
+        case malformedBackendResponseIgnored = "malformed_backend_response_ignored"
 
         var label: String {
             switch self {
@@ -98,6 +104,18 @@ struct AgentAuditEvent: Codable, Equatable, Identifiable {
                 return "AI proposal suggestion accepted as draft"
             case .aiToolSuggestionBlocked:
                 return "AI tool suggestion blocked"
+            case .hostedBackendContractValidated:
+                return "Hosted backend contract validated"
+            case .hostedSmokeStarted:
+                return "Hosted smoke started"
+            case .hostedSmokeSucceeded:
+                return "Hosted smoke succeeded"
+            case .hostedSmokeFailed:
+                return "Hosted smoke failed"
+            case .unsafeBackendSuggestionBlocked:
+                return "Unsafe backend suggestion blocked"
+            case .malformedBackendResponseIgnored:
+                return "Malformed backend response ignored"
             }
         }
     }

@@ -1,6 +1,6 @@
 # Agent Hosted AI Smoke
 
-This smoke validates the A4 hosted Agent Chat boundary. It does not execute transactions.
+This smoke validates the hosted Agent Chat boundary and the A5 `/v1/agent/chat` contract. It does not execute transactions.
 
 ## Setup
 
@@ -17,6 +17,30 @@ export GORKH_AGENT_API_KEY=...
 ```
 
 Do not put endpoint secrets in Xcode schemes, docs, screenshots, or logs.
+
+## Scripted Smoke
+
+Run the fixture-only smoke first:
+
+```sh
+scripts/agent-hosted-ai-smoke.sh --mock
+```
+
+Expected:
+
+- portfolio, clarification, PUSD draft, unsafe-tool, and malformed fixtures pass schema checks,
+- unsafe tools are detected as blocked,
+- backend approval claims are treated as ignored advisory content,
+- no API key value is printed.
+
+To test a configured hosted endpoint with the same safe fixture context:
+
+```sh
+export GORKH_AGENT_API_BASE_URL=https://your-gorkh-agent.example
+scripts/agent-hosted-ai-smoke.sh
+```
+
+If backend auth is required, set `GORKH_AGENT_API_KEY` only in the local shell. The script reports `present-redacted` and never prints the value.
 
 ## Local Safe Mode
 
@@ -54,6 +78,33 @@ Expected:
 - the audit timeline records the blocked tool,
 - no Wallet, Zerion, or Cloak execution starts.
 
+## Contract Fields
+
+The hosted endpoint should accept:
+
+- `conversationId`
+- `messageId`
+- `userMessage`
+- `redactedContext`
+- `deterministicIntent`
+- `policyState`
+- `allowedTools`
+- `safetyMode`
+- `clientVersion`
+
+It should return:
+
+- `assistantMessage`
+- `suggestedIntent`
+- `missingFields`
+- `proposalSuggestion`
+- `toolSuggestions`
+- `safetyWarnings`
+- `modelInfo`
+- `requestId`
+
+All returned fields are advisory. The app still validates tools, ignores execution approval claims, and runs local policy before creating or hydrating proposals.
+
 ## Proposal Safety
 
 1. Ask `buy this token for 0.1 SOL`.
@@ -81,4 +132,3 @@ Expected:
 - env var names may appear in docs,
 - no secret values appear,
 - shared Xcode schemes contain no environment variables.
-

@@ -3963,6 +3963,10 @@ struct GORKHTests {
             "GORKH/Core/Agent/AgentLLMProvider.swift",
             "GORKH/Core/Agent/HostedDeepSeekAgentProvider.swift",
             "GORKH/Core/Agent/AgentHostedAPIClient.swift",
+            "GORKH/Core/Agent/AgentHostedAPIContracts.swift",
+            "GORKH/Core/Agent/AgentHostedAPIValidator.swift",
+            "GORKH/Core/Agent/AgentHostedResponseSanitizer.swift",
+            "GORKH/Core/Agent/AgentHostedAISmokeModels.swift",
             "GORKH/Core/Agent/AgentRedactedContextBuilder.swift",
             "GORKH/Core/Agent/AgentToolBoundary.swift",
             "GORKH/Core/Agent/AgentLLMResponseModels.swift",
@@ -4012,6 +4016,117 @@ struct GORKHTests {
         let result = await fallbackProvider.respond(to: try sampleAgentLLMRequest(message: "summarize my portfolio"), redactionStatus: .clean)
         #expect(result.status.mode == .localSafeMode)
         #expect(result.response.assistantMessage.lowercased().contains("local safe mode"))
+    }
+
+    @Test func agentHostedAPIContractEncodingAndOutboundValidation() throws {
+        let llmRequest = try sampleAgentLLMRequest(message: "summarize my portfolio")
+        let hostedRequest = AgentHostedChatRequest(
+            llmRequest: llmRequest,
+            messageID: UUID(uuidString: "00000000-0000-0000-0000-000000000099")!,
+            clientVersion: AgentHostedAPIContract.version
+        )
+        try AgentHostedAPIValidator.validateOutbound(hostedRequest)
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let json = try #require(String(data: encoder.encode(hostedRequest), encoding: .utf8))
+        #expect(json.contains("\"conversationId\""))
+        #expect(json.contains("\"messageId\""))
+        #expect(json.contains("\"allowedTools\""))
+        #expect(json.contains(AgentHostedAPIContract.version))
+        #expect(!json.contains("enabledLocalTools"))
+
+        let forbidden = AgentHostedChatRequest(
+            conversationID: hostedRequest.conversationID,
+            messageID: hostedRequest.messageID,
+            userMessage: "serializedTransaction: abc",
+            redactedContext: hostedRequest.redactedContext,
+            deterministicIntent: hostedRequest.deterministicIntent,
+            policyState: hostedRequest.policyState,
+            allowedTools: hostedRequest.allowedTools,
+            safetyMode: hostedRequest.safetyMode
+        )
+        #expect(throws: AgentHostedAPIValidationError.self) {
+            try AgentHostedAPIValidator.validateOutbound(forbidden)
+        }
+    }
+
+    @Test func agentHostedResponseSanitizerBlocksUnsafeToolsAndApprovalClaims() throws {
+        let responseJSON = """
+        {
+          "assistantMessage": "I can draft this, but local policy must review it.",
+          "suggestedIntent": "tokenSwapRequest",
+          "missingFields": [],
+          "proposalSuggestion": {
+            "actionType": "mainWalletSwapDraft",
+            "title": "Unsafe approval claim",
+            "explanation": "This claim must not approve anything.",
+            "riskNotes": [],
+            "missingFields": [],
+            "status": "approved",
+            "executionApproved": true
+          },
+          "toolSuggestions": [
+            {"name": "draftSwapProposal"},
+            {"name": "executeSwap"},
+            "sendTransaction"
+          ],
+          "safetyWarnings": ["Fixture includes unsafe suggestions."],
+          "modelInfo": {"provider":"gorkh-hosted","model":"deepseek-backed","contractVersion":"2026-05-10.a5"},
+          "requestId": "mock-unsafe"
+        }
+        """
+        let decoded = try JSONDecoder().decode(AgentHostedChatResponse.self, from: Data(responseJSON.utf8))
+        let sanitized = try AgentHostedResponseSanitizer.sanitize(decoded)
+        #expect(sanitized.toolBoundaryDecision.allowed == ["draftSwapProposal"])
+        #expect(sanitized.toolBoundaryDecision.blocked == ["executeSwap", "sendTransaction"])
+        #expect(sanitized.ignoredProposalSuggestion)
+        #expect(sanitized.response.proposalDraft == nil)
+        #expect(sanitized.response.safetyWarnings.contains { $0.lowercased().contains("execution approval was ignored") })
+    }
+
+    @Test func agentHostedClientFallsBackOnNetworkErrorAndParsesFixtureResponse() async throws {
+        let responseJSON = """
+        {
+          "assistantMessage": "I can prepare a PUSD payment draft for review.",
+          "suggestedIntent": "pusdPaymentRequest",
+          "missingFields": ["recipient"],
+          "proposalSuggestion": {
+            "actionType": "pusdPaymentDraft",
+            "title": "PUSD payment draft",
+            "explanation": "Review in Wallet before sending.",
+            "riskNotes": ["Destination approval required"],
+            "missingFields": ["recipient"]
+          },
+          "toolSuggestions": [{"name": "draftPUSDPayment"}],
+          "safetyWarnings": [],
+          "modelInfo": {"provider":"gorkh-hosted","model":"deepseek-backed","contractVersion":"2026-05-10.a5"},
+          "requestId": "mock-pusd"
+        }
+        """
+        let provider = HostedDeepSeekProvider(client: AgentHostedAPIClient(
+            configuration: AgentHostedAPIConfiguration(environment: [
+                AgentHostedAPIConfiguration.baseURLEnvironmentName: "https://agent.gorkh.example"
+            ]),
+            transport: MockAgentHTTPTransport(payload: responseJSON)
+        ))
+        let result = await provider.respond(to: try sampleAgentLLMRequest(message: "prepare a PUSD payment"), redactionStatus: .clean)
+        #expect(result.status.mode == .hostedDeepSeek)
+        #expect(result.status.providerState == .available)
+        #expect(result.status.backendContractVersion == AgentHostedAPIContract.version)
+        #expect(result.response.requestID == "mock-pusd")
+        #expect(result.response.proposalDraft?.title == "PUSD payment draft")
+        #expect(result.toolBoundaryDecision.allowed == ["draftPUSDPayment"])
+
+        let failingProvider = HostedDeepSeekProvider(client: AgentHostedAPIClient(
+            configuration: AgentHostedAPIConfiguration(environment: [
+                AgentHostedAPIConfiguration.baseURLEnvironmentName: "https://agent.gorkh.example"
+            ]),
+            transport: MockAgentHTTPTransport(payload: "", statusCode: 503)
+        ))
+        let fallback = await failingProvider.respond(to: try sampleAgentLLMRequest(message: "summarize my portfolio"), redactionStatus: .clean)
+        #expect(fallback.status.mode == .localSafeMode)
+        #expect(fallback.response.assistantMessage.lowercased().contains("local safe mode"))
     }
 
     @Test func agentHostedAIRequestRedactionBlocksForbiddenFieldsAndMinimizesContext() throws {
@@ -4076,10 +4191,12 @@ struct GORKHTests {
         {
           "assistantMessage": "I can explain this, but execution must use review.",
           "suggestedIntent": "tokenSwapRequest",
-          "proposalDraft": {"title":"Swap draft","explanation":"Review in Wallet.","riskNotes":["Policy required"],"missingFields":[]},
           "missingFields": [],
-          "toolCallSuggestions": ["draftSwapProposal", "executeSwap"],
-          "safetyWarnings": ["No direct execution"]
+          "proposalSuggestion": {"title":"Swap draft","explanation":"Review in Wallet.","riskNotes":["Policy required"],"missingFields":[]},
+          "toolSuggestions": ["draftSwapProposal", "executeSwap"],
+          "safetyWarnings": ["No direct execution"],
+          "modelInfo": {"provider":"gorkh-hosted","model":"deepseek-backed","contractVersion":"2026-05-10.a5"},
+          "requestId": "mock-swap"
         }
         """
         let provider = HostedDeepSeekProvider(client: AgentHostedAPIClient(
@@ -4607,6 +4724,8 @@ struct GORKHTests {
         let tinySmoke = try sourceText(relativePath: "../../../docs/qa/zerion-tiny-transaction-smoke.md").lowercased()
         let operatorSmoke = try sourceText(relativePath: "../../../docs/qa/agent-policy-wallet-operator-smoke.md").lowercased()
         let hostedArchitecture = try sourceText(relativePath: "../../../docs/architecture/agent-hosted-ai.md").lowercased()
+        let hostedContract = try sourceText(relativePath: "../../../docs/architecture/agent-hosted-api-contract.md").lowercased()
+        let hostedRedaction = try sourceText(relativePath: "../../../docs/security/agent-ai-redaction-boundary.md").lowercased()
         let hostedSmoke = try sourceText(relativePath: "../../../docs/qa/agent-hosted-ai-smoke.md").lowercased()
 
         #expect(architecture.contains("a2 allows one policy-validated tiny same-chain zerion swap only"))
@@ -4628,13 +4747,19 @@ struct GORKHTests {
         #expect(hostedArchitecture.contains("gorkh hosted agent api"))
         #expect(hostedArchitecture.contains("local safe mode"))
         #expect(hostedArchitecture.contains("cannot approve, execute, sign"))
+        #expect(hostedContract.contains("post /v1/agent/chat"))
+        #expect(hostedContract.contains("all response fields are advisory"))
+        #expect(hostedRedaction.contains("response sanitization blocks unsafe tool suggestions"))
         #expect(hostedSmoke.contains("agent hosted ai smoke"))
         #expect(hostedSmoke.contains("no proposal execution"))
+        #expect(hostedSmoke.contains("scripts/agent-hosted-ai-smoke.sh --mock"))
         #expect(!architecture.contains("nft"))
         #expect(!tinySmoke.contains("nft"))
         #expect(!operatorArchitecture.contains("nft"))
         #expect(!operatorSmoke.contains("nft"))
         #expect(!hostedArchitecture.contains("nft"))
+        #expect(!hostedContract.contains("nft"))
+        #expect(!hostedRedaction.contains("nft"))
         #expect(!hostedSmoke.contains("nft"))
     }
 
