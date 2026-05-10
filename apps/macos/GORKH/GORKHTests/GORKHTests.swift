@@ -7565,6 +7565,12 @@ struct GORKHTests {
             "GORKH/Core/DeveloperWorkstation/WorkstationProgramOpsRunner.swift",
             "GORKH/Modules/DeveloperWorkstation/DeveloperWorkstationView.swift"
         ].map(sourceText(relativePath:)).joined(separator: "\n").lowercased()
+        #expect(workstationSource.contains("geometryreader"))
+        #expect(workstationSource.contains("workstationsidebar"))
+        #expect(workstationSource.contains("back to overview"))
+        #expect(workstationSource.contains("sectionmenu"))
+        #expect(workstationSource.contains("scrollingmonospacedtext"))
+        #expect(!workstationSource.contains(".pickerstyle(.segmented)"))
         for forbidden in [
             "/bin/sh",
             "eval(",

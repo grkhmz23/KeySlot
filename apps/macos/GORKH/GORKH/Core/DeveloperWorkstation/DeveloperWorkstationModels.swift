@@ -47,6 +47,68 @@ enum DeveloperWorkstationSection: String, CaseIterable, Identifiable, Codable {
             return "Activity"
         }
     }
+
+    var subtitle: String {
+        switch self {
+        case .overview:
+            return "Status, quick actions, and recent program evidence."
+        case .projects:
+            return "Import, inspect, and explicitly trust developer projects."
+        case .toolchain:
+            return "Review managed, bundled, and system tool availability."
+        case .compatibility:
+            return "Check Anchor, Rust, AVM, and Solana compatibility."
+        case .idlBrowser:
+            return "Paste or load Anchor IDL JSON and inspect instructions."
+        case .programManager:
+            return "Preview gated localnet/devnet program operations."
+        case .logs:
+            return "View bounded program log streams and safe summaries."
+        case .accountDecoder:
+            return "Decode account data with an IDL when available."
+        case .rpcPlayground:
+            return "Use bounded read-only RPC forms and blocked unsafe methods."
+        case .computeLab:
+            return "Estimate compute from simulation-only transaction inputs."
+        case .localnet:
+            return "Manage the separate dev wallet, local validator, and faucet."
+        case .offlineSigning:
+            return "Review offline workflow foundations without signing or broadcast."
+        case .activity:
+            return "Inspect the redacted Workstation activity trail."
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .overview:
+            return "rectangle.grid.2x2"
+        case .projects:
+            return "folder"
+        case .toolchain:
+            return "wrench.and.screwdriver"
+        case .compatibility:
+            return "checklist.checked"
+        case .idlBrowser:
+            return "curlybraces.square"
+        case .programManager:
+            return "hammer"
+        case .logs:
+            return "text.alignleft"
+        case .accountDecoder:
+            return "doc.text.magnifyingglass"
+        case .rpcPlayground:
+            return "network"
+        case .computeLab:
+            return "cpu"
+        case .localnet:
+            return "server.rack"
+        case .offlineSigning:
+            return "externaldrive.badge.lock"
+        case .activity:
+            return "clock.arrow.circlepath"
+        }
+    }
 }
 
 enum WorkstationDataStatus: String, Codable, Equatable {

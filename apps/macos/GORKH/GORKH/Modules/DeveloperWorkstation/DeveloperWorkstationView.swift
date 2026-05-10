@@ -51,25 +51,10 @@ struct DeveloperWorkstationView: View {
     private let evidenceStore = WorkstationProgramOperationEvidenceStore()
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-
-            Picker("Workstation section", selection: $selectedSection) {
-                ForEach(DeveloperWorkstationSection.allCases) { section in
-                    Text(section.title).tag(section)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 18)
-            .padding(.bottom, 12)
-
-            Divider().overlay(GorkhColors.border)
-
-            ScrollView {
-                sectionBody
-                    .padding(18)
-            }
+        GeometryReader { proxy in
+            workstationLayout(showSidebar: proxy.size.width >= 900, compact: proxy.size.width < 720)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             developerWallet = keyVault.metadata() ?? .missing
             let stored = evidenceStore.load()
@@ -79,40 +64,211 @@ struct DeveloperWorkstationView: View {
         }
     }
 
-    private var header: some View {
-        HStack(alignment: .top, spacing: 14) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Developer Workstation")
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(GorkhColors.primaryText)
-                Text("Solana builder workspace for import, IDL review, account decode, logs, RPC reads, compute simulation, and gated localnet/devnet program ops.")
-                    .font(.callout)
-                    .foregroundStyle(GorkhColors.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("Imported projects start untrusted. Build scripts can run local code, so build/deploy/upgrade/close remain locked until explicit trust and localnet/devnet policy checks pass.")
-                    .font(.caption)
-                    .foregroundStyle(GorkhColors.warning)
+    private func workstationLayout(showSidebar: Bool, compact: Bool) -> some View {
+        HStack(spacing: 0) {
+            if showSidebar {
+                workstationSidebar
+
+                Divider().overlay(GorkhColors.border)
             }
 
-            Spacer()
+            VStack(spacing: 0) {
+                header(compact: compact)
 
-            VStack(alignment: .trailing, spacing: 8) {
-                Picker("Cluster", selection: $selectedCluster) {
-                    ForEach(WorkstationCluster.allCases) { cluster in
-                        Text(cluster.title).tag(cluster)
-                    }
+                sectionToolbar(compact: compact)
+
+                Divider().overlay(GorkhColors.border)
+
+                ScrollView {
+                    sectionBody
+                        .padding(18)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
-                .pickerStyle(.menu)
-                .frame(width: 180)
-                WorkstationStatusChip(
-                    title: selectedCluster.programOpsMode.title,
-                    systemImage: selectedCluster.programOpsMode == .enabled ? "checkmark.shield" : "lock.shield",
-                    color: selectedCluster.programOpsMode == .enabled ? GorkhColors.success : GorkhColors.warning
-                )
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func header(compact: Bool) -> some View {
+        let titleBlock = VStack(alignment: .leading, spacing: 8) {
+            Text("Developer Workstation")
+                .font(.title3)
+                .fontWeight(.semibold)
+                .foregroundStyle(GorkhColors.primaryText)
+            Text("Solana builder workspace for import, IDL review, account decode, logs, RPC reads, compute simulation, and gated localnet/devnet program ops.")
+                .font(.callout)
+                .foregroundStyle(GorkhColors.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Imported projects start untrusted. Build scripts can run local code, so build/deploy/upgrade/close remain locked until explicit trust and localnet/devnet policy checks pass.")
+                .font(.caption)
+                .foregroundStyle(GorkhColors.warning)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+
+        let clusterControls = VStack(alignment: compact ? .leading : .trailing, spacing: 8) {
+            Picker("Cluster", selection: $selectedCluster) {
+                ForEach(WorkstationCluster.allCases) { cluster in
+                    Text(cluster.title).tag(cluster)
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(width: 180)
+            WorkstationStatusChip(
+                title: selectedCluster.programOpsMode.title,
+                systemImage: selectedCluster.programOpsMode == .enabled ? "checkmark.shield" : "lock.shield",
+                color: selectedCluster.programOpsMode == .enabled ? GorkhColors.success : GorkhColors.warning
+            )
+        }
+
+        return Group {
+            if compact {
+                VStack(alignment: .leading, spacing: 14) {
+                    titleBlock
+                    clusterControls
+                }
+            } else {
+                HStack(alignment: .top, spacing: 14) {
+                    titleBlock
+
+                    Spacer(minLength: 12)
+
+                    clusterControls
+                }
             }
         }
         .padding(18)
+    }
+
+    private var workstationSidebar: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Workstation")
+                .font(.headline)
+                .foregroundStyle(GorkhColors.primaryText)
+                .padding(.horizontal, 14)
+                .padding(.top, 16)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(DeveloperWorkstationSection.allCases) { section in
+                        workstationSectionButton(section)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 14)
+            }
+
+            Divider().overlay(GorkhColors.border)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(selectedCluster.title)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(GorkhColors.primaryText)
+                    .lineLimit(1)
+                Text(selectedCluster.programOpsMode.title)
+                    .font(.caption2)
+                    .foregroundStyle(selectedCluster.programOpsMode == .enabled ? GorkhColors.success : GorkhColors.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 14)
+            .padding(.bottom, 14)
+        }
+        .frame(width: 190)
+        .background(GorkhColors.sidebar)
+    }
+
+    private func workstationSectionButton(_ section: DeveloperWorkstationSection) -> some View {
+        Button {
+            selectedSection = section
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: section.systemImage)
+                    .frame(width: 18)
+                Text(section.title)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+                Spacer(minLength: 0)
+            }
+            .font(.caption)
+            .foregroundStyle(selectedSection == section ? GorkhColors.primaryText : GorkhColors.secondaryText)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(selectedSection == section ? GorkhColors.panel : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+        .help(section.title)
+    }
+
+    private func sectionToolbar(compact: Bool) -> some View {
+        Group {
+            if compact {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        if selectedSection != .overview {
+                            Button {
+                                selectedSection = .overview
+                            } label: {
+                                Label("Back to Overview", systemImage: "chevron.left")
+                            }
+                            .buttonStyle(.bordered)
+                        }
+
+                        Spacer()
+
+                        sectionMenu
+                    }
+
+                    sectionTitleBlock
+                }
+            } else {
+                HStack(spacing: 10) {
+                    if selectedSection != .overview {
+                        Button {
+                            selectedSection = .overview
+                        } label: {
+                            Label("Back to Overview", systemImage: "chevron.left")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
+                    sectionTitleBlock
+
+                    Spacer()
+
+                    sectionMenu
+                }
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.bottom, 12)
+    }
+
+    private var sectionTitleBlock: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(selectedSection.title)
+                .font(.headline)
+                .foregroundStyle(GorkhColors.primaryText)
+            Text(selectedSection.subtitle)
+                .font(.caption)
+                .foregroundStyle(GorkhColors.secondaryText)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var sectionMenu: some View {
+        Picker("Go to", selection: $selectedSection) {
+            ForEach(DeveloperWorkstationSection.allCases) { section in
+                Text(section.title).tag(section)
+            }
+        }
+        .pickerStyle(.menu)
+        .frame(width: 190)
     }
 
     @ViewBuilder
@@ -323,10 +479,7 @@ struct DeveloperWorkstationView: View {
                     .font(.caption)
                     .foregroundStyle(GorkhColors.secondaryText)
                 ForEach(anchorInstallPlan.commandPreviews, id: \.self) { preview in
-                    Text(preview)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(GorkhColors.secondaryText)
-                        .textSelection(.enabled)
+                    scrollingMonospacedText(preview)
                 }
                 Text("AVM/Anchor install is never automatic. Cargo-based AVM install is treated as a trusted tooling install and must be explicitly approved before running.")
                     .font(.caption)
@@ -347,10 +500,7 @@ struct DeveloperWorkstationView: View {
                     .font(.caption)
                     .foregroundStyle(GorkhColors.secondaryText)
                 ForEach(avmUpdatePlan.commandPreviews, id: \.self) { preview in
-                    Text(preview)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(GorkhColors.secondaryText)
-                        .textSelection(.enabled)
+                    scrollingMonospacedText(preview)
                 }
                 keyValue("Binary artifact", anchorBinaryPlan.verification.title)
                 Text(anchorBinaryPlan.message)
@@ -415,10 +565,7 @@ struct DeveloperWorkstationView: View {
                     keyValue("Environment", environmentPreview)
                 }
                 ForEach(anchorStrategy.commandPreviews, id: \.self) { preview in
-                    Text(preview)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(GorkhColors.secondaryText)
-                        .textSelection(.enabled)
+                    scrollingMonospacedText(preview)
                 }
                 Text("Preparation remains explicit. These previews do not run automatically and do not change the global Rust default.")
                     .font(.caption)
@@ -437,10 +584,7 @@ struct DeveloperWorkstationView: View {
                     .font(.caption)
                     .foregroundStyle(GorkhColors.secondaryText)
                 ForEach(avmUpdatePlan.commandPreviews, id: \.self) { preview in
-                    Text(preview)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(GorkhColors.secondaryText)
-                        .textSelection(.enabled)
+                    scrollingMonospacedText(preview)
                 }
                 Divider().overlay(GorkhColors.border)
                 keyValue("Anchor binary", anchorBinaryPlan.verification.title)
@@ -488,10 +632,7 @@ struct DeveloperWorkstationView: View {
                                 .font(.caption)
                                 .foregroundStyle(GorkhColors.secondaryText)
                             if let preview = candidate.installCommandPreview {
-                                Text(preview)
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(GorkhColors.secondaryText)
-                                    .textSelection(.enabled)
+                                scrollingMonospacedText(preview)
                             }
                         }
                         .padding(.vertical, 3)
@@ -642,10 +783,7 @@ struct DeveloperWorkstationView: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(!decision.isAllowed)
 
-                Text(programCommandPreview)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(GorkhColors.secondaryText)
-                    .textSelection(.enabled)
+                scrollingMonospacedText(programCommandPreview)
 
                 Text("Command preview is generated only from fixed builders. No raw terminal input or arbitrary flags are accepted.")
                     .font(.caption)
@@ -730,9 +868,7 @@ struct DeveloperWorkstationView: View {
                     .foregroundStyle(GorkhColors.secondaryText)
             } else {
                 ForEach(logState.entries.suffix(20)) { entry in
-                    Text(entry.line)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(GorkhColors.secondaryText)
+                    scrollingMonospacedText(entry.line)
                 }
             }
         }
@@ -769,7 +905,7 @@ struct DeveloperWorkstationView: View {
                         .foregroundStyle(GorkhColors.secondaryText)
                         .textSelection(.enabled)
                 }
-                HStack {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], spacing: 8) {
                     Button("Copy Program ID") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(latest.programID ?? "", forType: .string)
@@ -1038,13 +1174,42 @@ struct DeveloperWorkstationView: View {
             Text(key)
                 .font(.caption)
                 .foregroundStyle(GorkhColors.secondaryText)
-                .frame(width: 130, alignment: .leading)
-            Text(value)
-                .font(.caption)
-                .foregroundStyle(GorkhColors.primaryText)
-                .textSelection(.enabled)
+                .frame(width: 118, alignment: .leading)
+            if shouldScrollValue(value) {
+                ScrollView(.horizontal, showsIndicators: true) {
+                    Text(value)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(GorkhColors.primaryText)
+                        .textSelection(.enabled)
+                        .padding(.bottom, 2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Text(value)
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.primaryText)
+                    .textSelection(.enabled)
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             Spacer()
         }
+    }
+
+    private func scrollingMonospacedText(_ value: String) -> some View {
+        ScrollView(.horizontal, showsIndicators: true) {
+            Text(value)
+                .font(.caption.monospaced())
+                .foregroundStyle(GorkhColors.secondaryText)
+                .textSelection(.enabled)
+                .padding(.bottom, 2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func shouldScrollValue(_ value: String) -> Bool {
+        value.count > 72 || value.contains("/") || value.contains("--") || value.contains("://")
     }
 
     private func refreshToolchain() {
