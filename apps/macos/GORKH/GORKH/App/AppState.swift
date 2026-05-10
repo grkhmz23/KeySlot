@@ -18,6 +18,7 @@ final class AppState: ObservableObject {
 
 enum GORKHModule: String, CaseIterable, Identifiable {
     case wallet
+    case agent
     case settings
 
     var id: String { rawValue }
@@ -26,6 +27,8 @@ enum GORKHModule: String, CaseIterable, Identifiable {
         switch self {
         case .wallet:
             return "Wallet"
+        case .agent:
+            return "Agent"
         case .settings:
             return "Settings"
         }
@@ -35,6 +38,8 @@ enum GORKHModule: String, CaseIterable, Identifiable {
         switch self {
         case .wallet:
             return "wallet.pass"
+        case .agent:
+            return "sparkles"
         case .settings:
             return "gearshape"
         }

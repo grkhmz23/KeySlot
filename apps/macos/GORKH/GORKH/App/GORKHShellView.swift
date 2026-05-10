@@ -26,6 +26,8 @@ struct GORKHShellView: View {
                 switch appState.selectedModule {
                 case .wallet:
                     WalletView()
+                case .agent:
+                    AgentView()
                 case .settings:
                     SettingsView()
                 }

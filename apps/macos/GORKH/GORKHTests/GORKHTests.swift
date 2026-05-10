@@ -3945,6 +3945,151 @@ struct GORKHTests {
         }
     }
 
+    @Test func agentSectionAndZerionFoundationAreNoExecution() throws {
+        #expect(GORKHModule.allCases.map(\.title) == ["Wallet", "Agent", "Settings"])
+
+        let sourceFiles = [
+            "GORKH/App/AppState.swift",
+            "GORKH/App/GORKHShellView.swift",
+            "GORKH/Core/Agent/AgentModels.swift",
+            "GORKH/Modules/Agent/AgentView.swift",
+            "GORKH/Modules/Agent/AgentOverviewView.swift",
+            "GORKH/Modules/Agent/ZerionExecutorView.swift",
+            "GORKH/Modules/Agent/ZerionPolicyCenterView.swift",
+            "GORKH/Modules/Agent/ZerionProposalView.swift"
+        ]
+        let source = try sourceFiles.map(sourceText(relativePath:)).joined(separator: "\n").lowercased()
+
+        #expect(source.contains("agent"))
+        #expect(source.contains("zerion executor"))
+        #expect(source.contains("policy center"))
+        #expect(source.contains("draft proposals only") || source.contains("draft-only"))
+        #expect(source.contains("cannot directly sign, execute, trade"))
+        #expect(source.contains("main wallet disabled"))
+        #expect(!source.contains("developer workstation"))
+        #expect(!source.contains("transaction studio"))
+        #expect(!source.contains("nft"))
+    }
+
+    @Test func zerionCommandAllowlistBlocksTradingSigningAndUnsafeArguments() throws {
+        #expect(try ZerionCLICommandBuilder.command(from: ["--help"]) == .help)
+        #expect(try ZerionCLICommandBuilder.command(from: ["chains"]) == .chains)
+        #expect(try ZerionCLICommandBuilder.command(from: ["wallet", "list"]) == .walletList)
+        #expect(try ZerionCLICommandBuilder.command(from: ["agent", "list-policies"]) == .agentListPolicies)
+        #expect(try ZerionCLICommandBuilder.command(from: ["agent", "list-tokens"]) == .agentListTokens)
+        #expect(try ZerionCLICommandBuilder.command(from: ["portfolio", "0x0000000000000000000000000000000000000000"]) == .portfolio(address: "0x0000000000000000000000000000000000000000"))
+
+        for blocked in [
+            ["swap"],
+            ["bridge"],
+            ["send"],
+            ["sign-message"],
+            ["sign-typed-data"],
+            ["wallet", "import"],
+            ["wallet", "fund"],
+            ["agent", "create-policy"],
+            ["agent", "create-token"],
+            ["agent", "revoke-token"]
+        ] {
+            #expect(throws: ZerionCLICommandValidationError.self) {
+                try ZerionCLICommandBuilder.command(from: blocked)
+            }
+        }
+
+        #expect(throws: ZerionCLICommandValidationError.self) {
+            try ZerionCLICommandBuilder.command(from: ["chains;rm"])
+        }
+    }
+
+    @Test func zerionPathResolverAcceptsOnlyValidatedExecutablePaths() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("gorkh-zerion-path-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let executable = directory.appendingPathComponent("zerion")
+        FileManager.default.createFile(atPath: executable.path, contents: Data("#!/usr/bin/env node\n".utf8))
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+
+        let resolver = ZerionCLIPathResolver(environment: ["PATH": directory.path], knownPaths: [])
+        let resolution = resolver.resolve()
+
+        #expect(resolution.status == .installed)
+        #expect(resolution.executablePath == executable.path)
+        #expect(resolver.isValidExecutable("zerion") == false)
+        #expect(resolver.isValidExecutable("/tmp/../zerion") == false)
+        #expect(resolver.isValidExecutable(executable.deletingLastPathComponent().appendingPathComponent("not-zerion").path) == false)
+    }
+
+    @Test func zerionSecretsAndAuditAreRedacted() throws {
+        let apiKey = "zk_" + "unit-test-placeholder"
+        #expect(ZerionRedaction.apiKeyStatus(from: ["ZERION_API_KEY": apiKey]) == .presentRedacted)
+        #expect(ZerionRedaction.apiKeyStatus(from: ["ZERION_API_KEY": "bad-placeholder"]) == .malformedRedacted)
+        #expect(ZerionRedaction.apiKeyStatus(from: [:]) == .missing)
+
+        let redacted = ZerionRedaction.redact("ZERION_API_KEY=\(apiKey) agent token: spend-power")
+        #expect(!redacted.contains(apiKey))
+        #expect(!redacted.contains("spend-power"))
+        #expect(redacted.contains("[redacted"))
+
+        let event = AgentAuditEvent(
+            kind: .zerionAPIKeyStatusChecked,
+            message: "checked \(apiKey)",
+            details: [
+                "agentToken": "spend-power",
+                "network": "base"
+            ]
+        )
+        let json = try #require(String(data: JSONEncoder().encode(event), encoding: .utf8)).lowercased()
+        #expect(!json.contains(apiKey.lowercased()))
+        #expect(!json.contains("spend-power"))
+        #expect(!json.contains("agenttoken"))
+        #expect(json.contains("base"))
+    }
+
+    @Test func zerionProposalsAreDraftOnlyAndModelsContainNoWalletSecrets() throws {
+        let proposal = ZerionProposal.sampleDraft
+        #expect(proposal.canExecuteInA1 == false)
+        #expect(proposal.status == .draft)
+        #expect(AgentSafetyPolicy.zerionA1.mainWalletAccess == .disabled)
+        #expect(AgentSafetyPolicy.zerionA1.canUseNativeSigner == false)
+        #expect(AgentSafetyPolicy.zerionA1.canReadCloakVault == false)
+        #expect(AgentSafetyPolicy.zerionA1.canRunTradingCommands == false)
+
+        let payload = try JSONEncoder().encode([
+            String(data: JSONEncoder().encode(proposal), encoding: .utf8) ?? "",
+            String(data: JSONEncoder().encode(AgentSafetyPolicy.zerionA1), encoding: .utf8) ?? ""
+        ])
+        let json = try #require(String(data: payload, encoding: .utf8)).lowercased()
+
+        for forbidden in [
+            "privatekey",
+            "secretkey",
+            "seedphrase",
+            "signingseed",
+            "walletjson",
+            "zerion_api_key",
+            "agenttoken",
+            "transactionpayload",
+            "serializedtransaction",
+            "nft"
+        ] {
+            #expect(!json.contains(forbidden))
+        }
+    }
+
+    @Test func agentZerionDocsExistAndStateA1Boundaries() throws {
+        let architecture = try sourceText(relativePath: "../../../docs/architecture/agent-zerion-executor.md").lowercased()
+        let smoke = try sourceText(relativePath: "../../../docs/qa/agent-zerion-foundation-smoke.md").lowercased()
+
+        #expect(architecture.contains("no-execution"))
+        #expect(architecture.contains("separate from the gorkh wallet"))
+        #expect(architecture.contains("a1 allows read/status zerion cli commands only"))
+        #expect(architecture.contains("draft proposals cannot execute or sign"))
+        #expect(smoke.contains("zerion executor"))
+        #expect(smoke.contains("do not add"))
+        #expect(smoke.contains("a2"))
+        #expect(!architecture.contains("nft"))
+    }
+
     @Test func sharedXcodeSchemeContainsNoSecretEnvironmentValues() throws {
         let scheme = try sourceText(relativePath: "GORKH.xcodeproj/xcshareddata/xcschemes/GORKH.xcscheme")
         let uppercased = scheme.uppercased()
