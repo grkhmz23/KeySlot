@@ -3883,11 +3883,13 @@ struct GORKHTests {
         #expect(appSource.contains(".windowResizability(.contentMinSize)"))
 
         let overviewSource = try sourceText(relativePath: "GORKH/Modules/Wallet/WalletOverviewView.swift")
+        let portfolioSource = try sourceText(relativePath: "GORKH/Modules/Wallet/Portfolio/WalletPortfolioView.swift")
         let receiveSource = try sourceText(relativePath: "GORKH/Modules/Wallet/WalletReceiveView.swift")
         let activitySource = try sourceText(relativePath: "GORKH/Modules/Wallet/AuditLogView.swift")
         let walletSource = try sourceText(relativePath: "GORKH/Modules/Wallet/WalletView.swift")
 
         #expect(overviewSource.contains("wallet.overview"))
+        #expect(portfolioSource.contains("wallet.portfolio"))
         #expect(receiveSource.contains("wallet.receive"))
         #expect(activitySource.contains("wallet.activity"))
         #expect(walletSource.contains("wallet.section.navigation"))
@@ -3897,6 +3899,50 @@ struct GORKHTests {
         #expect(checklist.contains("Overview, Portfolio, Send, Swap, Private, Security, Activity"))
         #expect(checklist.contains("No secret environment values in shared schemes."))
         #expect(checklist.contains("No new execution path or protocol integration was added."))
+        #expect(checklist.lowercased().contains("w3 seeded demo-state coverage"))
+        #expect(checklist.contains("mock-display-only"))
+
+        let readiness = try sourceText(relativePath: "../../../docs/qa/wallet-release-readiness.md")
+        #expect(readiness.contains("Wallet Release Readiness"))
+        #expect(readiness.contains("Cloak tiny mainnet deposit/withdraw/scan"))
+        #expect(readiness.contains("Orca harvest with an owned LP position"))
+        #expect(readiness.contains("RPC Fast token read-path smoke"))
+    }
+
+    @Test func walletReleaseQADemoStateIsInertAndSecretFree() throws {
+        let demo = WalletDemoState.releaseQA
+        let data = try JSONEncoder().encode(demo)
+        let json = try #require(String(data: data, encoding: .utf8))
+        let lowercased = json.lowercased()
+
+        #expect(demo.enabledByDefault == false)
+        #expect(demo.allowsExecution == false)
+        #expect(demo.containsOnlyWatchOnlyWallets)
+        #expect(demo.screenCoverage == [
+            "Overview",
+            "Portfolio",
+            "Send",
+            "Swap",
+            "Private",
+            "Security",
+            "Activity",
+            "Receive"
+        ])
+        #expect(lowercased.contains("mock-display-only"))
+        for forbidden in [
+            "privatekey",
+            "secretkey",
+            "seedphrase",
+            "signingseed",
+            "walletjson",
+            "transactionpayload",
+            "serializedtransaction",
+            "hiddensigning",
+            "agent execute",
+            "nft"
+        ] {
+            #expect(!lowercased.contains(forbidden))
+        }
     }
 
     @Test func sharedXcodeSchemeContainsNoSecretEnvironmentValues() throws {

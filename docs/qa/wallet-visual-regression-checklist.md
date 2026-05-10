@@ -1,6 +1,6 @@
 # Wallet Visual Regression Checklist
 
-Phase W2 is a production Wallet QA pass. It does not add new protocol integrations or execution paths.
+Phase W2/W3 is a production Wallet QA pass. It does not add new protocol integrations or execution paths.
 
 ## Session Result
 
@@ -9,6 +9,25 @@ Phase W2 is a production Wallet QA pass. It does not add new protocol integratio
 - Temporary screenshots were captured under `/tmp` only and were not added to the repository.
 - The visible launch state was the local no-wallet/setup state plus the Wallet status inspector. A stale pre-W1 process was found during QA, quit, and relaunched before continuing.
 - Full per-section screenshot coverage was not completed in this session because the local machine focus/accessibility state prevented reliable automated navigation screenshots. Use the manual checklist below before release.
+- W3 rebuilt and opened the Debug app again. System Events reported a `GORKH` window, but desktop focus stayed on another app during screenshot capture, so no W3 screenshot was committed.
+
+## W3 Seeded Demo-State Coverage
+
+W3 adds an inert release-QA demo state in app code for tests and future preview wiring. It is disabled by default, contains public watch-only addresses only, uses `mock-display-only` balances, and has `allowsExecution = false`.
+
+Use this state only to validate layout density, labels, empty states, and section visibility. It must not be presented as live portfolio data, must not bypass lock/approval gates, and must not be used for any transaction flow.
+
+Seeded-state validation targets:
+
+- Overview: primary cards and status strip can render with non-empty summary data.
+- Portfolio: Summary, Assets & Wallets, DeFi, Performance, and History can be checked without live balances.
+- Send/Receive: receive copy controls remain address-only; send stays gated by wallet state.
+- Swap: quote/review empty state remains visible without creating a route.
+- Private/Cloak: local-only private-state warnings remain visible.
+- Security: lock, backup, mainnet guard, signing guard, and RPC status remain visible.
+- Activity: user-facing Activity label remains primary; technical details stay behind disclosure.
+
+Manual follow-up is still required for a fully signed desktop release candidate because local macOS focus/accessibility restrictions prevented reliable automated screenshots across every navigation segment.
 
 ## Manual Screenshot Set
 
@@ -97,7 +116,7 @@ Expected:
 
 ## Release Gate
 
-Do not pass W2 release QA unless:
+Do not pass Wallet release QA unless:
 
 - Build and `GORKHTests` pass.
 - The checklist above has been reviewed on a clean local app launch.

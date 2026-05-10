@@ -127,6 +127,7 @@ struct WalletPortfolioView: View {
             )
             PortfolioDeFiPlaceholderView()
         }
+        .accessibilityIdentifier("wallet.portfolio")
     }
 
     private func portfolioSectionHeader(_ title: String, subtitle: String) -> some View {

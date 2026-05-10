@@ -1,0 +1,78 @@
+# Wallet Release Readiness
+
+Phase W3 validates the Wallet production shell with safe seeded/demo data and documents the remaining manual release checks. It does not add protocol integrations or execution paths.
+
+## Seeded Demo Strategy
+
+- Use `WalletDemoState.releaseQA` for deterministic UI/test coverage.
+- Demo wallets are public watch-only addresses only.
+- Demo balances are marked `mock-display-only`.
+- Demo state is disabled by default and has execution disabled.
+- No local environment values, wallet recovery material, or funded signing accounts are included.
+
+## Screens Checked
+
+The W3 source/test pass covers the Wallet navigation order and screen identifiers for:
+
+- Overview
+- Portfolio
+- Send
+- Swap
+- Private
+- Security
+- Activity
+- Receive
+
+The visible local app launch from W2 confirmed the default dark graphite shell, sane window size, inspector presence, and no-wallet setup state. W3 keeps the remaining full-screen screenshot pass as manual follow-up because local focus/accessibility limitations prevented reliable automated navigation screenshots.
+
+## Build And Test Commands
+
+Run before a release candidate:
+
+```sh
+/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -scheme GORKH -project apps/macos/GORKH/GORKH.xcodeproj build
+/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -scheme GORKH -project apps/macos/GORKH/GORKH.xcodeproj test -only-testing:GORKHTests
+git diff --check
+git ls-files '*xcuserdata*' '*.xcuserstate' '.gorkh-devnet-smoke/*'
+```
+
+## Manual Smoke Steps
+
+1. Launch the built macOS app and confirm the window opens at 1360x860 or a similar sane size.
+2. Check navigation order: Overview, Portfolio, Send, Swap, Private, Security, Activity.
+3. Open Receive and confirm only the public address, optional amount, and optional note are copied.
+4. Confirm watch-only wallets show Overview, Portfolio, and Activity only.
+5. Confirm missing RPC Fast token state is degraded without showing a token value.
+6. Confirm mainnet warning copy is visible before real execution surfaces.
+7. Confirm Activity is the primary user-facing label and technical audit details are hidden behind disclosure.
+8. Confirm PnL copy describes estimates and incomplete data rather than official accounting.
+
+## Real-World Validation Still Required
+
+These checks require a controlled real wallet or owned position and were not run automatically:
+
+- Cloak tiny mainnet deposit/withdraw/scan.
+- Orca harvest with an owned LP position.
+- PUSD balance/send smoke.
+- Jupiter tiny swap if desired.
+- RPC Fast token read-path smoke.
+
+Do not run mainnet smoke automatically. Use small amounts, explicit user approval, LocalAuthentication, simulation where required, and the mainnet confirmation phrase.
+
+## Secret Hygiene
+
+Before release, inspect shared schemes, docs, scripts, helper configs, and package files for secret-like values:
+
+```sh
+rg -n "RPCFAST|GORKH_RPCFAST|JUPITER|API_KEY|PRIVATE_KEY|SECRET_KEY|MNEMONIC|SEED|WALLET_JSON" apps/macos/GORKH/GORKH.xcodeproj/xcshareddata docs scripts
+```
+
+Expected result:
+
+- Environment variable names may appear in docs/config references.
+- No token values, local `.env` values, recovery text, wallet files, or signing material are committed.
+- No Xcode user state is committed.
+
+## Release Decision
+
+The Wallet can move to a signed release candidate only after build/tests pass, the visual checklist is completed on a clean machine, and all known release-blocking layout or copy issues are fixed.
