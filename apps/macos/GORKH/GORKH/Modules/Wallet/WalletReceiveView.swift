@@ -6,6 +6,7 @@ struct WalletReceiveView: View {
     @State private var amount = ""
     @State private var note = ""
     @State private var copiedMessage: String?
+    private let fieldColumns = [GridItem(.adaptive(minimum: 180), spacing: 8)]
 
     var body: some View {
         GorkhPanel("Receive") {
@@ -26,12 +27,13 @@ struct WalletReceiveView: View {
                         .lineLimit(2)
                         .truncationMode(.middle)
 
-                    HStack {
+                    LazyVGrid(columns: fieldColumns, alignment: .leading, spacing: 8) {
                         TextField("Optional amount", text: $amount)
                             .textFieldStyle(.roundedBorder)
-                            .frame(maxWidth: 180)
+                            .accessibilityLabel("Optional receive amount")
                         TextField("Optional note", text: $note)
                             .textFieldStyle(.roundedBorder)
+                            .accessibilityLabel("Optional receive note")
                     }
 
                     HStack(spacing: 8) {
@@ -41,6 +43,7 @@ struct WalletReceiveView: View {
                             Label("Copy Address", systemImage: "doc.on.doc")
                         }
                         .buttonStyle(.gorkhPrimary)
+                        .accessibilityLabel("Copy receive address")
 
                         Button {
                             copy(paymentNote(address: profile.publicAddress), message: "Payment note copied")
@@ -48,6 +51,7 @@ struct WalletReceiveView: View {
                             Label("Copy Note", systemImage: "text.quote")
                         }
                         .buttonStyle(.gorkhSecondary)
+                        .accessibilityLabel("Copy receive payment note")
                     }
 
                     if walletManager.selectedNetwork == .mainnetBeta {
@@ -70,6 +74,7 @@ struct WalletReceiveView: View {
                 WalletEmptyStateView(content: .noWallet)
             }
         }
+        .accessibilityIdentifier("wallet.receive")
     }
 
     private func paymentNote(address: String) -> String {

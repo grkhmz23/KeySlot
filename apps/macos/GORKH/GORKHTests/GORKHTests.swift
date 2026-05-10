@@ -3877,6 +3877,69 @@ struct GORKHTests {
         #expect(source.contains("activity"))
     }
 
+    @Test func walletProductionQAChecklistAndWindowSizingArePresent() throws {
+        let appSource = try sourceText(relativePath: "GORKH/App/GORKHApp.swift")
+        #expect(appSource.contains(".defaultSize(width: 1360, height: 860)"))
+        #expect(appSource.contains(".windowResizability(.contentMinSize)"))
+
+        let overviewSource = try sourceText(relativePath: "GORKH/Modules/Wallet/WalletOverviewView.swift")
+        let receiveSource = try sourceText(relativePath: "GORKH/Modules/Wallet/WalletReceiveView.swift")
+        let activitySource = try sourceText(relativePath: "GORKH/Modules/Wallet/AuditLogView.swift")
+        let walletSource = try sourceText(relativePath: "GORKH/Modules/Wallet/WalletView.swift")
+
+        #expect(overviewSource.contains("wallet.overview"))
+        #expect(receiveSource.contains("wallet.receive"))
+        #expect(activitySource.contains("wallet.activity"))
+        #expect(walletSource.contains("wallet.section.navigation"))
+
+        let checklist = try sourceText(relativePath: "../../../docs/qa/wallet-visual-regression-checklist.md")
+        #expect(checklist.contains("Wallet Visual Regression Checklist"))
+        #expect(checklist.contains("Overview, Portfolio, Send, Swap, Private, Security, Activity"))
+        #expect(checklist.contains("No secret environment values in shared schemes."))
+        #expect(checklist.contains("No new execution path or protocol integration was added."))
+    }
+
+    @Test func sharedXcodeSchemeContainsNoSecretEnvironmentValues() throws {
+        let scheme = try sourceText(relativePath: "GORKH.xcodeproj/xcshareddata/xcschemes/GORKH.xcscheme")
+        let uppercased = scheme.uppercased()
+        for forbidden in [
+            "RPCFAST",
+            "GORKH_RPCFAST",
+            "JUPITER",
+            "API_KEY",
+            "PRIVATE_KEY",
+            "SECRET_KEY",
+            "MNEMONIC",
+            "SEED",
+            "WALLET_JSON"
+        ] {
+            #expect(!uppercased.contains(forbidden))
+        }
+        #expect(!scheme.contains("EnvironmentVariables"))
+    }
+
+    @Test func walletProductionCopyKeepsSafetyClaimsHonest() throws {
+        let files = [
+            "GORKH/Modules/Wallet/WalletInspectorView.swift",
+            "GORKH/Modules/Wallet/WalletOverviewView.swift",
+            "GORKH/Modules/Wallet/WalletReceiveView.swift",
+            "GORKH/Modules/Wallet/Private/WalletPrivateView.swift",
+            "GORKH/Modules/Wallet/Portfolio/PortfolioPnLView.swift"
+        ]
+        let source = try files.map(sourceText(relativePath:)).joined(separator: "\n").lowercased()
+
+        #expect(source.contains("signing always requires approval") || source.contains("signing guard active"))
+        #expect(source.contains("mainnet"))
+        #expect(source.contains("not tax-grade"))
+        #expect(source.contains("read-only"))
+        #expect(source.contains("agent signer"))
+        #expect(!source.contains("tax report"))
+        #expect(!source.contains("tax filing"))
+        #expect(!source.contains("certified"))
+        #expect(!source.contains("guaranteed profit"))
+        #expect(!source.contains("nft"))
+    }
+
     @Test func raydiumAdapterReportsPartialWhenEnrichmentMissingAndAggregatesWithOtherLPs() async throws {
         let profile = WalletProfile(label: "LP", publicAddress: SolanaConstants.systemProgramID)
         let meteora = LPAdapterResult(

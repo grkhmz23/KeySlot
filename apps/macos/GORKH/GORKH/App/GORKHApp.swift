@@ -18,5 +18,7 @@ struct GORKHApp: App {
                 }
         }
         .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 1360, height: 860)
+        .windowResizability(.contentMinSize)
     }
 }

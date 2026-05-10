@@ -4,6 +4,8 @@ struct WalletOverviewView: View {
     @EnvironmentObject private var walletManager: WalletManager
     let navigate: (WalletSection) -> Void
     @State private var showingReceive = false
+    private let actionColumns = [GridItem(.adaptive(minimum: 128), spacing: 8)]
+    private let metricColumns = [GridItem(.adaptive(minimum: 180), spacing: 10)]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -15,7 +17,7 @@ struct WalletOverviewView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     WalletSecurityStatusStripView()
 
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 10)], alignment: .leading, spacing: 10) {
+                    LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 10) {
                         overviewMetric("Total value", value: walletManager.portfolioSummary.totalUSD.portfolioCurrencyText, icon: "chart.pie")
                         overviewMetric("SOL", value: solBalanceText, icon: "circle.grid.cross")
                         overviewMetric("PUSD", value: "\(walletManager.portfolioSummary.pusdTreasurySummary.uiAmountString) PUSD", icon: "dollarsign.circle")
@@ -47,7 +49,7 @@ struct WalletOverviewView: View {
                         }
                     }
 
-                    HStack(spacing: 8) {
+                    LazyVGrid(columns: actionColumns, alignment: .leading, spacing: 8) {
                         primaryAction("Send", systemImage: "paperplane", section: .send, disabled: walletManager.selectedProfile?.canSign != true)
                         primaryAction("Swap", systemImage: "arrow.left.arrow.right", section: .swap, disabled: walletManager.selectedProfile?.canSign != true)
                         Button {
@@ -57,6 +59,7 @@ struct WalletOverviewView: View {
                         }
                         .buttonStyle(.gorkhSecondary)
                         .disabled(walletManager.selectedProfile == nil)
+                        .accessibilityLabel("Receive public address")
                         primaryAction("Private", systemImage: "eye.slash", section: .privateWallet, disabled: walletManager.selectedProfile?.canSign != true)
                         primaryAction("Portfolio", systemImage: "chart.pie", section: .portfolio, disabled: false)
                     }
@@ -71,6 +74,7 @@ struct WalletOverviewView: View {
             portfolioState
             recentActivity
         }
+        .accessibilityIdentifier("wallet.overview")
     }
 
     private var solBalanceText: String {
@@ -217,5 +221,6 @@ struct WalletOverviewView: View {
         }
         .buttonStyle(title == "Send" ? .gorkhPrimary : .gorkhSecondary)
         .disabled(disabled)
+        .accessibilityLabel(title)
     }
 }

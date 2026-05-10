@@ -32,6 +32,7 @@ struct WalletActivityView: View {
                 }
             }
         }
+        .accessibilityIdentifier("wallet.activity")
     }
 
     private var filteredEvents: [AuditEvent] {

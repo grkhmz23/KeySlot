@@ -80,6 +80,7 @@ struct WalletView: View {
             }
         }
         .pickerStyle(.segmented)
+        .accessibilityIdentifier("wallet.section.navigation")
     }
 
     private var availableSections: [WalletSection] {
