@@ -45,6 +45,12 @@ struct WalletOverviewView: View {
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                                 .textSelection(.enabled)
+
+                            if let derivationPath = profile.derivationPath {
+                                Text("Path: \(derivationPath)")
+                                    .font(.system(.caption2, design: .monospaced))
+                                    .foregroundStyle(GorkhColors.secondaryText)
+                            }
                         }
                     }
 

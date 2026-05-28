@@ -293,12 +293,18 @@ enum AgentSafetyRedactor {
             (#"(?i)(wallet\s*json\s*[:=]\s*)[^\n,}"]+"#, "$1[redacted]"),
             (#"(?i)(signing\s*seed\s*[:=]\s*)[^\s,}"]+"#, "$1[redacted]"),
             (#"(?i)(agent\s*token\s*[:=]\s*)[^\s,}"]+"#, "$1[redacted]"),
+            (#"(?i)(vault\s*export\s*code\s*[:=]\s*)[^\s,}"]+"#, "$1[redacted]"),
+            (#"(?i)(export\s*code\s*[:=]\s*)[^\s,}"]+"#, "$1[redacted]"),
             (#"(?i)\b((?:password|passwd|secret|token|api[_-]?key|apikey|private[_-]?key|access[_-]?key|refresh[_-]?token)\s*[:=]\s*)["']?[^"'\s,}]+"#, "$1[redacted]"),
             (#"(?i)([?&](?:token|api_key|apikey|key|access_key|rpc_key)=)[^&\s]+"#, "$1[redacted]"),
             (#"\b[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\b"#, "[redacted]"),
             (#"(?i)\b(?:sk|pk|rk|gsk|zk)_[A-Za-z0-9_\-]{12,}\b"#, "[redacted]"),
             (#"(/Users/)[^/\s]+(/[^\s,)"']*)"#, "$1[redacted]$2"),
-            (#"zk_[A-Za-z0-9_\-]{6,}"#, "[redacted]")
+            (#"zk_[A-Za-z0-9_\-]{6,}"#, "[redacted]"),
+            // Vault Export Code format: XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX
+            (#"\b[a-f0-9]{4}(?:-[a-f0-9]{4}){7}\b"#, "[redacted-export-code]"),
+            // Base58 Solana key-like strings (64+ chars typical for keypair)
+            (#"\b[1-9A-HJ-NP-Za-km-z]{64,}\b"#, "[redacted-base58-key]")
         ]
         let redacted = patterns.reduce(text) { result, entry in
             result.replacingOccurrences(of: entry.pattern, with: entry.replacement, options: .regularExpression)

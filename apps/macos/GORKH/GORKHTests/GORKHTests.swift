@@ -6781,3 +6781,30 @@ extension GORKHTests {
         #expect(match != nil)
     }
 }
+
+
+    // MARK: Agent Safety Redactor
+
+    @Test func agentSafetyRedactorCatchesVaultExportCodePattern() {
+        let text = "My export code is abcd-ef12-3456-7890-abcd-ef12-3456-7890"
+        let redacted = AgentSafetyRedactor.redact(text)
+        #expect(redacted.contains("[redacted-export-code]"))
+    }
+
+    @Test func agentSafetyRedactorCatchesBase58KeyPattern() {
+        let text = "Private key: 5JbQQhZ9fHPmknYjM8vVwnZN6g9JmMXjY3J2hF6QqX7rT8vW9xYzA1bC2dE3fG4hI5jK6lM7nO8pQ9rS0tU1vW2xY3zA4bC5dE6f"
+        let redacted = AgentSafetyRedactor.redact(text)
+        #expect(redacted.contains("[redacted-base58-key]"))
+    }
+
+    @Test func agentSafetyRedactorCatchesSolanaKeypairArray() {
+        let text = "[1, 2, 3, " + String(repeating: "0, ", count: 65) + "0]"
+        let redacted = AgentSafetyRedactor.redact(text)
+        #expect(redacted.contains("[redacted-solana-keypair-array]"))
+    }
+
+    @Test func agentSafetyRedactorPreservesSafeText() {
+        let text = "The wallet balance is 5.2 SOL and the network is devnet."
+        let redacted = AgentSafetyRedactor.redact(text)
+        #expect(redacted == text)
+    }
