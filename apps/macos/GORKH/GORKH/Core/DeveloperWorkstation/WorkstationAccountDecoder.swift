@@ -48,8 +48,8 @@ struct WorkstationAccountDecoder {
     static func decode(_ request: WorkstationAccountDecodeRequest) -> WorkstationAccountDecodeResult {
         let data = request.dataBase64.flatMap { Data(base64Encoded: $0) } ?? Data()
         let matchedAccount = request.idlAccount ?? request.idl.flatMap { WorkstationAnchorAccountDecoder.matchedAccount(in: $0, data: data) }
-        let fields = matchedAccount.map { WorkstationAnchorAccountDecoder.decodeFields(account: $0, data: data) } ?? []
-        let fullyDecoded = fields.isEmpty == false && fields.allSatisfy { !$0.value.contains("Data unavailable") }
+        let fields = matchedAccount.map { WorkstationAnchorAccountDecoder.decodeFields(account: $0, data: data, idl: request.idl) } ?? []
+        let fullyDecoded = fields.isEmpty == false && fields.allSatisfy { !$0.value.contains("unavailable") && !$0.value.contains("Unsupported") }
 
         return WorkstationAccountDecodeResult(
             address: request.address,
@@ -60,9 +60,9 @@ struct WorkstationAccountDecoder {
             fields: fields,
             rawPreview: data.prefix(48).map { String(format: "%02x", $0) }.joined(),
             message: fields.isEmpty
-                ? "Account fetched. No IDL account type matched or simple decode is unavailable."
+                ? "Account fetched. No IDL account type matched or bounded Anchor decode is unavailable."
                 : (fullyDecoded
-                   ? "Anchor discriminator matched and simple primitive fields decoded."
+                   ? "Anchor discriminator matched and bounded Anchor fields decoded."
                    : "Anchor account type is known, but complex or incomplete fields remain unavailable.")
         )
     }

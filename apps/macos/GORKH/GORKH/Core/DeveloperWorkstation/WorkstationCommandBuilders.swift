@@ -87,11 +87,56 @@ enum WorkstationCommandBuilders {
         )
     }
 
+    static func gitRevParseHead(gitPath: String, projectPath: String) -> WorkstationCommandPlan {
+        WorkstationCommandPlan(
+            name: "Git rev-parse HEAD",
+            executablePath: gitPath,
+            arguments: ["rev-parse", "HEAD"],
+            workingDirectory: projectPath,
+            requiresTrustedProject: false,
+            writesToCluster: false
+        )
+    }
+
+    static func gitStatusPorcelain(gitPath: String, projectPath: String) -> WorkstationCommandPlan {
+        WorkstationCommandPlan(
+            name: "Git status porcelain",
+            executablePath: gitPath,
+            arguments: ["status", "--porcelain"],
+            workingDirectory: projectPath,
+            requiresTrustedProject: false,
+            writesToCluster: false
+        )
+    }
+
     static func anchorBuild(anchorPath: String, projectPath: String) -> WorkstationCommandPlan {
         WorkstationCommandPlan(
             name: "Anchor build",
             executablePath: anchorPath,
             arguments: ["build"],
+            workingDirectory: projectPath,
+            requiresTrustedProject: true,
+            writesToCluster: false
+        )
+    }
+
+    static func anchorTest(anchorPath: String, projectPath: String) -> WorkstationCommandPlan {
+        WorkstationCommandPlan(
+            name: "Anchor test",
+            executablePath: anchorPath,
+            arguments: ["test", "--provider.cluster", WorkstationCluster.localnet.rpcURL.absoluteString],
+            workingDirectory: projectPath,
+            cluster: .localnet,
+            requiresTrustedProject: true,
+            writesToCluster: false
+        )
+    }
+
+    static func cargoTest(cargoPath: String, projectPath: String) -> WorkstationCommandPlan {
+        WorkstationCommandPlan(
+            name: "Cargo test",
+            executablePath: cargoPath,
+            arguments: ["test"],
             workingDirectory: projectPath,
             requiresTrustedProject: true,
             writesToCluster: false

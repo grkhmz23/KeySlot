@@ -44,7 +44,7 @@ final class TransactionStudioHistoryStore {
     private static func defaultURL() -> URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
-        return base.appendingPathComponent("GORKH", isDirectory: true)
+        return base.appendingPathComponent("KeySlot", isDirectory: true)
             .appendingPathComponent("transaction-studio-history.json")
     }
 }

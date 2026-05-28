@@ -1,40 +1,18 @@
 import Foundation
 import Security
 
-enum DeveloperWalletStatus: String, Codable, Equatable {
-    case missing
-    case ready
-    case deleted
-    case error
-
-    var title: String {
-        switch self {
-        case .missing:
-            return "Missing"
-        case .ready:
-            return "Ready"
-        case .deleted:
-            return "Deleted"
-        case .error:
-            return "Error"
-        }
-    }
-}
-
-struct DeveloperWalletMetadata: Codable, Equatable, Identifiable {
+struct DeveloperWalletMetadata: Codable, Equatable {
     let id: UUID
     let publicAddress: String
-    let allowedClusters: [WorkstationCluster]
+    let allowedClusters: [WalletNetwork]
     let status: DeveloperWalletStatus
     let createdAt: Date
+}
 
-    static let missing = DeveloperWalletMetadata(
-        id: UUID(uuidString: "00000000-0000-0000-0000-00000000D0A1")!,
-        publicAddress: "",
-        allowedClusters: [.localnet, .devnet],
-        status: .missing,
-        createdAt: Date(timeIntervalSince1970: 0)
-    )
+enum DeveloperWalletStatus: String, Codable, Equatable {
+    case ready
+    case revoked
+    case missing
 }
 
 protocol DeveloperKeyVaulting {
@@ -46,7 +24,8 @@ protocol DeveloperKeyVaulting {
 }
 
 final class KeychainDeveloperKeyVault: DeveloperKeyVaulting {
-    private let service = "ai.gorkh.developer-workstation"
+    private let service = "foundation.swarp.keyslot.developer-workstation"
+    private let legacyService = "ai.gorkh.developer-workstation"
     private var cachedMetadata: DeveloperWalletMetadata?
 
     func generateDeveloperWallet(now: Date = Date()) throws -> DeveloperWalletMetadata {
@@ -68,8 +47,20 @@ final class KeychainDeveloperKeyVault: DeveloperKeyVaulting {
     }
 
     func loadSeed(for id: UUID) throws -> Data {
+        // Try new service first
+        if let seed = try? loadSeed(from: service, id: id) {
+            return seed
+        }
+        // Fall back to legacy service
+        if let seed = try? loadSeed(from: legacyService, id: id) {
+            return seed
+        }
+        throw WalletVaultError.missingSecret
+    }
+
+    private func loadSeed(from serviceName: String, id: UUID) throws -> Data {
         var item: CFTypeRef?
-        let status = SecItemCopyMatching(baseQuery(id: id, returnData: true) as CFDictionary, &item)
+        let status = SecItemCopyMatching(baseQuery(id: id, service: serviceName, returnData: true) as CFDictionary, &item)
         guard status != errSecItemNotFound else {
             throw WalletVaultError.missingSecret
         }
@@ -83,19 +74,27 @@ final class KeychainDeveloperKeyVault: DeveloperKeyVaulting {
     }
 
     func deleteDeveloperWallet(id: UUID) throws {
-        let status = SecItemDelete(baseQuery(id: id, returnData: false) as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw WalletVaultError.keychainError(status)
+        let statusNew = SecItemDelete(baseQuery(id: id, service: service, returnData: false) as CFDictionary)
+        let statusLegacy = SecItemDelete(baseQuery(id: id, service: legacyService, returnData: false) as CFDictionary)
+        guard statusNew == errSecSuccess || statusNew == errSecItemNotFound || statusLegacy == errSecSuccess || statusLegacy == errSecItemNotFound else {
+            throw WalletVaultError.keychainError(statusNew)
         }
         cachedMetadata = cachedMetadata?.id == id ? nil : cachedMetadata
     }
 
     func containsDeveloperWallet(id: UUID) -> Bool {
-        SecItemCopyMatching(baseQuery(id: id, returnData: false) as CFDictionary, nil) == errSecSuccess
+        if containsDeveloperWallet(in: service, id: id) {
+            return true
+        }
+        return containsDeveloperWallet(in: legacyService, id: id)
+    }
+
+    private func containsDeveloperWallet(in serviceName: String, id: UUID) -> Bool {
+        SecItemCopyMatching(baseQuery(id: id, service: serviceName, returnData: false) as CFDictionary, nil) == errSecSuccess
     }
 
     private func save(seed: Data, id: UUID) throws {
-        let query = baseQuery(id: id, returnData: false)
+        let query = baseQuery(id: id, service: service, returnData: false)
         let attributes: [String: Any] = [kSecValueData as String: seed]
         let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
         if updateStatus == errSecSuccess {
@@ -112,7 +111,7 @@ final class KeychainDeveloperKeyVault: DeveloperKeyVaulting {
         }
     }
 
-    private func baseQuery(id: UUID, returnData: Bool) -> [String: Any] {
+    private func baseQuery(id: UUID, service: String, returnData: Bool) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -165,14 +164,17 @@ struct WorkstationTemporaryKeypairFile: Equatable {
 }
 
 enum WorkstationTemporaryKeypairFilePolicy {
+    static let directoryPrefix = "keyslot-workstation-"
+    static let fileName = "developer-authority.json"
+
     static func write(seed: Data, publicKey: Data, fileManager: FileManager = .default, now: Date = Date()) throws -> WorkstationTemporaryKeypairFile {
         guard seed.count == 32, publicKey.count == 32 else {
             throw WalletVaultError.invalidSecret
         }
         let directory = fileManager.temporaryDirectory
-            .appendingPathComponent("gorkh-workstation-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("\(directoryPrefix)\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        let url = directory.appendingPathComponent("developer-authority.json")
+        let url = directory.appendingPathComponent(fileName)
         let bytes = Array(seed + publicKey)
         let data = try JSONSerialization.data(withJSONObject: bytes)
         try data.write(to: url, options: [.atomic])

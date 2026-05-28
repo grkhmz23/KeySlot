@@ -2,16 +2,12 @@ import Foundation
 
 struct AgentHostedPolicyState: Codable, Equatable {
     let mainWalletExecution: String
-    let zerionExecution: String
-    let cloakExecution: String
     let watchOnlyExecution: String
     let requiredApproval: String
     let safetyMode: String
 
     static let current = AgentHostedPolicyState(
         mainWalletExecution: "blocked_in_agent_handoff_only",
-        zerionExecution: "existing_a2_tiny_swap_review_only",
-        cloakExecution: "wallet_private_handoff_only",
         watchOnlyExecution: "analysis_only",
         requiredApproval: "destination_module_policy_and_user_approval",
         safetyMode: "redacted_context_minimized"

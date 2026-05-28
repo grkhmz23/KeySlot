@@ -10,10 +10,6 @@ struct AgentToolExecutionContext {
     let walletBalance: WalletBalance?
     let vaultState: WalletVaultState
     let rpcSecurityStatus: RPCProviderSecurityStatus
-    let cloakAdapterStatus: CloakAdapterStatus
-    let cloakVaultStatus: CloakVaultStatus
-    let cloakScanSummary: CloakScanSummary
-    let zerionStatus: ZerionStatusSnapshot
 }
 
 enum AgentToolExecutor {
@@ -51,7 +47,7 @@ enum AgentToolExecutor {
                     "Wallets: \(context.portfolioSummary.wallets.count)",
                     "Assets: \(context.portfolioSummary.consolidatedAssets.count)",
                     "Unavailable prices: \(context.portfolioSummary.unavailablePriceCount)",
-                    "DeFi values are shown separately where GORKH avoids double-counting."
+                    "DeFi values are shown separately where KeySlot avoids double-counting."
                 ]
             )
         case .getAssetSummary:
@@ -73,7 +69,7 @@ enum AgentToolExecutor {
                     "Estimated value: \(context.portfolioSummary.pusdTreasurySummary.estimatedUSD?.portfolioCurrencyText ?? "unavailable")",
                     "Wallets holding PUSD: \(context.portfolioSummary.pusdTreasurySummary.holdingWalletCount)",
                     "Circulation API: \(context.pusdCirculationSnapshot.status.title)",
-                    "PUSD yield is not active in GORKH."
+                    "PUSD yield is not active in KeySlot."
                 ]
             )
         case .getStakeLstSummary:
@@ -173,41 +169,12 @@ enum AgentToolExecutor {
                     "Health: \(context.rpcSecurityStatus.beamStatus)"
                 ]
             )
-        case .getCloakStatus:
-            return AgentToolResult(
-                title: "Cloak status",
-                status: .readyForReview,
-                summary: "Cloak private wallet status prepared without exposing private state.",
-                bullets: [
-                    "Adapter: \(context.cloakAdapterStatus.title)",
-                    "Vault: \(context.cloakVaultStatus.privateWalletStatus.title)",
-                    "Viewing key reference: \(context.cloakVaultStatus.hasViewingKeyReference ? "stored locally" : "unavailable")",
-                    "Scan status: \(context.cloakScanSummary.status.title)",
-                    "Cloak execution stays inside Wallet -> Private review."
-                ]
-            )
-        case .getZerionStatus:
-            return AgentToolResult(
-                title: "Zerion status",
-                status: .readyForReview,
-                summary: "Zerion executor status prepared with API key and agent token redacted.",
-                bullets: [
-                    "CLI: \(context.zerionStatus.cliStatus.label)",
-                    "API key: \(context.zerionStatus.apiKeyStatus.label)",
-                    "Agent token: \(context.zerionStatus.agentTokenStatus.label)",
-                    "Policy: \(context.zerionStatus.policyStatus.label)",
-                    "Tiny swap shape: \(context.zerionStatus.swapCommandShape.label)"
-                ]
-            )
         case .draftMainWalletSwap,
              .draftMainWalletSend,
              .draftPUSDPayment,
-             .draftCloakPayment,
-             .draftZerionTinySwap,
              .executeSwap,
              .executeSend,
              .executeBridge,
-             .executeCloakPayment,
              .signTransaction,
              .sendTransaction,
              .runShell,

@@ -31,7 +31,7 @@ struct TransactionStudioInputView: View {
                     } label: {
                         Label("Decode", systemImage: "doc.text.magnifyingglass")
                     }
-                    .buttonStyle(.gorkhPrimary)
+                    .buttonStyle(.keyslotPrimary)
                     .disabled(isWorking || inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                     Button {
@@ -39,7 +39,7 @@ struct TransactionStudioInputView: View {
                     } label: {
                         Label("Simulate", systemImage: "waveform.path.ecg")
                     }
-                    .buttonStyle(.gorkhSecondary)
+                    .buttonStyle(.keyslotSecondary)
                     .disabled(isWorking)
                 }
 

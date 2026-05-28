@@ -89,7 +89,7 @@ struct PUSDTreasuryView: View {
             Text(summary.priceSourceDescription)
                 .font(.caption)
                 .foregroundStyle(summary.priceSource == .stablecoinPegEstimate ? GorkhColors.warning : GorkhColors.secondaryText)
-            Text("PUSD values are treasury estimates. GORKH does not call reserves or peg endpoints until Palm publishes them as live.")
+            Text("PUSD values are treasury estimates. KeySlot does not call reserves or peg endpoints until Palm publishes them as live.")
                 .font(.caption)
                 .foregroundStyle(GorkhColors.secondaryText)
         }
@@ -102,7 +102,7 @@ struct PUSDTreasuryView: View {
             } label: {
                 Label("Send PUSD", systemImage: "paperplane")
             }
-            .buttonStyle(.gorkhPrimary)
+            .buttonStyle(.keyslotPrimary)
             .disabled(walletManager.activePUSDTokenBalance == nil || walletManager.vaultState != .unlocked || walletManager.isBusy)
             .help(sendHelp)
 
@@ -115,7 +115,7 @@ struct PUSDTreasuryView: View {
             } label: {
                 Label("Receive PUSD", systemImage: "tray.and.arrow.down")
             }
-            .buttonStyle(.gorkhSecondary)
+            .buttonStyle(.keyslotSecondary)
             .disabled(walletManager.selectedProfile == nil)
 
             if summary.hasBalance == false {
@@ -144,7 +144,7 @@ struct PUSDTreasuryView: View {
                 } label: {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
-                .buttonStyle(.gorkhSecondary)
+                .buttonStyle(.keyslotSecondary)
                 .disabled(walletManager.pusdCirculationSnapshot.status == .loading)
             }
 
@@ -203,14 +203,14 @@ struct PUSDTreasuryView: View {
                     } label: {
                         Label("Copy Address", systemImage: "doc.on.doc")
                     }
-                    .buttonStyle(.gorkhSecondary)
+                    .buttonStyle(.keyslotSecondary)
 
                     Button {
                         copy(paymentNote(address: profile.publicAddress))
                     } label: {
                         Label("Copy Payment Note", systemImage: "text.quote")
                     }
-                    .buttonStyle(.gorkhSecondary)
+                    .buttonStyle(.keyslotSecondary)
                 }
             }
         }

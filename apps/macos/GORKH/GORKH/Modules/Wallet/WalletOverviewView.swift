@@ -21,7 +21,6 @@ struct WalletOverviewView: View {
                         overviewMetric("Total value", value: walletManager.portfolioSummary.totalUSD.portfolioCurrencyText, icon: "chart.pie")
                         overviewMetric("SOL", value: solBalanceText, icon: "circle.grid.cross")
                         overviewMetric("PUSD", value: "\(walletManager.portfolioSummary.pusdTreasurySummary.uiAmountString) PUSD", icon: "dollarsign.circle")
-                        overviewMetric("Private", value: privateStatusText, icon: "eye.slash")
                     }
 
                     if let profile = walletManager.selectedProfile {
@@ -35,8 +34,8 @@ struct WalletOverviewView: View {
                                     .foregroundStyle(GorkhColors.primaryText)
                                 GorkhStatusChip(
                                     title: profile.profileKind.displayName,
-                                    systemImage: profile.canSign ? "key" : "eye",
-                                    color: profile.canSign ? GorkhColors.accent : GorkhColors.warning
+                                    systemImage: "key",
+                                    color: GorkhColors.accent
                                 )
                                 Spacer()
                             }
@@ -57,10 +56,10 @@ struct WalletOverviewView: View {
                         } label: {
                             Label("Receive", systemImage: "qrcode")
                         }
-                        .buttonStyle(.gorkhSecondary)
+                        .buttonStyle(.keyslotSecondary)
                         .disabled(walletManager.selectedProfile == nil)
                         .accessibilityLabel("Receive public address")
-                        primaryAction("Private", systemImage: "eye.slash", section: .privateWallet, disabled: walletManager.selectedProfile?.canSign != true)
+                        primaryAction("DeFi", systemImage: "chart.line.uptrend.xyaxis", section: .defi, disabled: false)
                         primaryAction("Portfolio", systemImage: "chart.pie", section: .portfolio, disabled: false)
                     }
 
@@ -88,11 +87,7 @@ struct WalletOverviewView: View {
     }
 
     private var privateStatusText: String {
-        let unspent = walletManager.cloakPrivateRecords.filter { $0.state == .deposited }.count
-        if unspent > 0 {
-            return "\(unspent) local record\(unspent == 1 ? "" : "s")"
-        }
-        return walletManager.cloakVaultStatus.privateWalletStatus.title
+        "Not available"
     }
 
     private var topAssets: some View {
@@ -134,11 +129,9 @@ struct WalletOverviewView: View {
     private var portfolioState: some View {
         GorkhPanel("What Can I Safely Do?") {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 10)], alignment: .leading, spacing: 10) {
-                safetyItem("Send", value: walletManager.selectedProfile?.canSign == true ? "Requires unlock, simulation, approval" : "Watch-only")
-                safetyItem("Swap", value: "Quote, review, simulate, approve")
-                safetyItem("DeFi", value: "Lending and yield are read-only")
-                safetyItem("LP", value: "Only Orca harvest has guarded execution")
-                safetyItem("Private", value: "Mainnet only, local private state")
+                safetyItem("Send", value: "Requires unlock, simulation, approval")
+                safetyItem("Swap", value: "Custom slippage, contract address paste")
+                safetyItem("DeFi", value: "Yield, lending, stake, liquidity read-only")
                 safetyItem("PnL", value: "Estimate, not tax-grade")
             }
         }
@@ -176,7 +169,7 @@ struct WalletOverviewView: View {
                     } label: {
                         Label("Open Activity", systemImage: "clock.arrow.circlepath")
                     }
-                    .buttonStyle(.gorkhSecondary)
+                    .buttonStyle(.keyslotSecondary)
                 }
             }
         }
@@ -219,7 +212,7 @@ struct WalletOverviewView: View {
         } label: {
             Label(title, systemImage: systemImage)
         }
-        .buttonStyle(title == "Send" ? .gorkhPrimary : .gorkhSecondary)
+        .buttonStyle(title == "Send" ? .keyslotPrimary : .keyslotSecondary)
         .disabled(disabled)
         .accessibilityLabel(title)
     }

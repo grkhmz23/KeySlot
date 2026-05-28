@@ -60,13 +60,6 @@ struct AgentRedactedContext: Codable, Equatable {
         let rpcProviderStatus: String
     }
 
-    struct ZerionContext: Codable, Equatable {
-        let cliStatus: String
-        let apiCredentialStatus: String
-        let automationCredentialStatus: String
-        let policyStatus: String
-        let swapCommandShape: String
-    }
 
     let wallet: WalletContext
     let portfolio: PortfolioContext
@@ -76,7 +69,6 @@ struct AgentRedactedContext: Codable, Equatable {
     let pnl: PnLContext
     let activity: ActivityContext
     let security: SecurityContext
-    let zerion: ZerionContext
     let safetyMetadata: [String]
     let builtAt: Date
 }
@@ -95,7 +87,6 @@ enum AgentRedactedContextBuilder {
         selectedProfile: WalletProfile?,
         selectedNetwork: WalletNetwork,
         rpcSecurityStatus: RPCProviderSecurityStatus,
-        zerionStatus: ZerionStatusSnapshot,
         builtAt: Date = Date()
     ) throws -> AgentRedactedContext {
         let context = AgentRedactedContext(
@@ -152,13 +143,6 @@ enum AgentRedactedContextBuilder {
                 agentMainWalletAccess: AgentMainWalletAccess.disabled.rawValue,
                 rpcProviderStatus: "\(rpcSecurityStatus.provider.displayName):\(rpcSecurityStatus.tokenStatus.displayName)"
             ),
-            zerion: .init(
-                cliStatus: zerionStatus.cliStatus.label,
-                apiCredentialStatus: zerionStatus.apiKeyStatus.label,
-                automationCredentialStatus: zerionStatus.agentTokenStatus.label,
-                policyStatus: zerionStatus.policyStatus.label,
-                swapCommandShape: zerionStatus.swapCommandShape.label
-            ),
             safetyMetadata: [
                 "context_minimized",
                 "wallet_addresses_redacted",
@@ -176,7 +160,7 @@ enum AgentRedactedContextBuilder {
         if let forbidden = firstForbiddenMatch(in: message) {
             throw AgentRedactedContextError.forbiddenFieldDetected(forbidden)
         }
-        let redacted = AgentSafetyRedactor.redact(ZerionRedaction.redact(message))
+        let redacted = AgentSafetyRedactor.redact(message)
         return (redacted, redacted == message ? .clean : .redacted)
     }
 
@@ -192,17 +176,44 @@ enum AgentRedactedContextBuilder {
 
     static func firstForbiddenMatch(in text: String) -> String? {
         let lowered = text.lowercased()
+        
+        // Check for mnemonic-like patterns (12, 18, or 24 words)
+        let words = text.split(separator: " ").map { $0.trimmingCharacters(in: .punctuationCharacters) }
+        if words.count == 12 || words.count == 18 || words.count == 24 {
+            // Check if it looks like a BIP39 phrase (common English words)
+            let commonBIP39Words = ["abandon", "ability", "able", "about", "above", "absent", "absorb", "abstract", "absurd", "abuse"]
+            let matchCount = words.filter { word in
+                commonBIP39Words.contains(word.lowercased())
+            }.count
+            if matchCount >= 3 {
+                return "mnemonic-like phrase detected"
+            }
+        }
+        
+        // Check for vault passphrase indicators
+        let passphraseIndicators = [
+            "vault passphrase:",
+            "passphrase:",
+            "vault password:",
+            "keyslot passphrase"
+        ]
+        for indicator in passphraseIndicators {
+            if lowered.contains(indicator) {
+                return "vault passphrase indicator detected"
+            }
+        }
+        
         let forbiddenTerms = [
             "private key",
             "privatekey",
             "seed phrase",
             "seedphrase",
             "mnemonic",
+            "recovery phrase",
             "wallet json",
             "walletjson",
             "signing seed",
             "signingseed",
-            "zerion_api_key",
             "api key",
             "agent token",
             "utxoprivatekey",

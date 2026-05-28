@@ -165,7 +165,7 @@ enum WorkstationAVMModernizationPlanner {
             message = "Official Anchor binary install is blocked until the release asset SHA-256 is pinned."
         } else if entry?.hasVerifiedDownload == true {
             verification = .readyForVerification
-            message = "Official Anchor artifact can be downloaded, SHA-256 verified, and installed under GORKH/Toolchains."
+            message = "Official Anchor artifact can be downloaded, SHA-256 verified, and installed under KeySlot/Toolchains."
         } else {
             verification = .blockedUnverifiedSource
             message = "Official Anchor artifact metadata is incomplete or not marked as a verified install."

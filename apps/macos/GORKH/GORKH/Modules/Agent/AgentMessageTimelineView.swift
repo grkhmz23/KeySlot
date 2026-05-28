@@ -7,7 +7,7 @@ struct AgentMessageTimelineView: View {
         GorkhPanel("Conversation") {
             VStack(alignment: .leading, spacing: 10) {
                 if messages.isEmpty {
-                    Text("Ask for a portfolio summary, yield review, LP review, PUSD payment draft, private payment draft, or policy-scoped Zerion tiny swap.")
+                    Text("Ask for a portfolio summary, yield review, LP review, or PUSD payment draft.")
                         .foregroundStyle(GorkhColors.secondaryText)
                 } else {
                     ForEach(messages) { message in

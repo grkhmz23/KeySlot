@@ -3,15 +3,10 @@ import SwiftUI
 struct AgentOverviewView: View {
     let snapshot: AgentOverviewSnapshot
     let safetyPolicy: AgentSafetyPolicy
-    let refreshAction: () -> Void
-
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 12)], spacing: 12) {
                 metricCard("Wallet Context", value: snapshot.walletContextAvailable ? "Available" : "Unavailable", icon: "wallet.pass")
-                metricCard("Zerion CLI", value: snapshot.zerionStatus.label, icon: "terminal")
-                metricCard("API Key", value: snapshot.apiKeyStatus.label, icon: "key")
-                metricCard("Policies", value: snapshot.policyStatus.label, icon: "checklist")
                 metricCard("Draft Proposals", value: "\(snapshot.draftProposalCount)", icon: "doc.text")
                 metricCard("Main Wallet", value: snapshot.mainWalletAccess.label, icon: "xmark.shield")
             }
@@ -22,11 +17,6 @@ struct AgentOverviewView: View {
                         Label(invariant, systemImage: "checkmark.seal")
                             .foregroundStyle(GorkhColors.secondaryText)
                     }
-                    Button(action: refreshAction) {
-                        Label("Refresh Zerion Status", systemImage: "arrow.clockwise")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityIdentifier("agent.refresh")
                 }
             }
         }

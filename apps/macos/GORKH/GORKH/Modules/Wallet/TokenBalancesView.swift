@@ -28,7 +28,7 @@ struct TokenBalancesView: View {
                     } label: {
                         Label("Refresh", systemImage: "arrow.clockwise")
                     }
-                    .buttonStyle(.gorkhSecondary)
+                    .buttonStyle(.keyslotSecondary)
                     .disabled(walletManager.selectedProfile == nil || walletManager.isBusy)
                 }
 
@@ -136,7 +136,7 @@ struct TokenBalancesView: View {
                     } label: {
                         Label("Send", systemImage: "paperplane")
                     }
-                    .buttonStyle(.gorkhSecondary)
+                    .buttonStyle(.keyslotSecondary)
                     .disabled(!canSend || walletManager.vaultState != .unlocked || walletManager.isBusy)
                 } else {
                     GorkhStatusChip(title: "Watch-only", systemImage: "eye", color: GorkhColors.warning)

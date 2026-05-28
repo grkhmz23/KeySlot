@@ -1,8 +1,8 @@
 import Foundation
 
 struct RPCFastConfiguration: Equatable {
-    static let devnetTokenEnvironmentName = "GORKH_RPCFAST_DEVNET_TOKEN"
-    static let mainnetTokenEnvironmentName = "GORKH_RPCFAST_MAINNET_TOKEN"
+    static let devnetTokenEnvironmentName = "KEYSLOT_RPCFAST_DEVNET_TOKEN"
+    static let mainnetTokenEnvironmentName = "KEYSLOT_RPCFAST_MAINNET_TOKEN"
     static let fallbackDevnetTokenEnvironmentName = "RPCFAST_DEVNET_TOKEN"
     static let fallbackMainnetTokenEnvironmentName = "RPCFAST_MAINNET_TOKEN"
     static let beamStatus = "locked-future"

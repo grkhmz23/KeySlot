@@ -15,7 +15,7 @@ struct TransactionStudioHistoryView: View {
                     Button(action: clearAction) {
                         Label("Clear", systemImage: "trash")
                     }
-                    .buttonStyle(.gorkhSecondary)
+                    .buttonStyle(.keyslotSecondary)
                     .disabled(entries.isEmpty)
                 }
                 if entries.isEmpty {

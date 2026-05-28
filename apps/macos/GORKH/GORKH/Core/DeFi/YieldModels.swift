@@ -4,7 +4,7 @@ enum YieldConstants {
     static let source = "portfolio-yield-comparison"
     static let noDoubleCountNotice = "Yield exposure is shown separately from wallet token balances to avoid double-counting."
     static let unavailableRateReason = "APY/APR is unavailable from the connected read-only data source."
-    static let pusdYieldUnavailableReason = "PUSD yield is not active in GORKH."
+    static let pusdYieldUnavailableReason = "PUSD yield is not active in KeySlot."
 }
 
 enum YieldSourceKind: String, Codable, CaseIterable, Identifiable, Equatable {

@@ -5,9 +5,6 @@ enum ShieldReviewSourceFlow: String, Codable, Equatable, Hashable, CaseIterable 
     case splSend
     case jupiterSwap
     case orcaHarvest
-    case cloakDeposit
-    case cloakFullWithdraw
-    case zerionTinySwap
     case transactionStudio
     case unknown
 
@@ -21,12 +18,6 @@ enum ShieldReviewSourceFlow: String, Codable, Equatable, Hashable, CaseIterable 
             return "Jupiter swap"
         case .orcaHarvest:
             return "Orca harvest"
-        case .cloakDeposit:
-            return "Cloak deposit"
-        case .cloakFullWithdraw:
-            return "Cloak full withdraw"
-        case .zerionTinySwap:
-            return "Zerion tiny swap"
         case .transactionStudio:
             return "Transaction Studio"
         case .unknown:

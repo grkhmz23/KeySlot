@@ -17,7 +17,7 @@ struct RPCInfrastructureSettingsView: View {
                 )
             }
 
-            Text("GORKH uses RPC Fast as the default Solana RPC provider. Tokens are read from local environment variables only.")
+            Text("KeySlot uses RPC Fast as the default Solana RPC provider. Tokens are read from local environment variables only.")
                 .font(.caption)
                 .foregroundStyle(GorkhColors.secondaryText)
 
@@ -53,7 +53,7 @@ struct RPCInfrastructureSettingsView: View {
             } label: {
                 Label("Check RPC Health", systemImage: "speedometer")
             }
-            .buttonStyle(.gorkhSecondary)
+            .buttonStyle(.keyslotSecondary)
         }
     }
 

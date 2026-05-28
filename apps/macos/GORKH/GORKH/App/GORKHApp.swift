@@ -1,13 +1,13 @@
 import SwiftUI
 
 @main
-struct GORKHApp: App {
+struct KeySlotApp: App {
     @StateObject private var appState = AppState()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
-            GORKHShellView()
+            KeySlotShellView()
                 .environmentObject(appState)
                 .environmentObject(appState.walletManager)
                 .frame(minWidth: 1180, minHeight: 760)

@@ -88,7 +88,7 @@ struct ShieldReviewCard: View {
                 } label: {
                     Label(studioHandoff.payloadAvailability.studioButtonTitle, systemImage: "doc.text.magnifyingglass")
                 }
-                .buttonStyle(.gorkhSecondary)
+                .buttonStyle(.keyslotSecondary)
 
                 if summary.status == .unavailable {
                     Text(summary.unavailableReason ?? "Review unavailable.")

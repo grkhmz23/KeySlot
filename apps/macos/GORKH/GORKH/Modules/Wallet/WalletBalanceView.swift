@@ -30,7 +30,7 @@ struct WalletBalanceView: View {
                 } label: {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
-                .buttonStyle(.gorkhSecondary)
+                .buttonStyle(.keyslotSecondary)
                 .disabled(walletManager.isBusy)
             }
         }

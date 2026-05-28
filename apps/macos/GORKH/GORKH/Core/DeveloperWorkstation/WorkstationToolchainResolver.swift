@@ -24,7 +24,7 @@ struct WorkstationToolchainResolver {
         self.managedRoot = managedRoot ?? fileManager
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first!
-            .appendingPathComponent("GORKH/Toolchains", isDirectory: true)
+            .appendingPathComponent("KeySlot/Toolchains", isDirectory: true)
         self.systemDirectories = systemDirectories
     }
 

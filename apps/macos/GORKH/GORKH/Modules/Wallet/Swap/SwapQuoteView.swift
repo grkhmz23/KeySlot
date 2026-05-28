@@ -16,7 +16,7 @@ struct SwapQuoteView: View {
                             color: quote.isStale() ? GorkhColors.warning : GorkhColors.success
                         )
                         GorkhStatusChip(title: quoteAgeText(quote), systemImage: "clock", color: quote.isStale() ? GorkhColors.warning : GorkhColors.accent)
-                        GorkhStatusChip(title: "\(quote.slippageBps) bps slippage", systemImage: "slider.horizontal.3", color: GorkhColors.accent)
+                        GorkhStatusChip(title: String(format: "%.2f%% slippage", Double(quote.slippageBps) / 100.0), systemImage: "slider.horizontal.3", color: GorkhColors.accent)
                     }
 
                     HStack(spacing: 12) {

@@ -14,7 +14,6 @@ enum ShieldReviewPayloadPolicy {
         "utxo",
         "viewingkey",
         "nullifier",
-        "zerion_api_key",
         "deepseek_api_key"
     ]
 

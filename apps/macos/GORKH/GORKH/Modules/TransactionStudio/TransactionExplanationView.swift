@@ -24,19 +24,19 @@ struct TransactionExplanationView: View {
                     Button(action: copyAction) {
                         Label("Copy summary", systemImage: "doc.on.doc")
                     }
-                    .buttonStyle(.gorkhSecondary)
+                    .buttonStyle(.keyslotSecondary)
                     Button(action: sendToAgentAction) {
                         Label("Send to Agent", systemImage: "sparkles")
                     }
-                    .buttonStyle(.gorkhSecondary)
+                    .buttonStyle(.keyslotSecondary)
                     Button(action: saveHistoryAction) {
                         Label("Save history", systemImage: "tray.and.arrow.down")
                     }
-                    .buttonStyle(.gorkhSecondary)
+                    .buttonStyle(.keyslotSecondary)
                     Button(action: openActivityAction) {
                         Label("Open Activity", systemImage: "clock.arrow.circlepath")
                     }
-                    .buttonStyle(.gorkhSecondary)
+                    .buttonStyle(.keyslotSecondary)
                     .disabled(!hasSignature)
                 }
                 Text("Handoffs copy or route findings only. They do not sign, send, or broadcast.")

@@ -42,7 +42,7 @@ struct AgentProposalCardView: View {
                     } label: {
                         Label(proposal.handoffTarget.title, systemImage: "arrow.right.circle")
                     }
-                    .buttonStyle(.gorkhSecondary)
+                    .buttonStyle(.keyslotSecondary)
                     .disabled(proposal.status != .readyForReview || proposal.isExpired)
                     .accessibilityIdentifier("agent.proposal.handoff")
                 }

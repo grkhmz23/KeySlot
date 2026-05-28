@@ -23,7 +23,7 @@ struct WalletDeleteView: View {
                 } label: {
                     Label("Delete Local Wallet", systemImage: "trash")
                 }
-                .buttonStyle(.gorkhSecondary)
+                .buttonStyle(.keyslotSecondary)
                 .disabled(walletManager.selectedProfile == nil || confirmation != "DELETE WALLET" || walletManager.isBusy)
             }
             .padding(.top, 8)

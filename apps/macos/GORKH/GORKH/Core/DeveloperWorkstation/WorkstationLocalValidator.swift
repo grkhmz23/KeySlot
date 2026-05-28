@@ -35,7 +35,7 @@ struct WorkstationLocalValidatorStatus: Codable, Equatable {
     let slot: UInt64?
     let version: String?
     let ledgerPath: String?
-    let startedByGORKH: Bool
+    let startedByKeySlot: Bool
     let lastCheckedAt: Date?
     let message: String
 
@@ -45,7 +45,7 @@ struct WorkstationLocalValidatorStatus: Codable, Equatable {
         slot: nil,
         version: nil,
         ledgerPath: nil,
-        startedByGORKH: false,
+        startedByKeySlot: false,
         lastCheckedAt: nil,
         message: "Local validator has not been checked."
     )
@@ -57,7 +57,7 @@ struct WorkstationLocalValidatorStatus: Codable, Equatable {
             slot: nil,
             version: nil,
             ledgerPath: nil,
-            startedByGORKH: false,
+            startedByKeySlot: false,
             lastCheckedAt: Date(),
             message: message
         )
@@ -77,16 +77,16 @@ enum WorkstationLocalValidatorLifecycle {
         fileManager
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first!
-            .appendingPathComponent("GORKH/Localnet/ledger", isDirectory: true)
+            .appendingPathComponent("KeySlot/Localnet/ledger", isDirectory: true)
             .path
     }
 
     static func canStop(status: WorkstationLocalValidatorStatus) -> Bool {
-        status.startedByGORKH && (status.state == .running || status.state == .starting)
+        status.startedByKeySlot && (status.state == .running || status.state == .starting)
     }
 
     static func stopMessage(status: WorkstationLocalValidatorStatus) -> String {
-        canStop(status: status) ? "GORKH-started local validator can be stopped." : "External validators are not stopped by GORKH."
+        canStop(status: status) ? "KeySlot-started local validator can be stopped." : "External validators are not stopped by KeySlot."
     }
 }
 
@@ -120,7 +120,7 @@ final class WorkstationLocalValidatorController {
     private var process: Process?
     private(set) var logs: WorkstationLogStreamState = .idle(cluster: .localnet, maxEntries: 200)
 
-    var isStartedByGORKH: Bool {
+    var isStartedByKeySlot: Bool {
         process != nil
     }
 

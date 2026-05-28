@@ -59,8 +59,10 @@ struct WalletSecurityPolicy: Codable, Equatable {
 }
 
 struct WalletSecuritySettingsStore {
-    static let policyKey = "gorkh.wallet.security.policy"
+    static let policyKey = "keyslot.wallet.security.policy"
+    static let legacyPolicyKey = "gorkh.wallet.security.policy"
     static let allowedKeys = [policyKey]
+    static let migrationCompleteKey = "keyslot.wallet.securityMigrationComplete"
 
     private let defaults: UserDefaults
     private let encoder = JSONEncoder()
@@ -68,6 +70,15 @@ struct WalletSecuritySettingsStore {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        Self.migrateIfNeeded(defaults: defaults)
+    }
+
+    private static func migrateIfNeeded(defaults: UserDefaults) {
+        guard !defaults.bool(forKey: migrationCompleteKey) else { return }
+        if let oldData = defaults.data(forKey: legacyPolicyKey) {
+            defaults.set(oldData, forKey: policyKey)
+        }
+        defaults.set(true, forKey: migrationCompleteKey)
     }
 
     func loadPolicy() -> WalletSecurityPolicy {

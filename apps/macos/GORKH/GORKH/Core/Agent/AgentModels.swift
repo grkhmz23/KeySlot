@@ -3,8 +3,6 @@ import Foundation
 enum AgentSection: String, CaseIterable, Identifiable, Codable {
     case overview
     case chat
-    case zerionExecutor
-    case policyCenter
     case proposals
     case audit
 
@@ -16,10 +14,6 @@ enum AgentSection: String, CaseIterable, Identifiable, Codable {
             return "Overview"
         case .chat:
             return "Chat"
-        case .zerionExecutor:
-            return "Zerion Executor"
-        case .policyCenter:
-            return "Policy Center"
         case .proposals:
             return "Proposals"
         case .audit:
@@ -42,7 +36,6 @@ enum AgentMainWalletAccess: String, Codable, Equatable {
 enum AgentExecutionStatus: String, Codable, Equatable {
     case observeOnly
     case draftOnly
-    case tinySwapOnly
     case blocked
 
     var label: String {
@@ -51,8 +44,6 @@ enum AgentExecutionStatus: String, Codable, Equatable {
             return "Observe only"
         case .draftOnly:
             return "Draft only"
-        case .tinySwapOnly:
-            return "Tiny swap only"
         case .blocked:
             return "Execution blocked"
         }
@@ -63,61 +54,25 @@ struct AgentSafetyPolicy: Codable, Equatable {
     let mainWalletAccess: AgentMainWalletAccess
     let executionStatus: AgentExecutionStatus
     let canUseNativeSigner: Bool
-    let canReadCloakVault: Bool
     let canRunTradingCommands: Bool
     let safetyBanner: String
     let invariants: [String]
 
-    static let zerionA1 = AgentSafetyPolicy(
+    static let baseline = AgentSafetyPolicy(
         mainWalletAccess: .disabled,
         executionStatus: .draftOnly,
         canUseNativeSigner: false,
-        canReadCloakVault: false,
         canRunTradingCommands: false,
-        safetyBanner: "GORKH Agent can observe, summarize, draft, and hand off. It cannot directly sign, execute, trade, or use the main wallet without explicit approval.",
+        safetyBanner: "KeySlot Agent can observe, summarize, draft, and hand off. It cannot directly sign, execute, trade, or use the main wallet without explicit approval.",
         invariants: [
-            "Zerion wallet is separate from the GORKH wallet.",
-            "No GORKH Keychain signer, recovery phrase, private key, or Cloak private state is exposed.",
-            "A1 allows read/status Zerion CLI commands only.",
             "Draft proposals cannot execute or sign."
-        ]
-    )
-
-    static let zerionA2 = AgentSafetyPolicy(
-        mainWalletAccess: .disabled,
-        executionStatus: .tinySwapOnly,
-        canUseNativeSigner: false,
-        canReadCloakVault: false,
-        canRunTradingCommands: true,
-        safetyBanner: "GORKH Agent can observe, summarize, draft, and hand off. Chat creates proposals only; execution stays inside Wallet or Zerion review.",
-        invariants: [
-            "Zerion wallet is separate from the GORKH wallet.",
-            "No GORKH Keychain signer, recovery phrase, private key, or Cloak private state is exposed.",
-            "Zerion execution remains limited to the existing policy-validated tiny same-chain swap flow.",
-            "Main-wallet, Private, Send, and Swap intents require destination-module approval.",
-            "Bridge, send, signing, recurring automation, and main-wallet execution remain blocked."
         ]
     )
 }
 
 struct AgentOverviewSnapshot: Codable, Equatable {
     let walletContextAvailable: Bool
-    let zerionStatus: ZerionCLIInstallStatus
-    let apiKeyStatus: ZerionSecretStatus
-    let policyStatus: ZerionPolicyReadStatus
     let draftProposalCount: Int
     let mainWalletAccess: AgentMainWalletAccess
     let updatedAt: Date
-
-    static func from(status: ZerionStatusSnapshot, draftProposalCount: Int) -> AgentOverviewSnapshot {
-        AgentOverviewSnapshot(
-            walletContextAvailable: true,
-            zerionStatus: status.cliStatus,
-            apiKeyStatus: status.apiKeyStatus,
-            policyStatus: status.policyStatus,
-            draftProposalCount: draftProposalCount,
-            mainWalletAccess: .disabled,
-            updatedAt: status.checkedAt
-        )
-    }
 }

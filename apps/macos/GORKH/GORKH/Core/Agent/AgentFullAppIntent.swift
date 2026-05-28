@@ -10,8 +10,6 @@ struct AgentFullAppIntent: Codable, Equatable, Identifiable {
     enum AppArea: String, Codable, CaseIterable, Identifiable {
         case wallet
         case portfolio
-        case privateWallet
-        case zerion
         case infrastructure
         case help
         case unsupported
@@ -24,10 +22,6 @@ struct AgentFullAppIntent: Codable, Equatable, Identifiable {
                 return "Wallet"
             case .portfolio:
                 return "Portfolio"
-            case .privateWallet:
-                return "Private"
-            case .zerion:
-                return "Zerion"
             case .infrastructure:
                 return "Infrastructure"
             case .help:
@@ -93,19 +87,6 @@ enum AgentFullAppIntentClassifier {
              .lpPositionReview,
              .pnlSummary:
             return .portfolio
-        case .cloakStatus,
-             .prepareCloakDeposit,
-             .cloakPrivatePaymentRequest,
-             .prepareCloakPrivatePayment,
-             .cloakScanSummary,
-             .explainPrivateState:
-            return .privateWallet
-        case .zerionStatus,
-             .zerionPolicySummary,
-             .zerionTinySwapRequest,
-             .zerionPrepareTinySwap,
-             .zerionProposalStatus:
-            return .zerion
         case .rpcStatus:
             return .infrastructure
         case .help, .whatCanYouDo, .missingFields:

@@ -86,7 +86,7 @@ struct TransactionApprovalView: View {
                         systemImage: "signature"
                     )
                 }
-                .buttonStyle(.gorkhPrimary)
+                .buttonStyle(.keyslotPrimary)
                 .disabled(!canApprove(draft: draft) || ShieldReviewPolicy.requiresBlockingReview(shieldReview) || walletManager.vaultState != .unlocked || walletManager.isBusy)
 
                 if let signature = walletManager.lastTransactionSignature {

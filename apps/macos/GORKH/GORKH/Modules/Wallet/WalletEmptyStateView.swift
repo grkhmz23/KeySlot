@@ -58,7 +58,7 @@ struct WalletEmptyStateView: View {
                 Button(action: action) {
                     Label(actionTitle, systemImage: "arrow.right")
                 }
-                .buttonStyle(.gorkhSecondary)
+                .buttonStyle(.keyslotSecondary)
             }
         }
         .padding(14)

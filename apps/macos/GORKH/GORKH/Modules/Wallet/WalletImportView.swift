@@ -34,7 +34,7 @@ struct WalletImportView: View {
                     } label: {
                         Label("Preview Address", systemImage: "eye")
                     }
-                    .buttonStyle(.gorkhSecondary)
+                    .buttonStyle(.keyslotSecondary)
                     .disabled(recoveryPhraseText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || walletManager.isBusy)
 
                     Button {
@@ -49,7 +49,7 @@ struct WalletImportView: View {
                     } label: {
                         Label("Import Recovery Phrase", systemImage: "square.and.arrow.down")
                     }
-                    .buttonStyle(.gorkhPrimary)
+                    .buttonStyle(.keyslotPrimary)
                     .disabled(previewAddress == nil || walletManager.isBusy)
                 }
 
@@ -69,7 +69,7 @@ struct WalletImportView: View {
                         .foregroundStyle(GorkhColors.danger)
                 }
 
-                Text("Recovery phrases are validated and derived locally. GORKH stores only the derived signing seed in the local vault and clears this form after import.")
+                Text("Recovery phrases are validated and derived locally. KeySlot stores only the derived signing seed in the local vault and clears this form after import.")
                     .font(.caption)
                     .foregroundStyle(GorkhColors.secondaryText)
 
@@ -86,7 +86,7 @@ struct WalletImportView: View {
                     } label: {
                         Label("Import Private Key", systemImage: "square.and.arrow.down")
                     }
-                    .buttonStyle(.gorkhPrimary)
+                    .buttonStyle(.keyslotPrimary)
                     .disabled(privateKeyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || walletManager.isBusy)
 
                     Text("Private key material is parsed locally and cleared from the form after import.")

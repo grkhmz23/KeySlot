@@ -13,7 +13,7 @@ struct RecoveryPhraseConfirmationView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Confirm selected words before GORKH stores the local signer.")
+            Text("Confirm selected words before KeySlot stores the local signer.")
                 .font(.callout)
                 .foregroundStyle(GorkhColors.secondaryText)
 
@@ -40,7 +40,7 @@ struct RecoveryPhraseConfirmationView: View {
             } label: {
                 Label("Finalize Wallet", systemImage: "checkmark.seal")
             }
-            .buttonStyle(.gorkhPrimary)
+            .buttonStyle(.keyslotPrimary)
             .disabled(challengeIndexes.contains { answers[$0, default: ""].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
         }
     }

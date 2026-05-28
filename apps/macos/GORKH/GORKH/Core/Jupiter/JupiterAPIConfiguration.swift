@@ -1,7 +1,7 @@
 import Foundation
 
 struct JupiterAPIConfiguration: Equatable {
-    static let appSpecificAPIKeyEnvironmentName = "GORKH_JUPITER_API_KEY"
+    static let appSpecificAPIKeyEnvironmentName = "KEYSLOT_JUPITER_API_KEY"
     static let fallbackAPIKeyEnvironmentName = "JUPITER_API_KEY"
 
     let apiKey: String?

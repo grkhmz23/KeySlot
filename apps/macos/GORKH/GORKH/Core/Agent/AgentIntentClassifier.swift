@@ -50,33 +50,6 @@ struct AgentIntentClassifier {
         if containsAny(lower, ["lending", "kamino", "marginfi", "borrow status", "supply apy"]) {
             return AgentIntentClassification(input: input, intentType: .lendingSummary, sourceAsset: tokens.first, confidence: 0.84, riskFlags: [.readOnlyOnly])
         }
-        if (lower.contains("cloak") || lower.contains("private")) && containsAny(lower, ["status", "scan", "history", "state", "validated"]) {
-            let type: AgentIntentType
-            if lower.contains("scan") || lower.contains("history") {
-                type = .cloakScanSummary
-            } else if lower.contains("state") {
-                type = .explainPrivateState
-            } else {
-                type = .cloakStatus
-            }
-            return AgentIntentClassification(input: input, intentType: type, chain: "solana", confidence: 0.86, riskFlags: [.readOnlyOnly])
-        }
-        if lower.contains("zerion") && containsAny(lower, ["status", "policy", "proposal", "token"]) && (lower.contains("swap") == false && lower.contains("buy") == false) {
-            let type: AgentIntentType
-            if lower.contains("policy") || lower.contains("token") {
-                type = .zerionPolicySummary
-            } else if lower.contains("proposal") {
-                type = .zerionProposalStatus
-            } else {
-                type = .zerionStatus
-            }
-            return AgentIntentClassification(input: input, intentType: type, chain: chain, confidence: 0.86, riskFlags: [.readOnlyOnly])
-        }
-        if lower.contains("zerion") || lower.contains("agent wallet") || lower.contains("policy wallet") {
-            if lower.contains("swap") || lower.contains("buy") {
-                return swapLike(input: input, type: lower.contains("prepare") ? .zerionPrepareTinySwap : .zerionTinySwapRequest, amount: amount, recipient: recipient, chain: chain, tokens: tokens, lower: lower)
-            }
-        }
         if lower.contains("swap") && (lower.contains("explain") || lower.contains("why") || lower.contains("quote")) {
             return AgentIntentClassification(input: input, intentType: .explainSwap, amount: amount, sourceAsset: tokens.first, targetAsset: tokens.dropFirst().first, chain: chain ?? "solana", confidence: 0.82, riskFlags: [.readOnlyOnly])
         }
@@ -85,23 +58,6 @@ struct AgentIntentClassifier {
         }
         if lower.contains("prepare") && (lower.contains("send") || lower.contains("transfer")) && lower.contains("pusd") == false {
             return sendLike(input: input, type: .prepareSend, amount: amount, recipient: recipient, chain: chain, tokens: tokens)
-        }
-
-        if (lower.contains("private") || lower.contains("cloak")) && (lower.contains("pay") || lower.contains("payment") || lower.contains("send") || lower.contains("prepare")) {
-            var missing: [String] = []
-            if amount == nil { missing.append("amount") }
-            if recipient == nil { missing.append("recipient") }
-            return AgentIntentClassification(
-                input: input,
-                intentType: .cloakPrivatePaymentRequest,
-                amount: amount,
-                sourceAsset: tokens.first ?? "SOL",
-                chain: "solana",
-                recipient: recipient,
-                confidence: missing.isEmpty ? 0.85 : 0.7,
-                missingFields: missing,
-                riskFlags: missing.map { $0 == "recipient" ? .missingRecipient : .missingAmount } + [.mainWalletApprovalRequired]
-            )
         }
 
         if lower.contains("pusd") && (lower.contains("send") || lower.contains("payment") || lower.contains("request") || lower.contains("pay")) {
@@ -184,7 +140,7 @@ struct AgentIntentClassifier {
         lower: String
     ) -> AgentIntentClassification {
         var missing: [String] = []
-        var flags: [AgentRiskFlag] = type == .zerionTinySwapRequest ? [.zerionPolicyRequired] : [.mainWalletApprovalRequired]
+        var flags: [AgentRiskFlag] = [.mainWalletApprovalRequired]
         if amount == nil { missing.append("amount"); flags.append(.missingAmount) }
         let fromToken = tokens.first
         let toToken = tokens.dropFirst().first
@@ -196,7 +152,7 @@ struct AgentIntentClassifier {
             amount: amount,
             sourceAsset: fromToken,
             targetAsset: toToken,
-            chain: chain ?? (type == .zerionTinySwapRequest && lower.contains("base") ? "base" : "solana"),
+            chain: chain ?? "solana",
             recipient: recipient,
             confidence: missing.isEmpty ? 0.86 : 0.64,
             missingFields: missing,
@@ -298,10 +254,10 @@ struct AgentIntentClassifier {
     private func tokenSymbols(in text: String) -> [String] {
         let ignored: Set<String> = [
             "BUY", "SWAP", "SEND", "TO", "FOR", "ON", "FROM", "THIS", "TOKEN", "FIND", "CHECK",
-            "MY", "AND", "PRIVATE", "PAYMENT", "PREPARE", "ZERION", "BASE", "SOLANA", "SAFER",
+            "MY", "AND", "PRIVATE", "PAYMENT", "PREPARE", "BASE", "SOLANA", "SAFER",
             "BETTER", "YIELD", "APY", "RISK", "PORTFOLIO", "SUMMARY", "ACTIVITY", "RECENT",
             "TODAY", "POSITION", "POSITIONS", "POOL", "POOLS", "LIQUIDITY", "CHANGED", "WHAT",
-            "OVERVIEW", "ASSETS", "WALLETS", "SECURITY", "RPC", "STATUS", "CLOAK", "HISTORY",
+            "OVERVIEW", "ASSETS", "WALLETS", "SECURITY", "RPC", "STATUS", "HISTORY",
             "PNL", "PERFORMANCE", "COST", "BASIS", "STAKE", "LST", "LENDING", "KAMINO", "MARGINFI",
             "HELP", "RECEIVE", "ADDRESS", "QUOTE", "EXPLAIN"
         ]

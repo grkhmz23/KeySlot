@@ -19,7 +19,7 @@ enum RPCFastRedaction {
         }
 
         let patterns = [
-            #"(?i)(GORKH_RPCFAST_DEVNET_TOKEN|GORKH_RPCFAST_MAINNET_TOKEN|RPCFAST_DEVNET_TOKEN|RPCFAST_MAINNET_TOKEN)\s*=\s*[^,\s]+"#,
+            #"(?i)(KEYSLOT_RPCFAST_DEVNET_TOKEN|KEYSLOT_RPCFAST_MAINNET_TOKEN|GORKH_RPCFAST_DEVNET_TOKEN|GORKH_RPCFAST_MAINNET_TOKEN|RPCFAST_DEVNET_TOKEN|RPCFAST_MAINNET_TOKEN)\s*=\s*[^,\s]+"#,
             #"(?i)(X-Token|x-token|api_key|apikey|token)\s*[:=]\s*[^,\s]+"#
         ]
 

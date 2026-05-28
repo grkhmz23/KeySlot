@@ -28,7 +28,7 @@ struct WalletBackupView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if !status.recoveryPhraseExportAvailable {
-                Text("GORKH cannot reveal this recovery phrase again because only the derived signing seed is stored in Keychain.")
+                Text("KeySlot cannot reveal this recovery phrase again because only the derived signing seed is stored in Keychain.")
                     .font(.caption)
                     .foregroundStyle(GorkhColors.warning)
             }

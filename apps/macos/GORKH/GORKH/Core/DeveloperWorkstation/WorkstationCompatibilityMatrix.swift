@@ -138,7 +138,7 @@ struct WorkstationCompatibilityMatrix: Codable, Equatable {
                 rustToolchainVersion: WorkstationRustToolchainPolicy.compatibilityPinnedToolchain,
                 status: probe.rustupVersion == nil ? .blocked : .installPlanAvailable,
                 installStrategy: "Install Rust stable with rustup, run AVM install/use latest, then verify anchor --version records the exact resolved version.",
-                blocker: probe.rustupVersion == nil ? "rustup is missing; GORKH will not install Rust via bootstrap scripts." : nil
+                blocker: probe.rustupVersion == nil ? "rustup is missing; KeySlot will not install Rust via bootstrap scripts." : nil
             ),
             WorkstationCompatibilityCandidate(
                 anchorVersion: WorkstationAnchorVersionPolicy.explicitStableCandidate,

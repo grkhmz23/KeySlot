@@ -60,7 +60,6 @@ struct WalletView: View {
                             WalletEmptyStateView(content: .noWallet)
                             WalletCreateView()
                             WalletImportView()
-                            AddWatchOnlyWalletView()
                         }
 
                         if walletManager.selectedProfile != nil {
@@ -93,30 +92,25 @@ struct WalletView: View {
 
     @ViewBuilder
     private var selectedSectionView: some View {
-        if walletManager.selectedProfile?.canSign == false,
-           [.send, .swap, .privateWallet, .security].contains(selectedSection) {
-            WalletOverviewView { selectedSection = $0 }
-        } else {
-            switch selectedSection {
-            case .overview:
-                WalletOverviewView { section in
-                    selectedSection = section
-                }
-            case .portfolio:
-                WalletPortfolioView()
-            case .send:
-                WalletReceiveView()
-                SendSolView()
-                TokenBalancesView()
-            case .swap:
-                WalletSwapView()
-            case .privateWallet:
-                WalletPrivateView()
-            case .security:
-                WalletSecurityView()
-            case .activity:
-                WalletActivityView()
+        switch selectedSection {
+        case .overview:
+            WalletOverviewView { section in
+                selectedSection = section
             }
+        case .portfolio:
+            WalletPortfolioView()
+        case .send:
+            WalletReceiveView()
+            SendSolView()
+            TokenBalancesView()
+        case .swap:
+            WalletSwapView()
+        case .defi:
+            WalletDeFiView()
+        case .security:
+            WalletSecurityView()
+        case .activity:
+            WalletActivityView()
         }
     }
 
@@ -147,9 +141,9 @@ struct WalletView: View {
                     .fontWeight(.semibold)
                     .foregroundStyle(GorkhColors.primaryText)
                     .lineLimit(1)
-                Text(walletManager.selectedProfile?.isWatchOnly == true ? "Watch-only wallet" : walletManager.vaultState.title)
+                Text(walletManager.vaultState.title)
                     .font(.caption2)
-                    .foregroundStyle(walletManager.selectedProfile?.isWatchOnly == true ? GorkhColors.warning : GorkhColors.secondaryText)
+                    .foregroundStyle(GorkhColors.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, 14)
@@ -255,163 +249,62 @@ struct WalletView: View {
     }
 
     private var availableSections: [WalletSection] {
-        guard walletManager.selectedProfile?.canSign == false else {
-            return WalletSection.productionOrder
-        }
-        return WalletSection.watchOnlyOrder
+        WalletSection.productionOrder
     }
 
     private func header(compact: Bool) -> some View {
-        let titleBlock = VStack(alignment: .leading, spacing: 4) {
-            Text("Wallet")
-                .font(.title3)
-                .fontWeight(.semibold)
-                .foregroundStyle(GorkhColors.primaryText)
-            Text("Own, review, send, protect, and understand your Solana assets.")
-                .font(.callout)
-                .foregroundStyle(GorkhColors.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        HStack(spacing: 12) {
+            profilePicker(compact: compact)
+                .frame(maxWidth: compact ? .infinity : 200)
 
-        let statusChips = HStack(spacing: 8) {
-            GorkhStatusChip(
-                title: "RPC Fast",
-                systemImage: walletManager.rpcProviderSecurityStatus.tokenStatus == .present ? "bolt.horizontal" : "key.slash",
-                color: walletManager.rpcProviderSecurityStatus.tokenStatus == .present ? GorkhColors.accent : GorkhColors.warning
-            )
+            networkPicker(compact: compact)
+                .frame(maxWidth: compact ? .infinity : 220)
+
+            if let profile = walletManager.selectedProfile {
+                Text(profile.publicAddress)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(GorkhColors.secondaryText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 180)
+                    .textSelection(.enabled)
+
+                vaultChip
+
+                if profile.canSign {
+                    HStack(spacing: 6) {
+                        Button {
+                            Task { await walletManager.unlockWallet() }
+                        } label: {
+                            Image(systemName: "lock.open")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(walletManager.vaultState == .unlocked)
+                        .help("Unlock")
+
+                        Button {
+                            walletManager.lockWallet()
+                        } label: {
+                            Image(systemName: "lock")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(walletManager.vaultState != .unlocked)
+                        .help("Lock")
+                    }
+                }
+            }
+
+            Spacer(minLength: 0)
+
             GorkhStatusChip(
                 title: walletManager.selectedNetwork.displayName,
                 systemImage: walletManager.selectedNetwork.isMainnet ? "exclamationmark.triangle.fill" : "network",
                 color: walletManager.selectedNetwork.isMainnet ? GorkhColors.warning : GorkhColors.accent
             )
         }
-
-        return VStack(alignment: .leading, spacing: 12) {
-            if compact {
-                VStack(alignment: .leading, spacing: 10) {
-                    titleBlock
-                    statusChips
-                }
-            } else {
-                HStack(alignment: .center, spacing: 14) {
-                    titleBlock
-
-                    Spacer(minLength: 12)
-
-                    statusChips
-                }
-            }
-
-            GorkhPanel {
-                VStack(alignment: .leading, spacing: 12) {
-                    profileNetworkControls(compact: compact)
-
-                    selectedProfileSummary
-
-                    vaultControls(compact: compact)
-
-                    WalletSecurityStatusStripView()
-                }
-            }
-        }
-        .padding(18)
-    }
-
-    private func profileNetworkControls(compact: Bool) -> some View {
-        Group {
-            if compact {
-                VStack(alignment: .leading, spacing: 10) {
-                    profilePicker(compact: true)
-                    networkPicker(compact: true)
-                }
-            } else {
-                HStack(spacing: 12) {
-                    profilePicker(compact: false)
-                    networkPicker(compact: false)
-                    Spacer(minLength: 0)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var selectedProfileSummary: some View {
-        if let profile = walletManager.selectedProfile {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(profile.label)
-                    .font(.headline)
-                    .foregroundStyle(GorkhColors.primaryText)
-                Text(profile.publicAddress)
-                    .font(.system(.callout, design: .monospaced))
-                    .textSelection(.enabled)
-                    .foregroundStyle(GorkhColors.secondaryText)
-                    .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 8) {
-                    GorkhStatusChip(
-                        title: profile.profileKind.displayName,
-                        systemImage: profile.canSign ? "key" : "eye",
-                        color: profile.canSign ? GorkhColors.accent : GorkhColors.warning
-                    )
-                    if profile.profileKind != .watchOnly {
-                        GorkhStatusChip(title: profile.walletOrigin.displayName, systemImage: "key", color: GorkhColors.accent)
-                    }
-                }
-                if let derivationPath = profile.derivationPath {
-                    Text(derivationPath)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(GorkhColors.secondaryText)
-                        .textSelection(.enabled)
-                        .lineLimit(nil)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        } else {
-            Text("No wallet is configured on this Mac.")
-                .foregroundStyle(GorkhColors.secondaryText)
-        }
-    }
-
-    private func vaultControls(compact: Bool) -> some View {
-        Group {
-            if compact {
-                VStack(alignment: .leading, spacing: 10) {
-                    vaultChip
-                    walletLockControls
-                }
-            } else {
-                HStack(spacing: 10) {
-                    vaultChip
-                    Spacer()
-                    walletLockControls
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var walletLockControls: some View {
-        if walletManager.selectedProfile?.canSign == true {
-            HStack(spacing: 8) {
-                Button {
-                    Task { await walletManager.unlockWallet() }
-                } label: {
-                    Label("Unlock", systemImage: "lock.open")
-                }
-                .buttonStyle(.gorkhSecondary)
-                .disabled(walletManager.selectedProfile == nil || walletManager.vaultState == .unlocked)
-
-                Button {
-                    walletManager.lockWallet()
-                } label: {
-                    Label("Lock", systemImage: "lock")
-                }
-                .buttonStyle(.gorkhSecondary)
-                .disabled(walletManager.selectedProfile == nil || walletManager.vaultState != .unlocked)
-            }
-        } else if walletManager.selectedProfile?.isWatchOnly == true {
-            GorkhStatusChip(title: "No signer", systemImage: "eye.slash", color: GorkhColors.warning)
-        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(GorkhColors.sidebar.opacity(0.5))
     }
 
     private func profilePicker(compact: Bool) -> some View {
@@ -426,40 +319,24 @@ struct WalletView: View {
                 Text(profile.label).tag(Optional(profile.id))
             }
         }
-        .frame(maxWidth: compact ? .infinity : 260)
+        .labelsHidden()
     }
 
     @ViewBuilder
     private func networkPicker(compact: Bool) -> some View {
-        if compact {
-            Picker("Network", selection: Binding(
-                get: { walletManager.selectedNetwork },
-                set: { walletManager.setNetwork($0) }
-            )) {
-                ForEach(WalletNetwork.allCases) { network in
-                    Text(network.displayName).tag(network)
-                }
+        Picker("Network", selection: Binding(
+            get: { walletManager.selectedNetwork },
+            set: { walletManager.setNetwork($0) }
+        )) {
+            ForEach(WalletNetwork.allCases) { network in
+                Text(network.displayName).tag(network)
             }
-            .pickerStyle(.menu)
-            .frame(maxWidth: .infinity)
-        } else {
-            Picker("Network", selection: Binding(
-                get: { walletManager.selectedNetwork },
-                set: { walletManager.setNetwork($0) }
-            )) {
-                ForEach(WalletNetwork.allCases) { network in
-                    Text(network.displayName).tag(network)
-                }
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 260)
         }
+        .pickerStyle(.segmented)
+        .labelsHidden()
     }
 
     private var vaultChip: some View {
-        if walletManager.selectedProfile?.isWatchOnly == true {
-            return GorkhStatusChip(title: "Watch-only", systemImage: "eye", color: GorkhColors.warning)
-        }
         let state = walletManager.vaultState
         let color: Color = {
             switch state {
@@ -471,7 +348,6 @@ struct WalletView: View {
                 return GorkhColors.danger
             }
         }()
-
         return GorkhStatusChip(title: state.title, systemImage: state == .unlocked ? "checkmark.seal" : "lock", color: color)
     }
 

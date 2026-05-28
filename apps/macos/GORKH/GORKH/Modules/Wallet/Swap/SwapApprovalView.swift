@@ -66,7 +66,7 @@ struct SwapApprovalView: View {
                     Button(action: approveAction) {
                         Label("Approve Mainnet, Authenticate, Sign Locally, and Send", systemImage: "signature")
                     }
-                    .buttonStyle(.gorkhPrimary)
+                    .buttonStyle(.keyslotPrimary)
                     .disabled(!canApprove || ShieldReviewPolicy.requiresBlockingReview(shieldReview))
                 }
             } else {

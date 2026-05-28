@@ -131,12 +131,31 @@ struct WorkstationCommandRunner {
         )
     }
 
-    static func safeSummary(_ text: String) -> String {
-        let redacted = AgentSafetyRedactor.redact(text.trimmingCharacters(in: .whitespacesAndNewlines))
+    nonisolated static func safeSummary(_ text: String) -> String {
+        let redacted = removeSensitiveLabels(AgentSafetyRedactor.redact(text.trimmingCharacters(in: .whitespacesAndNewlines)))
         if redacted.count <= 1_000 {
             return redacted
         }
-        return String(redacted.prefix(1_000)) + "..."
+        return String(redacted.prefix(997)) + "..."
+    }
+
+    nonisolated static func removeSensitiveLabels(_ value: String) -> String {
+        [
+            "privateKey",
+            "private key",
+            "secretKey",
+            "secret key",
+            "seed phrase",
+            "mnemonic",
+            "wallet JSON",
+            "signingSeed",
+            "signing seed",
+            "agent token",
+            "api key",
+            "keypair"
+        ].reduce(value) { text, term in
+            text.replacingOccurrences(of: term, with: "[redacted]", options: [.caseInsensitive])
+        }
     }
 
     func validate(_ plan: WorkstationCommandPlan) throws {
@@ -162,8 +181,34 @@ struct WorkstationCommandRunner {
 
     private func validateFixedProgramArguments(_ plan: WorkstationCommandPlan) throws {
         switch plan.name {
+        case "Git rev-parse HEAD":
+            guard URL(fileURLWithPath: plan.executablePath).lastPathComponent == "git",
+                  plan.arguments == ["rev-parse", "HEAD"],
+                  plan.writesToCluster == false,
+                  plan.cluster == nil else {
+                throw WorkstationCommandValidationError.unsafeArgument(plan.arguments.joined(separator: " "))
+            }
+        case "Git status porcelain":
+            guard URL(fileURLWithPath: plan.executablePath).lastPathComponent == "git",
+                  plan.arguments == ["status", "--porcelain"],
+                  plan.writesToCluster == false,
+                  plan.cluster == nil else {
+                throw WorkstationCommandValidationError.unsafeArgument(plan.arguments.joined(separator: " "))
+            }
         case "Anchor build":
             guard plan.arguments == ["build"] else {
+                throw WorkstationCommandValidationError.unsafeArgument(plan.arguments.joined(separator: " "))
+            }
+        case "Anchor test":
+            guard plan.arguments == ["test", "--provider.cluster", WorkstationCluster.localnet.rpcURL.absoluteString],
+                  plan.cluster == .localnet,
+                  plan.writesToCluster == false else {
+                throw WorkstationCommandValidationError.unsafeArgument(plan.arguments.joined(separator: " "))
+            }
+        case "Cargo test":
+            guard plan.arguments == ["test"],
+                  plan.writesToCluster == false,
+                  plan.cluster == nil else {
                 throw WorkstationCommandValidationError.unsafeArgument(plan.arguments.joined(separator: " "))
             }
         case "Anchor deploy":
@@ -292,7 +337,7 @@ struct WorkstationCommandRunner {
         }
     }
 
-    static func validateArgument(_ argument: String) throws {
+    nonisolated static func validateArgument(_ argument: String) throws {
         let forbiddenFragments = [";", "|", "&", "`", "$(", ">", "<"]
         if forbiddenFragments.contains(where: { argument.contains($0) }) {
             throw WorkstationCommandValidationError.unsafeArgument(argument)

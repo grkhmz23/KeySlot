@@ -15,9 +15,8 @@ enum TransactionInstructionLabeler {
     static let meteoraDLMMProgramID = "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo"
     static let kaminoProgramID = "KLend2g3c3s7eQY2qjD6xH53wSbmcT4kBvfPz2KQxK7"
     static let marginFiProgramID = "MFv2hWf31Z9kbCa1snEPYctwafyhdvnV7FZnsebVacA"
-    static let cloakProgramID = "zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW"
 
-    static func label(for programID: String) -> String {
+    nonisolated static func label(for programID: String) -> String {
         switch programID {
         case SolanaConstants.systemProgramID:
             return "System Program"
@@ -49,8 +48,6 @@ enum TransactionInstructionLabeler {
             return "Kamino"
         case marginFiProgramID:
             return "MarginFi"
-        case cloakProgramID:
-            return "Cloak"
         case bpfUpgradeableLoaderProgramID:
             return "Upgradeable Loader"
         default:
@@ -94,8 +91,6 @@ enum TransactionInstructionLabeler {
                 return ["Token transfer"]
             }
             return []
-        case cloakProgramID:
-            return ["Private protocol interaction"]
         case jupiterV6ProgramID, jupiterV4ProgramID, orcaWhirlpoolProgramID, raydiumAMMV4ProgramID, raydiumCPMMProgramID, raydiumCLMMProgramID, meteoraDLMMProgramID, kaminoProgramID, marginFiProgramID:
             return ["DeFi protocol interaction"]
         default:

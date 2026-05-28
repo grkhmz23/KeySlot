@@ -123,7 +123,7 @@ enum TokenWarning: String, Codable, Equatable, CaseIterable, Identifiable {
     var message: String {
         switch self {
         case .unknownToken:
-            return "This mint is not in GORKH's local known-token registry. Verify the mint before sending."
+            return "This mint is not in KeySlot's local known-token registry. Verify the mint before sending."
         case .devnetToken:
             return "This appears on devnet and may be a temporary test token."
         case .frozenAccount:

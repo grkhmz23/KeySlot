@@ -697,7 +697,7 @@ struct SolanaRPCClient {
         let availability = RPCMethodAvailability.evaluate(method: method, programID: Self.programIDParameter(from: params))
         switch availability {
         case .unsupported:
-            throw SolanaRPCError.methodBlocked("Solana RPC method is not allowlisted for GORKH Wallet.")
+            throw SolanaRPCError.methodBlocked("Solana RPC method is not allowlisted for KeySlot Wallet.")
         case .blocked:
             throw SolanaRPCError.methodBlocked("RPC Fast blocks this RPC method or program for the current plan.")
         case .allowed, .expensive, .planLimited:

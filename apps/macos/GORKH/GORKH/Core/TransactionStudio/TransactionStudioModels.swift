@@ -438,7 +438,6 @@ enum TransactionRiskFlagKind: String, Codable, Equatable, CaseIterable {
     case simulationFailed
     case missingSimulation
     case mainnetTransaction
-    case privateCloakProgramInteraction
     case defiProtocolInteraction
     case accountOwnerMismatch
 }

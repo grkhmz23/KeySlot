@@ -6,8 +6,6 @@ struct AgentFullAppHelpView: View {
             VStack(alignment: .leading, spacing: 6) {
                 help("Wallet", "overview, receive, send drafts, swap drafts, security, activity, RPC status")
                 help("Portfolio", "assets, wallets, PUSD, Stake/LST, lending, liquidity, yield, PnL, history")
-                help("Private", "Cloak status, deposit/private-payment drafts, scan summaries, local-state warnings")
-                help("Zerion", "CLI status, policy status, tiny-swap proposals through existing review")
             }
         }
         .accessibilityIdentifier("agent.fullapp.help")

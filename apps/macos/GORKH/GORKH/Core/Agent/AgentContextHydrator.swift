@@ -19,7 +19,6 @@ enum AgentContextHydrator {
         selectedProfile: WalletProfile?,
         selectedNetwork: WalletNetwork,
         rpcSecurityStatus: RPCProviderSecurityStatus,
-        zerionStatus: ZerionStatusSnapshot,
         builtAt: Date = Date()
     ) throws -> AgentHydratedContext {
         let context = try AgentRedactedContextBuilder.build(
@@ -30,7 +29,6 @@ enum AgentContextHydrator {
             selectedProfile: selectedProfile,
             selectedNetwork: selectedNetwork,
             rpcSecurityStatus: rpcSecurityStatus,
-            zerionStatus: zerionStatus,
             builtAt: builtAt
         )
         let summaries = [
@@ -41,7 +39,6 @@ enum AgentContextHydrator {
             "yield:\(context.yield.status):apy=\(context.yield.apyAvailableCount)",
             "pnl:\(context.pnl.status):history=\(context.pnl.historyPointCount)",
             "security:\(context.security.signingGuard)",
-            "zerion:\(context.zerion.cliStatus):policy=\(context.zerion.policyStatus)"
         ]
         let hydrated = AgentHydratedContext(
             redactedContext: context,

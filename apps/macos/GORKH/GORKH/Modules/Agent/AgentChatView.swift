@@ -34,7 +34,7 @@ struct AgentChatView: View {
 
                     GorkhPanel {
                         HStack(spacing: 10) {
-                            TextField("Ask about portfolio, swaps, PUSD, Cloak, yield, LPs, or recent activity", text: $draftText, axis: .vertical)
+                            TextField("Ask about portfolio, swaps, PUSD, yield, LPs, or recent activity", text: $draftText, axis: .vertical)
                                 .textFieldStyle(.roundedBorder)
                                 .lineLimit(1...3)
                                 .accessibilityIdentifier("agent.chat.input")
@@ -43,7 +43,7 @@ struct AgentChatView: View {
                             Button(action: submitAction) {
                                 Label("Send", systemImage: "paperplane")
                             }
-                            .buttonStyle(.gorkhPrimary)
+                            .buttonStyle(.keyslotPrimary)
                             .disabled(draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             .accessibilityIdentifier("agent.chat.send")
                         }
@@ -93,7 +93,7 @@ struct AgentChatView: View {
                                 } label: {
                                     Label("Clear memory", systemImage: "trash")
                                 }
-                                .buttonStyle(.gorkhSecondary)
+                                .buttonStyle(.keyslotSecondary)
                                 .accessibilityIdentifier("agent.memory.clear")
                             }
                         }

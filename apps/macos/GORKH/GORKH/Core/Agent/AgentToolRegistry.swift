@@ -11,7 +11,6 @@ enum AgentToolRegistry {
         "agent token",
         "transaction payload",
         "serialized transaction",
-        "Cloak private state"
     ]
 
     static let declarations: [AgentToolDeclaration] = [
@@ -27,17 +26,12 @@ enum AgentToolRegistry {
         read(.getActivitySummary, lane: .readOnlyAnalysis),
         read(.getSecuritySummary, lane: .readOnlyAnalysis),
         read(.getRPCStatus, lane: .readOnlyAnalysis),
-        read(.getCloakStatus, lane: .readOnlyAnalysis),
-        read(.getZerionStatus, lane: .readOnlyAnalysis),
         draft(.draftMainWalletSwap, lane: .mainWallet, requiredInputs: ["amount", "from token", "to token"]),
         draft(.draftMainWalletSend, lane: .mainWallet, requiredInputs: ["amount", "token", "recipient"]),
         draft(.draftPUSDPayment, lane: .mainWallet, requiredInputs: ["amount or payment request details"]),
-        draft(.draftCloakPayment, lane: .cloakPrivate, requiredInputs: ["amount", "recipient"]),
-        draft(.draftZerionTinySwap, lane: .zerionAgentWallet, requiredInputs: ["amount", "from token", "to token", "chain"]),
         blocked(.executeSwap),
         blocked(.executeSend),
         blocked(.executeBridge),
-        blocked(.executeCloakPayment),
         blocked(.signTransaction),
         blocked(.sendTransaction),
         blocked(.runShell),
@@ -93,20 +87,12 @@ enum AgentToolRegistry {
             return .getPnLSummary
         case .portfolioHistorySummary:
             return .getPortfolioSummary
-        case .cloakStatus, .cloakScanSummary, .explainPrivateState:
-            return .getCloakStatus
-        case .zerionStatus, .zerionPolicySummary, .zerionProposalStatus:
-            return .getZerionStatus
         case .prepareSwap, .tokenBuyRequest, .tokenSwapRequest:
             return .draftMainWalletSwap
         case .prepareSend, .tokenSendRequest:
             return .draftMainWalletSend
         case .pusdPaymentRequest:
             return .draftPUSDPayment
-        case .prepareCloakDeposit, .cloakPrivatePaymentRequest, .prepareCloakPrivatePayment:
-            return .draftCloakPayment
-        case .zerionTinySwapRequest, .zerionPrepareTinySwap:
-            return .draftZerionTinySwap
         case .explainSwap, .help, .whatCanYouDo, .missingFields, .unsupported, .unsafe:
             return nil
         }

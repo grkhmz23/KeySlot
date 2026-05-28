@@ -13,8 +13,6 @@ enum AgentToolSuggestion: String, Codable, CaseIterable, Identifiable, Equatable
     case getActivitySummary
     case getSecuritySummary
     case getRPCStatus
-    case getCloakStatus
-    case getZerionStatus
     case summarizePortfolio
     case summarizeRisk
     case summarizeYield
@@ -22,8 +20,6 @@ enum AgentToolSuggestion: String, Codable, CaseIterable, Identifiable, Equatable
     case summarizePnL
     case draftSwapProposal
     case draftPUSDPayment
-    case draftCloakPayment
-    case draftZerionTinySwap
     case draftMainWalletSwap
     case draftMainWalletSend
 
@@ -47,7 +43,6 @@ enum AgentToolBoundary {
             "executeSwap",
             "executeSend",
             "executeBridge",
-            "executeCloakPayment",
             "sendTransaction",
             "signTransaction",
             "bridge",

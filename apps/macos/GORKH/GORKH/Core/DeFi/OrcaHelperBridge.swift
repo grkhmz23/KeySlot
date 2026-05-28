@@ -632,7 +632,7 @@ struct OrcaHelperBridge: OrcaHelperBridging {
 enum OrcaHelperProjectRootResolver {
     static func resolve() -> URL? {
         let env = ProcessInfo.processInfo.environment
-        if let explicit = env["GORKH_PROJECT_ROOT"], !explicit.isEmpty {
+        if let explicit = env["KEYSLOT_PROJECT_ROOT"], !explicit.isEmpty {
             return URL(fileURLWithPath: explicit)
         }
         let current = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)

@@ -46,7 +46,7 @@ struct TransactionAccountEnrichmentReport: Codable, Equatable {
     let unavailableReason: String?
     let fetchedAt: Date?
 
-    static let notRun = TransactionAccountEnrichmentReport(
+    nonisolated static let notRun = TransactionAccountEnrichmentReport(
         status: .notRun,
         accounts: [],
         requestedCount: 0,
@@ -67,11 +67,11 @@ struct TransactionAccountWatch: Codable, Equatable, Identifiable {
 }
 
 struct TransactionAccountWatchList: Codable, Equatable {
-    static let defaultLimit = 20
+    nonisolated static let defaultLimit = 20
 
     let accounts: [TransactionAccountWatch]
     let maxCount: Int
     let truncated: Bool
 
-    static let empty = TransactionAccountWatchList(accounts: [], maxCount: defaultLimit, truncated: false)
+    nonisolated static let empty = TransactionAccountWatchList(accounts: [], maxCount: defaultLimit, truncated: false)
 }

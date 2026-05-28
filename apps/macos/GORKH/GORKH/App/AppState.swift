@@ -3,11 +3,12 @@ import SwiftUI
 
 @MainActor
 final class AppState: ObservableObject {
-    @Published var selectedModule: GORKHModule = .wallet
+    @Published var selectedModule: KeySlotModule = .wallet
     @Published var requestedWalletSection: WalletSection?
     @Published var pendingAgentMessage: String?
     @Published var pendingTransactionStudioSummary: String?
     @Published var pendingShieldReviewStudioHandoffID: UUID?
+    @Published var pendingDeveloperWorkstationSection: DeveloperWorkstationSection?
 
     let walletManager: WalletManager
     private let shieldReviewHandoffStore = ShieldReviewHandoffStore()
@@ -41,6 +42,19 @@ final class AppState: ObservableObject {
         selectedModule = .transactionStudio
     }
 
+    func requestDeveloperWorkstationSection(_ section: DeveloperWorkstationSection) {
+        pendingDeveloperWorkstationSection = section
+        selectedModule = .developerWorkstation
+    }
+
+    func consumePendingDeveloperWorkstationSection() -> DeveloperWorkstationSection? {
+        guard let section = pendingDeveloperWorkstationSection else {
+            return nil
+        }
+        pendingDeveloperWorkstationSection = nil
+        return section
+    }
+
     func consumePendingShieldReviewStudioHandoff() -> ShieldReviewStudioHandoff? {
         guard let id = pendingShieldReviewStudioHandoffID else {
             return nil
@@ -50,7 +64,7 @@ final class AppState: ObservableObject {
     }
 }
 
-enum GORKHModule: String, CaseIterable, Identifiable {
+enum KeySlotModule: String, CaseIterable, Identifiable {
     case wallet
     case agent
     case transactionStudio

@@ -1,8 +1,8 @@
 import Foundation
 
 struct AgentHostedAPIConfiguration: Equatable {
-    static let baseURLEnvironmentName = "GORKH_AGENT_API_BASE_URL"
-    static let apiKeyEnvironmentName = "GORKH_AGENT_API_KEY"
+    static let baseURLEnvironmentName = "KEYSLOT_AGENT_API_BASE_URL"
+    static let apiKeyEnvironmentName = "KEYSLOT_AGENT_API_KEY"
 
     let baseURL: URL?
     let apiKeyStatus: AgentHostedAPIKeyStatus

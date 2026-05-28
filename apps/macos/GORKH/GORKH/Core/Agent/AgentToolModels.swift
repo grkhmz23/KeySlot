@@ -13,17 +13,12 @@ enum AgentToolID: String, Codable, CaseIterable, Identifiable, Equatable {
     case getActivitySummary
     case getSecuritySummary
     case getRPCStatus
-    case getCloakStatus
-    case getZerionStatus
     case draftMainWalletSwap
     case draftMainWalletSend
     case draftPUSDPayment
-    case draftCloakPayment
-    case draftZerionTinySwap
     case executeSwap
     case executeSend
     case executeBridge
-    case executeCloakPayment
     case signTransaction
     case sendTransaction
     case runShell

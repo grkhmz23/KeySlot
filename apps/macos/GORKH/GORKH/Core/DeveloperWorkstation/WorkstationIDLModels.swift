@@ -5,6 +5,7 @@ struct WorkstationIDL: Codable, Equatable, Identifiable {
 
     let name: String
     let version: String?
+    let address: String?
     let instructions: [WorkstationIDLInstruction]
     let accounts: [WorkstationIDLAccount]
     let types: [WorkstationIDLNamedType]
@@ -30,6 +31,42 @@ struct WorkstationIDLInstructionAccount: Codable, Equatable, Identifiable {
     let name: String
     let isMut: Bool
     let isSigner: Bool
+    let pda: WorkstationIDLPDA?
+}
+
+struct WorkstationIDLPDA: Codable, Equatable {
+    let seeds: [WorkstationIDLPDASeed]
+    let program: String?
+
+    var summary: String {
+        let seedSummary = seeds.map(\.summary).joined(separator: ", ")
+        if let program, !program.isEmpty {
+            return "\(seedSummary) · program \(program)"
+        }
+        return seedSummary.isEmpty ? "No seed metadata" : seedSummary
+    }
+}
+
+struct WorkstationIDLPDASeed: Codable, Equatable, Identifiable {
+    var id: String { "\(kind):\(path ?? valueSummary ?? constBytes.map { "\($0.count) bytes" } ?? "unknown")" }
+
+    let kind: String
+    let path: String?
+    let valueSummary: String?
+    let constBytes: [UInt8]?
+
+    var summary: String {
+        if let path, !path.isEmpty {
+            return "\(kind):\(path)"
+        }
+        if let valueSummary, !valueSummary.isEmpty {
+            return "\(kind):\(valueSummary)"
+        }
+        if let constBytes {
+            return "\(kind):\(constBytes.count) bytes"
+        }
+        return "\(kind):unknown"
+    }
 }
 
 struct WorkstationIDLAccount: Codable, Equatable, Identifiable {

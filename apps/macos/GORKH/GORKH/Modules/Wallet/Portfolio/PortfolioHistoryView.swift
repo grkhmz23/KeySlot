@@ -41,7 +41,7 @@ struct PortfolioHistoryView: View {
                     } label: {
                         Label("Clear History", systemImage: "trash")
                     }
-                    .buttonStyle(.gorkhSecondary)
+                    .buttonStyle(.keyslotSecondary)
                     .disabled(snapshots.isEmpty)
                 }
             }

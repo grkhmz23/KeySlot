@@ -56,7 +56,7 @@ struct PortfolioPnLView: View {
         } label: {
             Label(title, systemImage: "lock")
         }
-        .buttonStyle(.gorkhSecondary)
+        .buttonStyle(.keyslotSecondary)
         .disabled(true)
     }
 

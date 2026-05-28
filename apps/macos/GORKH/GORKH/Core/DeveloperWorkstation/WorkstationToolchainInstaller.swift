@@ -71,7 +71,7 @@ enum WorkstationToolchainInstallError: LocalizedError, Equatable {
         case .missingVerifiedChecksum:
             return "Managed install is blocked until the manifest includes a verified HTTPS source and sha256."
         case .unsafeInstallRoot:
-            return "Managed install path is outside Application Support/GORKH/Toolchains."
+            return "Managed install path is outside Application Support/KeySlot/Toolchains."
         case .unsafeArchiveEntry(let entry):
             return "Archive entry is unsafe: \(entry)."
         case .checksumMismatch:
@@ -136,7 +136,7 @@ struct WorkstationToolchainInstaller {
         self.managedRoot = managedRoot ?? fileManager
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first!
-            .appendingPathComponent("GORKH/Toolchains", isDirectory: true)
+            .appendingPathComponent("KeySlot/Toolchains", isDirectory: true)
     }
 
     func plan(component: WorkstationToolchainComponent, resolution: WorkstationToolchainResolution?) -> WorkstationToolchainInstallPlan {
@@ -178,7 +178,7 @@ struct WorkstationToolchainInstaller {
                 verificationStatus: .verified,
                 installDirectory: installDirectory.path,
                 executablePath: executablePath,
-                message: "Managed executable exists and is confined to the GORKH toolchain directory.",
+                message: "Managed executable exists and is confined to the KeySlot toolchain directory.",
                 commandPreview: nil
             )
         }
@@ -229,7 +229,7 @@ struct WorkstationToolchainInstaller {
             installDirectory: installDirectory.path,
             executablePath: executablePath,
             message: "Managed install can download, verify sha256, and unpack into Application Support.",
-            commandPreview: "Download \(component.displayName) \(entry.version), verify sha256, install under GORKH/Toolchains."
+            commandPreview: "Download \(component.displayName) \(entry.version), verify sha256, install under KeySlot/Toolchains."
         )
     }
 

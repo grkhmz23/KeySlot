@@ -102,14 +102,10 @@ enum TransactionProgramCatalog {
             category = .lending
             risk = "Lending protocol interaction; review obligations and health effects."
             explanation = "\(label) is a lending or leverage-related protocol."
-        case "Cloak":
-            category = .privacy
-            risk = "Private-state interaction; review local private state requirements."
-            explanation = "Cloak instructions interact with private wallet state."
         default:
             category = .unknown
             risk = "Unknown program. Verify program ID before approval."
-            explanation = "GORKH does not have a reviewed label for this program."
+            explanation = "KeySlot does not have a reviewed label for this program."
         }
 
         return TransactionProgramCatalogEntry(

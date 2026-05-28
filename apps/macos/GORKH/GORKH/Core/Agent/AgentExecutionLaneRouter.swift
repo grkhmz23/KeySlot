@@ -7,17 +7,10 @@ enum AgentExecutionLaneRouter {
         }
 
         switch classification.intentType {
-        case .zerionTinySwapRequest, .zerionPrepareTinySwap:
-            return .zerionAgentWallet
         case .tokenBuyRequest:
-            if classification.input.lowercased().contains("zerion") || classification.input.lowercased().contains("agent wallet") {
-                return .zerionAgentWallet
-            }
             return .mainWallet
         case .prepareSwap, .tokenSwapRequest, .prepareSend, .tokenSendRequest, .pusdPaymentRequest:
             return .mainWallet
-        case .prepareCloakDeposit, .cloakPrivatePaymentRequest, .prepareCloakPrivatePayment:
-            return .cloakPrivate
         case .walletOverview,
              .receiveAddress,
              .explainSwap,
@@ -35,16 +28,10 @@ enum AgentExecutionLaneRouter {
              .costBasisHelp,
              .portfolioHistorySummary,
              .riskSummary,
-             .cloakStatus,
-             .cloakScanSummary,
-             .explainPrivateState,
              .yieldSearch,
              .lpPositionReview,
              .pnlSummary,
              .recentActivitySummary,
-             .zerionStatus,
-             .zerionPolicySummary,
-             .zerionProposalStatus,
              .help,
              .whatCanYouDo,
              .missingFields:

@@ -65,7 +65,6 @@ enum TransactionStudioInputDetector {
             "wallet_json",
             "signingseed",
             "signing seed",
-            "zerion_api_key",
             "agent token"
         ] where normalized.contains(forbidden) {
             return forbidden

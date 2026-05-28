@@ -40,8 +40,6 @@ enum AgentHandoffCoordinator {
             return wallet(.swap, target: target, title: "Open Swap Review")
         case .walletSend:
             return wallet(.send, target: target, title: "Open Send")
-        case .walletPrivate:
-            return wallet(.privateWallet, target: target, title: "Open Private")
         case .walletPortfolio,
              .portfolioAssets,
              .portfolioWallets,
@@ -57,14 +55,6 @@ enum AgentHandoffCoordinator {
             return wallet(.security, target: target, title: "Open Security")
         case .walletActivity:
             return wallet(.activity, target: target, title: "Open Activity")
-        case .zerionReview:
-            return AgentHandoffInstruction(
-                target: target,
-                walletSection: nil,
-                agentSection: .proposals,
-                title: target.title,
-                instruction: "Open Agent Proposals and continue through the existing Zerion review flow."
-            )
         case .none:
             return AgentHandoffInstruction(
                 target: target,
@@ -86,8 +76,6 @@ enum AgentHandoffCoordinator {
             return .walletSend
         case .prepareSwap, .tokenBuyRequest, .tokenSwapRequest:
             return .walletSwap
-        case .prepareCloakDeposit, .cloakPrivatePaymentRequest, .prepareCloakPrivatePayment, .cloakStatus, .cloakScanSummary, .explainPrivateState:
-            return .walletPrivate
         case .securityStatus:
             return .walletSecurity
         case .activitySummary, .recentActivitySummary:
@@ -112,8 +100,6 @@ enum AgentHandoffCoordinator {
             return .portfolioHistory
         case .portfolioSummary, .riskSummary:
             return .walletPortfolio
-        case .zerionTinySwapRequest, .zerionPrepareTinySwap, .zerionStatus, .zerionPolicySummary, .zerionProposalStatus:
-            return .zerionReview
         case .explainSwap, .rpcStatus, .help, .whatCanYouDo, .missingFields, .unsupported, .unsafe:
             return .none
         }

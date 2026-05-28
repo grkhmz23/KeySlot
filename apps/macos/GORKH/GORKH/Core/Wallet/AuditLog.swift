@@ -2,11 +2,13 @@ import Foundation
 
 final class AuditLog {
     private let fileURL: URL
+    private let legacyFileURL: URL?
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
     init(fileURL: URL? = nil) {
         self.fileURL = fileURL ?? Self.defaultAuditURL()
+        self.legacyFileURL = fileURL == nil ? Self.legacyAuditURL() : nil
         self.encoder = JSONEncoder()
         self.decoder = JSONDecoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -48,8 +50,20 @@ final class AuditLog {
     }
 
     func loadRecent(limit: Int = 100) -> [AuditEvent] {
-        guard let data = try? Data(contentsOf: fileURL), let text = String(data: data, encoding: .utf8) else {
-            return []
+        // Read from new location first, fall back to legacy
+        if let events = loadEvents(from: fileURL, limit: limit), !events.isEmpty {
+            return events
+        }
+        if let legacyURL = legacyFileURL,
+           let events = loadEvents(from: legacyURL, limit: limit), !events.isEmpty {
+            return events
+        }
+        return []
+    }
+
+    private func loadEvents(from url: URL, limit: Int) -> [AuditEvent]? {
+        guard let data = try? Data(contentsOf: url), let text = String(data: data, encoding: .utf8) else {
+            return nil
         }
 
         let events = text
@@ -65,6 +79,13 @@ final class AuditLog {
     }
 
     private static func defaultAuditURL() -> URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        return base.appendingPathComponent("KeySlot", isDirectory: true)
+            .appendingPathComponent("audit-log.jsonl")
+    }
+
+    private static func legacyAuditURL() -> URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
         return base.appendingPathComponent("GORKH", isDirectory: true)

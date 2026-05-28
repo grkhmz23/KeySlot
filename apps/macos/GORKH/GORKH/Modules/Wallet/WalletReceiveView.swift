@@ -42,7 +42,7 @@ struct WalletReceiveView: View {
                         } label: {
                             Label("Copy Address", systemImage: "doc.on.doc")
                         }
-                        .buttonStyle(.gorkhPrimary)
+                        .buttonStyle(.keyslotPrimary)
                         .accessibilityLabel("Copy receive address")
 
                         Button {
@@ -50,7 +50,7 @@ struct WalletReceiveView: View {
                         } label: {
                             Label("Copy Note", systemImage: "text.quote")
                         }
-                        .buttonStyle(.gorkhSecondary)
+                        .buttonStyle(.keyslotSecondary)
                         .accessibilityLabel("Copy receive payment note")
                     }
 
@@ -79,7 +79,7 @@ struct WalletReceiveView: View {
 
     private func paymentNote(address: String) -> String {
         var parts = [
-            "GORKH receive address: \(address)",
+            "KeySlot receive address: \(address)",
             "Network: \(walletManager.selectedNetwork.displayName)"
         ]
         if !amount.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

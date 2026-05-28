@@ -73,6 +73,7 @@ struct WalletDemoState: Codable, Equatable {
             "Portfolio",
             "Send",
             "Swap",
+            "DeFi",
             "Private",
             "Security",
             "Activity",

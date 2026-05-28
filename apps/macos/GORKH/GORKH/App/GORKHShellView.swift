@@ -1,11 +1,11 @@
 import SwiftUI
 
-struct GORKHShellView: View {
+struct KeySlotShellView: View {
     @EnvironmentObject private var appState: AppState
 
     var body: some View {
         NavigationSplitView {
-            List(GORKHModule.allCases, selection: $appState.selectedModule) { module in
+            List(KeySlotModule.allCases, selection: $appState.selectedModule) { module in
                 Label(module.title, systemImage: module.systemImage)
                     .tag(module)
             }
@@ -14,7 +14,7 @@ struct GORKHShellView: View {
             .background(GorkhColors.sidebar)
             .toolbar {
                 ToolbarItem(placement: .navigation) {
-                    Text("GORKH")
+                    Text("KeySlot")
                         .font(.headline)
                         .fontWeight(.semibold)
                 }
@@ -32,6 +32,7 @@ struct GORKHShellView: View {
                     TransactionStudioView()
                 case .developerWorkstation:
                     DeveloperWorkstationView()
+                        .environmentObject(appState)
                 case .settings:
                     SettingsView()
                 }

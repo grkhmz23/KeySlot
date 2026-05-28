@@ -132,7 +132,6 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
     case pusd
     case swap
     case portfolio
-    case privateWallet
     case security
     case failed
 
@@ -154,8 +153,6 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
             return "Swap"
         case .portfolio:
             return "Portfolio"
-        case .privateWallet:
-            return "Private"
         case .security:
             return "Security"
         case .failed:
@@ -223,28 +220,6 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
                 .swapFailed,
                 .swapBlockedByGuard
             ].contains(event.kind)
-        case .privateWallet:
-            return [
-                .privateTabViewed,
-                .cloakDepositDraftCreated,
-                .cloakDepositExecutionBlocked,
-                .cloakVaultStatusChecked,
-                .cloakPrivateDataCleared,
-                .cloakBridgeHealthChecked,
-                .cloakBridgeEnvironmentChecked,
-                .cloakDepositPlanGenerated,
-                .cloakBridgeExecutionRejected,
-                .cloakHelperHealthChecked,
-                .cloakHelperEnvironmentChecked,
-                .cloakDepositPlanDryRunChecked,
-                .cloakHelperInvocationBlocked,
-                .cloakHelperResponseRejected,
-                .cloakSignerPreflightChecked,
-                .cloakSignerRequestRejected,
-                .cloakSignerRequestLocked,
-                .cloakReviewFlowViewed,
-                .cloakApprovalRequirementGenerated
-            ].contains(event.kind)
         case .portfolio:
             return [
                 .portfolioRefreshed,
@@ -299,12 +274,6 @@ private enum AuditLogFilter: String, CaseIterable, Identifiable {
                 .transactionFailed,
                 .tokenTransferFailed,
                 .localAuthenticationFailed,
-                .cloakDepositExecutionBlocked,
-                .cloakBridgeExecutionRejected,
-                .cloakHelperInvocationBlocked,
-                .cloakHelperResponseRejected,
-                .cloakSignerRequestRejected,
-                .cloakSignerRequestLocked,
                 .portfolioPriceRefreshFailed,
                 .stakeRefreshFailed,
                 .lstDataUnavailable,
@@ -351,7 +320,6 @@ private extension AuditEvent {
             "to",
             "recipientOwner",
             "createsAssociatedTokenAccount",
-            "cloakAction",
             "grossLamports",
             "feeLamports",
             "netLamports",

@@ -8,6 +8,22 @@ struct SendTokenView: View {
     @State private var recipient = ""
     @State private var amount = ""
 
+    private func consumePendingDraftIfNeeded() {
+        guard let draft = walletManager.pendingSendDraft else { return }
+        // Only prefill if the draft token matches this token view (or no token specified but not SOL)
+        let draftTokenUpper = draft.token?.uppercased()
+        let metadata = TokenMetadataResolver.resolve(balance: token, network: walletManager.selectedNetwork)
+        let matchesToken = draftTokenUpper == nil || draftTokenUpper == metadata.symbol.uppercased()
+        guard matchesToken else { return }
+        if !draft.recipient.isEmpty {
+            recipient = draft.recipient
+        }
+        if !draft.amount.isEmpty {
+            amount = draft.amount
+        }
+        walletManager.pendingSendDraft = nil
+    }
+
     var body: some View {
         let metadata = TokenMetadataResolver.resolve(balance: token, network: walletManager.selectedNetwork)
         let warnings = TokenMetadataResolver.warnings(for: token, metadata: metadata)
@@ -76,7 +92,7 @@ struct SendTokenView: View {
                 } label: {
                     Label("Prepare Token Draft", systemImage: "doc.badge.plus")
                 }
-                .buttonStyle(.gorkhPrimary)
+                .buttonStyle(.keyslotPrimary)
                 .disabled(walletManager.vaultState != .unlocked || walletManager.isBusy || !canPrepare)
 
                 Button {
@@ -84,7 +100,7 @@ struct SendTokenView: View {
                 } label: {
                     Label("Simulate", systemImage: "waveform.path.ecg")
                 }
-                .buttonStyle(.gorkhSecondary)
+                .buttonStyle(.keyslotSecondary)
                 .disabled(walletManager.currentTokenDraft?.sourceTokenAccount != token.tokenAccountAddress || walletManager.currentTokenDraft?.recipientTokenAccount == nil || walletManager.isBusy)
             }
 
@@ -93,6 +109,9 @@ struct SendTokenView: View {
                 TokenTransferDraftSummaryView(draft: draft, simulation: walletManager.tokenSimulationResult)
                 TokenTransferApprovalView(draft: draft)
             }
+        }
+        .onAppear {
+            consumePendingDraftIfNeeded()
         }
     }
 }

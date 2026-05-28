@@ -39,7 +39,7 @@ struct WalletBackupStatus: Equatable, Identifiable {
                 recoveryPhraseConfirmed: true,
                 recoveryPhraseExportAvailable: false,
                 title: "Recovery phrase confirmed",
-                message: "The phrase was confirmed during setup. GORKH stores only the derived signing seed in Keychain, so the phrase cannot be shown again."
+                message: "The phrase was confirmed during setup. KeySlot stores only the derived signing seed in Keychain, so the phrase cannot be shown again."
             )
         case .importedRecovery:
             return WalletBackupStatus(
@@ -48,7 +48,7 @@ struct WalletBackupStatus: Equatable, Identifiable {
                 recoveryPhraseConfirmed: true,
                 recoveryPhraseExportAvailable: false,
                 title: "Imported recovery phrase",
-                message: "This wallet was imported from a phrase. GORKH stores only the derived signing seed in Keychain and cannot verify or reveal your phrase later."
+                message: "This wallet was imported from a phrase. KeySlot stores only the derived signing seed in Keychain and cannot verify or reveal your phrase later."
             )
         case .importedPrivateKey:
             return WalletBackupStatus(
@@ -57,7 +57,7 @@ struct WalletBackupStatus: Equatable, Identifiable {
                 recoveryPhraseConfirmed: false,
                 recoveryPhraseExportAvailable: false,
                 title: "Imported private key",
-                message: "This wallet has no recovery phrase in GORKH. Keep the original private key or source wallet backed up offline."
+                message: "This wallet has no recovery phrase in KeySlot. Keep the original private key or source wallet backed up offline."
             )
         case .legacyKeypair:
             return WalletBackupStatus(
@@ -84,7 +84,7 @@ struct WalletBackupStatus: Equatable, Identifiable {
                 recoveryPhraseConfirmed: false,
                 recoveryPhraseExportAvailable: false,
                 title: "Hardware wallet placeholder",
-                message: "Hardware wallet signing is not implemented in GORKH yet."
+                message: "Hardware wallet signing is not implemented in KeySlot yet."
             )
         case .multisigPlaceholder:
             return WalletBackupStatus(
@@ -93,7 +93,7 @@ struct WalletBackupStatus: Equatable, Identifiable {
                 recoveryPhraseConfirmed: false,
                 recoveryPhraseExportAvailable: false,
                 title: "Multisig placeholder",
-                message: "Multisig execution is not implemented in GORKH yet."
+                message: "Multisig execution is not implemented in KeySlot yet."
             )
         }
     }

@@ -24,7 +24,7 @@ enum PnLActivityMapper {
                 timestamp: event.createdAt,
                 source: .swapActivity,
                 status: .partial,
-                reason: "GORKH swap activity can provide a cost-basis hint, but historical USD values may be missing."
+                reason: "KeySlot swap activity can provide a cost-basis hint, but historical USD values may be missing."
             )
         }
     }

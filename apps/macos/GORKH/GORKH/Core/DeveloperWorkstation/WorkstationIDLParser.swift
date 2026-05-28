@@ -1,7 +1,7 @@
 import Foundation
 
 struct WorkstationIDLParser {
-    static func parse(data: Data) throws -> WorkstationIDL {
+    nonisolated static func parse(data: Data) throws -> WorkstationIDL {
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw WorkstationIDLParserError.invalidJSON
         }
@@ -18,6 +18,7 @@ struct WorkstationIDLParser {
         return WorkstationIDL(
             name: name,
             version: object["version"] as? String,
+            address: object["address"] as? String,
             instructions: instructions,
             accounts: accounts,
             types: types,
@@ -26,11 +27,11 @@ struct WorkstationIDLParser {
         )
     }
 
-    static func parse(string: String) throws -> WorkstationIDL {
+    nonisolated static func parse(string: String) throws -> WorkstationIDL {
         try parse(data: Data(string.utf8))
     }
 
-    private static func parseInstruction(_ object: [String: Any]) -> WorkstationIDLInstruction {
+    private nonisolated static func parseInstruction(_ object: [String: Any]) -> WorkstationIDLInstruction {
         WorkstationIDLInstruction(
             name: object["name"] as? String ?? "unknown",
             accounts: (object["accounts"] as? [[String: Any]] ?? []).map(parseInstructionAccount),
@@ -38,15 +39,16 @@ struct WorkstationIDLParser {
         )
     }
 
-    private static func parseInstructionAccount(_ object: [String: Any]) -> WorkstationIDLInstructionAccount {
+    private nonisolated static func parseInstructionAccount(_ object: [String: Any]) -> WorkstationIDLInstructionAccount {
         WorkstationIDLInstructionAccount(
             name: object["name"] as? String ?? "unknown",
             isMut: object["isMut"] as? Bool ?? object["writable"] as? Bool ?? false,
-            isSigner: object["isSigner"] as? Bool ?? object["signer"] as? Bool ?? false
+            isSigner: object["isSigner"] as? Bool ?? object["signer"] as? Bool ?? false,
+            pda: parsePDA(object["pda"])
         )
     }
 
-    private static func parseAccount(_ object: [String: Any]) -> WorkstationIDLAccount {
+    private nonisolated static func parseAccount(_ object: [String: Any]) -> WorkstationIDLAccount {
         let type = object["type"] as? [String: Any]
         return WorkstationIDLAccount(
             name: object["name"] as? String ?? "unknown",
@@ -55,7 +57,7 @@ struct WorkstationIDLParser {
         )
     }
 
-    private static func parseNamedType(_ object: [String: Any]) -> WorkstationIDLNamedType {
+    private nonisolated static func parseNamedType(_ object: [String: Any]) -> WorkstationIDLNamedType {
         let type = object["type"] as? [String: Any]
         return WorkstationIDLNamedType(
             name: object["name"] as? String ?? "unknown",
@@ -63,14 +65,14 @@ struct WorkstationIDLParser {
         )
     }
 
-    private static func parseField(_ object: [String: Any]) -> WorkstationIDLField {
+    private nonisolated static func parseField(_ object: [String: Any]) -> WorkstationIDLField {
         WorkstationIDLField(
             name: object["name"] as? String ?? "unknown",
             type: stringifyType(object["type"] ?? "unknown")
         )
     }
 
-    private static func parseError(_ object: [String: Any]) -> WorkstationIDLError {
+    private nonisolated static func parseError(_ object: [String: Any]) -> WorkstationIDLError {
         WorkstationIDLError(
             code: object["code"] as? Int ?? -1,
             name: object["name"] as? String ?? "unknown",
@@ -78,7 +80,7 @@ struct WorkstationIDLParser {
         )
     }
 
-    private static func stringifyType(_ value: Any) -> String {
+    private nonisolated static func stringifyType(_ value: Any) -> String {
         if let string = value as? String {
             return string
         }
@@ -103,7 +105,7 @@ struct WorkstationIDLParser {
         return String(describing: value)
     }
 
-    private static func parseDiscriminator(_ value: Any?) -> [UInt8]? {
+    private nonisolated static func parseDiscriminator(_ value: Any?) -> [UInt8]? {
         guard let values = value as? [Any] else {
             return nil
         }
@@ -114,5 +116,72 @@ struct WorkstationIDLParser {
             return nil
         }
         return bytes.count == values.count ? bytes : nil
+    }
+
+    private nonisolated static func parsePDA(_ value: Any?) -> WorkstationIDLPDA? {
+        guard let object = value as? [String: Any] else {
+            return nil
+        }
+        let seeds = (object["seeds"] as? [[String: Any]] ?? []).map(parsePDASeed)
+        return WorkstationIDLPDA(
+            seeds: seeds,
+            program: stringifyOptionalPath(object["program"])
+        )
+    }
+
+    private nonisolated static func parsePDASeed(_ object: [String: Any]) -> WorkstationIDLPDASeed {
+        let constBytes = parseSeedBytes(object["value"])
+        return WorkstationIDLPDASeed(
+            kind: object["kind"] as? String ?? "unknown",
+            path: stringifyOptionalPath(object["path"]),
+            valueSummary: summarizeSeedValue(object["value"]),
+            constBytes: constBytes
+        )
+    }
+
+    private nonisolated static func stringifyOptionalPath(_ value: Any?) -> String? {
+        if let string = value as? String {
+            return string
+        }
+        if let object = value as? [String: Any] {
+            if let path = object["path"] as? String {
+                return path
+            }
+            if let value = object["value"] as? String {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private nonisolated static func summarizeSeedValue(_ value: Any?) -> String? {
+        if let string = value as? String {
+            return string
+        }
+        if let bytes = value as? [Any] {
+            let ints = bytes.compactMap { $0 as? Int }
+            guard ints.count == bytes.count else {
+                return "unparsed const seed"
+            }
+            if ints.allSatisfy({ $0 >= 32 && $0 <= 126 }) {
+                return String(bytes: ints.map { UInt8($0) }, encoding: .utf8) ?? "\(ints.count) bytes"
+            }
+            return "\(ints.count) bytes"
+        }
+        return nil
+    }
+
+    private nonisolated static func parseSeedBytes(_ value: Any?) -> [UInt8]? {
+        if let string = value as? String {
+            return Array(string.utf8)
+        }
+        guard let bytes = value as? [Any] else {
+            return nil
+        }
+        let ints = bytes.compactMap { $0 as? Int }
+        guard ints.count == bytes.count, ints.allSatisfy({ $0 >= 0 && $0 <= 255 }) else {
+            return nil
+        }
+        return ints.map(UInt8.init)
     }
 }

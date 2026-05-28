@@ -61,9 +61,9 @@ enum PnLSource: String, Codable, CaseIterable, Identifiable, Equatable {
         case .portfolioSnapshot:
             return "Portfolio snapshots"
         case .swapActivity:
-            return "GORKH swap activity"
+            return "KeySlot swap activity"
         case .sendActivity:
-            return "GORKH send activity"
+            return "KeySlot send activity"
         case .manualCostBasis:
             return "Manual cost basis"
         case .priceEstimate:

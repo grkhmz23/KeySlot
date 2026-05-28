@@ -5,6 +5,17 @@ struct SendSolView: View {
     @State private var recipient = ""
     @State private var amount = ""
 
+    private func consumePendingDraftIfNeeded() {
+        guard let draft = walletManager.pendingSendDraft else { return }
+        if !draft.recipient.isEmpty {
+            recipient = draft.recipient
+        }
+        if !draft.amount.isEmpty {
+            amount = draft.amount
+        }
+        walletManager.pendingSendDraft = nil
+    }
+
     var body: some View {
         GorkhPanel("Send SOL") {
             VStack(alignment: .leading, spacing: 12) {
@@ -33,7 +44,7 @@ struct SendSolView: View {
                     } label: {
                         Label("Prepare Draft", systemImage: "doc.badge.plus")
                     }
-                    .buttonStyle(.gorkhPrimary)
+                    .buttonStyle(.keyslotPrimary)
                     .disabled(walletManager.vaultState != .unlocked || walletManager.isBusy)
 
                     Button {
@@ -41,7 +52,7 @@ struct SendSolView: View {
                     } label: {
                         Label("Simulate", systemImage: "waveform.path.ecg")
                     }
-                    .buttonStyle(.gorkhSecondary)
+                    .buttonStyle(.keyslotSecondary)
                     .disabled(walletManager.currentDraft == nil || walletManager.isBusy)
                 }
 
@@ -49,6 +60,9 @@ struct SendSolView: View {
                     TransactionDraftSummaryView(draft: draft, simulation: walletManager.simulationResult)
                     TransactionApprovalView()
                 }
+            }
+            .onAppear {
+                consumePendingDraftIfNeeded()
             }
         }
     }

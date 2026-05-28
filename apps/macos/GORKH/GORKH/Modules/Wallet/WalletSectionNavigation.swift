@@ -5,7 +5,7 @@ enum WalletSection: String, CaseIterable, Identifiable {
     case portfolio
     case send
     case swap
-    case privateWallet
+    case defi
     case security
     case activity
 
@@ -14,14 +14,8 @@ enum WalletSection: String, CaseIterable, Identifiable {
         .portfolio,
         .send,
         .swap,
-        .privateWallet,
+        .defi,
         .security,
-        .activity
-    ]
-
-    static let watchOnlyOrder: [WalletSection] = [
-        .overview,
-        .portfolio,
         .activity
     ]
 
@@ -37,8 +31,8 @@ enum WalletSection: String, CaseIterable, Identifiable {
             return "Send"
         case .swap:
             return "Swap"
-        case .privateWallet:
-            return "Private"
+        case .defi:
+            return "DeFi"
         case .security:
             return "Security"
         case .activity:
@@ -55,9 +49,9 @@ enum WalletSection: String, CaseIterable, Identifiable {
         case .send:
             return "Receive, send SOL, and review token transfers."
         case .swap:
-            return "Jupiter quotes, review, simulation, and approval."
-        case .privateWallet:
-            return "Cloak status, drafts, and private activity."
+            return "Swap tokens with custom slippage and contract address."
+        case .defi:
+            return "PUSD, yield, lending, stake, and liquidity."
         case .security:
             return "Backup, lock, authentication, and RPC status."
         case .activity:
@@ -75,8 +69,8 @@ enum WalletSection: String, CaseIterable, Identifiable {
             return "paperplane"
         case .swap:
             return "arrow.left.arrow.right"
-        case .privateWallet:
-            return "eye.slash"
+        case .defi:
+            return "chart.line.uptrend.xyaxis"
         case .security:
             return "lock.shield"
         case .activity:

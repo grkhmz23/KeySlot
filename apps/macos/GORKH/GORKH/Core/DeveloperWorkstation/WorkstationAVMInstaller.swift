@@ -57,7 +57,7 @@ enum WorkstationAnchorInstaller {
                 id: "anchor-\(pinnedVersion)",
                 pinnedAnchorVersion: pinnedVersion,
                 status: .anchorAlreadyAvailable,
-                message: "Anchor CLI is already available. GORKH will verify with anchor --version before build/deploy.",
+                message: "Anchor CLI is already available. KeySlot will verify with anchor --version before build/deploy.",
                 commandPreviews: []
             )
         }

@@ -63,7 +63,7 @@ enum WorkstationLocalnetSmokeRunner {
             "Run fixed anchor build in the sample project.",
             "Deploy built program to localnet with fixed solana program deploy args.",
             "Verify program show on localnet.",
-            "Delete transient keypair and stop only GORKH-started validator."
+            "Delete transient keypair and stop only KeySlot-started validator."
         ]
 
         return WorkstationLocalnetSmokePreflight(

@@ -93,7 +93,7 @@ struct PortfolioLiquidityView: View {
                         } label: {
                             Label(action.title, systemImage: "lock")
                         }
-                        .buttonStyle(.gorkhSecondary)
+                        .buttonStyle(.keyslotSecondary)
                         .disabled(!action.isEnabled)
                     }
                 }
@@ -210,7 +210,7 @@ private struct OrcaHarvestApprovalPanel: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                Text("Harvesting Orca fees/rewards is a real mainnet transaction. GORKH builds an unsigned proposal, reviews it locally, simulates it, then signs with the native wallet only after explicit approval.")
+                Text("Harvesting Orca fees/rewards is a real mainnet transaction. KeySlot builds an unsigned proposal, reviews it locally, simulates it, then signs with the native wallet only after explicit approval.")
                     .font(.caption)
                     .foregroundStyle(GorkhColors.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -239,19 +239,19 @@ private struct OrcaHarvestApprovalPanel: View {
                     Button(action: simulateAction) {
                         Label("Simulate Harvest", systemImage: "waveform.path.ecg")
                     }
-                    .buttonStyle(.gorkhSecondary)
+                    .buttonStyle(.keyslotSecondary)
                     .disabled(review?.canApprove != true)
 
                     Button(action: approveAction) {
                         Label("Approve, Authenticate, Sign Locally, and Send", systemImage: "signature")
                     }
-                    .buttonStyle(.gorkhPrimary)
+                    .buttonStyle(.keyslotPrimary)
                     .disabled(!(review?.canApprove == true && simulation?.status == .success) || ShieldReviewPolicy.requiresBlockingReview(shieldReview))
 
                     Button(action: resetAction) {
                         Label("Clear", systemImage: "xmark.circle")
                     }
-                    .buttonStyle(.gorkhSecondary)
+                    .buttonStyle(.keyslotSecondary)
                 }
             } else {
                 Text("Select an Orca LP position and create a harvest plan before approval.")
@@ -443,7 +443,7 @@ private struct LPPositionTableView: View {
                             } label: {
                                 Label("Harvest fees/rewards", systemImage: "tray.and.arrow.down")
                             }
-                            .buttonStyle(.gorkhSecondary)
+                            .buttonStyle(.keyslotSecondary)
                             .disabled(position.positionMintAddress == nil)
 
                             if position.positionMintAddress == nil {

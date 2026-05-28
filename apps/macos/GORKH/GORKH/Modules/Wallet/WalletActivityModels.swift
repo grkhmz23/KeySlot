@@ -7,7 +7,6 @@ enum WalletActivityCategory: String, CaseIterable, Identifiable {
     case swap
     case portfolio
     case pusd
-    case privateWallet
     case lending
     case liquidity
     case yield
@@ -32,8 +31,6 @@ enum WalletActivityCategory: String, CaseIterable, Identifiable {
             return "Portfolio"
         case .pusd:
             return "PUSD"
-        case .privateWallet:
-            return "Private"
         case .lending:
             return "Lending"
         case .liquidity:
@@ -65,8 +62,6 @@ enum WalletActivityCategory: String, CaseIterable, Identifiable {
             return "chart.pie"
         case .pusd:
             return "dollarsign.circle"
-        case .privateWallet:
-            return "eye.slash"
         case .lending:
             return "building.columns"
         case .liquidity:
@@ -116,18 +111,6 @@ enum WalletActivityCategory: String, CaseIterable, Identifiable {
         case .pusdTreasuryViewed, .pusdReceiveViewed, .pusdPortfolioRefreshed,
                 .pusdCirculationRefreshed, .pusdCirculationUnavailable:
             return .pusd
-        case .privateTabViewed, .cloakDepositDraftCreated, .cloakDepositExecutionBlocked,
-                .cloakVaultStatusChecked, .cloakPrivateDataCleared, .cloakBridgeHealthChecked,
-                .cloakBridgeEnvironmentChecked, .cloakDepositPlanGenerated, .cloakBridgeExecutionRejected,
-                .cloakHelperHealthChecked, .cloakHelperEnvironmentChecked, .cloakDepositPlanDryRunChecked,
-                .cloakHelperInvocationBlocked, .cloakHelperResponseRejected, .cloakSignerPreflightChecked,
-                .cloakSignerRequestRejected, .cloakSignerRequestLocked, .cloakReviewFlowViewed,
-                .cloakApprovalRequirementGenerated, .cloakDepositApproved, .cloakDepositConfirmed,
-                .cloakWithdrawApproved, .cloakWithdrawConfirmed, .cloakSigningRequestBlocked,
-                .cloakPrivateStateStored, .cloakScanRequested, .cloakScanSucceeded,
-                .cloakScanFailed, .cloakScanCacheCleared, .cloakActivityReconciled,
-                .cloakComplianceSummaryGenerated, .cloakRPCConfigChecked:
-            return .privateWallet
         case .lendingRefreshed, .lendingAdapterUnavailable, .lendingAdapterError,
                 .lendingSnapshotStored, .lendingActionBlocked:
             return .lending

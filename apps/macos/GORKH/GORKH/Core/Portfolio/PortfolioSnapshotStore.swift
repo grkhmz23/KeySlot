@@ -46,7 +46,7 @@ final class PortfolioSnapshotStore {
     private static func defaultSnapshotURL() -> URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
-        return base.appendingPathComponent("GORKH", isDirectory: true)
+        return base.appendingPathComponent("KeySlot", isDirectory: true)
             .appendingPathComponent("portfolio-snapshots.json")
     }
 }

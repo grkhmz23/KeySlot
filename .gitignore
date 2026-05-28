@@ -1,13 +1,26 @@
-*.xcuserstate
-xcuserdata/
+# Build artifacts
+*.dmg
+*.app
 DerivedData/
-.derivedData/
-.DS_Store
 build/
-node_modules/
-*.xcresult
-*.dSYM
+.build/
+
+# Xcode user data
+xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Archive (historical code, not part of active build)
+apps/macos/GORKH/Archive/
+
+# Tool configs
+.bob/
+
+# macOS
+.DS_Store
+
+# Derived data / caches
+.derivedData/
 .gorkh-devnet-smoke/
-.env
-.env.*
-!.env.example
+
+# Node dependencies
+node_modules/

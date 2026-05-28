@@ -65,7 +65,7 @@ enum AssociatedTokenAccount {
             rentExemptLamports: rentExemptLamports,
             message: derived == nil
                 ? "Recipient associated token account is missing, and ATA derivation failed."
-                : "Recipient associated token account is missing. GORKH will create \(derived?.base58Address ?? "the derived ATA") before transferring."
+                : "Recipient associated token account is missing. KeySlot will create \(derived?.base58Address ?? "the derived ATA") before transferring."
         )
     }
 }

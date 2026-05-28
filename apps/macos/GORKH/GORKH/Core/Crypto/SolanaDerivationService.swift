@@ -20,11 +20,29 @@ struct SolanaDerivationService {
         return try SolanaKeypair(seed: seed)
     }
 
+    func deriveKeypair(
+        mnemonic: String,
+        vaultPassphrase: String,
+        path: DerivationPath = .defaultSolana
+    ) throws -> SolanaKeypair {
+        let seed = try deriveSigningSeed(mnemonic: mnemonic, vaultPassphrase: vaultPassphrase, path: path)
+        return try SolanaKeypair(seed: seed)
+    }
+
     func deriveSigningSeed(
         mnemonic: String,
         path: DerivationPath = .defaultSolana
     ) throws -> Data {
         let bip39Seed = try mnemonicService.seed(from: mnemonic, passphrase: "")
+        return try deriveSigningSeed(bip39Seed: bip39Seed, path: path)
+    }
+
+    func deriveSigningSeed(
+        mnemonic: String,
+        vaultPassphrase: String,
+        path: DerivationPath = .defaultSolana
+    ) throws -> Data {
+        let bip39Seed = try mnemonicService.seed(from: mnemonic, passphrase: vaultPassphrase)
         return try deriveSigningSeed(bip39Seed: bip39Seed, path: path)
     }
 

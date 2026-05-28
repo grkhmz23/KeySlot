@@ -43,7 +43,7 @@ struct PortfolioLendingView: View {
                         } label: {
                             Label(action.title, systemImage: "lock")
                         }
-                        .buttonStyle(.gorkhSecondary)
+                        .buttonStyle(.keyslotSecondary)
                         .disabled(!action.isEnabled)
                     }
                 }

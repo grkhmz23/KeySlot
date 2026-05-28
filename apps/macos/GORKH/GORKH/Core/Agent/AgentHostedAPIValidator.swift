@@ -52,8 +52,8 @@ enum AgentHostedAPIValidator {
         let lowered = text.lowercased()
         let blockedFragments = [
             "deepseek_api_key",
+            "keyslot_agent_api_key",
             "gorkh_agent_api_key",
-            "zerion_api_key",
             "api_key",
             "secret_key",
             "agenttoken",

@@ -2,6 +2,17 @@ import Foundation
 
 enum DeveloperWorkstationSection: String, CaseIterable, Identifiable, Codable {
     case overview
+    case projectBrain
+    case transactionDebugger
+    case pdaExplorer
+    case idlDrift
+    case fixtureStudio
+    case testWorkbench
+    case computeRegression
+    case releaseManager
+    case securityScanner
+    case frontendAssistant
+    case workstationAgent
     case projects
     case toolchain
     case compatibility
@@ -21,6 +32,28 @@ enum DeveloperWorkstationSection: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .overview:
             return "Overview"
+        case .projectBrain:
+            return "Project Brain"
+        case .transactionDebugger:
+            return "Transaction Debugger"
+        case .pdaExplorer:
+            return "PDA Explorer"
+        case .idlDrift:
+            return "IDL Drift"
+        case .fixtureStudio:
+            return "Fixture Studio"
+        case .testWorkbench:
+            return "Test Workbench"
+        case .computeRegression:
+            return "Compute Regression"
+        case .releaseManager:
+            return "Release Manager"
+        case .securityScanner:
+            return "Security Scanner"
+        case .frontendAssistant:
+            return "Frontend Assistant"
+        case .workstationAgent:
+            return "Workstation Agent"
         case .projects:
             return "Projects"
         case .toolchain:
@@ -52,6 +85,28 @@ enum DeveloperWorkstationSection: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .overview:
             return "Status, quick actions, and recent program evidence."
+        case .projectBrain:
+            return "Explain imported project structure, IDLs, trust, evidence, and safe next steps."
+        case .transactionDebugger:
+            return "Decode public signatures or raw transaction fixtures for review-only debugging."
+        case .pdaExplorer:
+            return "Inspect IDL PDA metadata and detect mismatches when derivation inputs are concrete."
+        case .idlDrift:
+            return "Compare loaded IDL metadata against selected program ids and deploy evidence."
+        case .fixtureStudio:
+            return "Review localnet fixture and snapshot readiness without fake chain state."
+        case .testWorkbench:
+            return "Preview fixed test workflow readiness; no package scripts run automatically."
+        case .computeRegression:
+            return "Track compute evidence and simulation availability for regression review."
+        case .releaseManager:
+            return "Review localnet/devnet release readiness and mainnet lock status."
+        case .securityScanner:
+            return "Scan imported project metadata and policy state for Solana safety issues."
+        case .frontendAssistant:
+            return "Generate safe integration notes from the loaded IDL without writing app code."
+        case .workstationAgent:
+            return "Use constrained Workstation tools for read-only explanations and gated previews."
         case .projects:
             return "Import, inspect, and explicitly trust developer projects."
         case .toolchain:
@@ -83,6 +138,28 @@ enum DeveloperWorkstationSection: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .overview:
             return "rectangle.grid.2x2"
+        case .projectBrain:
+            return "brain.head.profile"
+        case .transactionDebugger:
+            return "ladybug"
+        case .pdaExplorer:
+            return "point.3.connected.trianglepath.dotted"
+        case .idlDrift:
+            return "arrow.triangle.2.circlepath"
+        case .fixtureStudio:
+            return "shippingbox"
+        case .testWorkbench:
+            return "testtube.2"
+        case .computeRegression:
+            return "chart.line.uptrend.xyaxis"
+        case .releaseManager:
+            return "checkmark.seal"
+        case .securityScanner:
+            return "shield.lefthalf.filled"
+        case .frontendAssistant:
+            return "curlybraces"
+        case .workstationAgent:
+            return "sparkles"
         case .projects:
             return "folder"
         case .toolchain:
@@ -161,6 +238,7 @@ enum WorkstationActivityKind: String, Codable, CaseIterable {
     case projectImported = "project_imported"
     case projectTrusted = "project_trusted"
     case toolchainChecked = "toolchain_checked"
+    case tempKeypairCleanup = "temp_keypair_cleanup"
     case toolchainInstallPlanCreated = "toolchain_install_plan_created"
     case compatibilityCheckStarted = "compatibility_check_started"
     case compatibilityCheckCompleted = "compatibility_check_completed"
@@ -226,6 +304,51 @@ enum WorkstationActivityKind: String, Codable, CaseIterable {
     case authorityOperationAttempted = "authority_operation_attempted"
     case commandPreviewPrepared = "command_preview_prepared"
     case commandBlocked = "command_blocked"
+    case projectBrainReviewed = "project_brain_reviewed"
+    case projectBrainScanStarted = "project_brain_scan_started"
+    case projectBrainScanned = "project_brain_scanned"
+    case projectBrainScanFailed = "project_brain_scan_failed"
+    case projectBrainEvidenceStored = "project_brain_evidence_stored"
+    case transactionDebugReviewed = "transaction_debug_reviewed"
+    case transactionDebugFetchStarted = "transaction_debug_fetch_started"
+    case transactionDebugFetchSucceeded = "transaction_debug_fetch_succeeded"
+    case transactionDebugFetchFailed = "transaction_debug_fetch_failed"
+    case transactionDebugEvidenceStored = "transaction_debug_evidence_stored"
+    case transactionDebugAccountDetailsFetched = "transaction_debug_account_details_fetched"
+    case pdaAnalysisReviewed = "pda_analysis_reviewed"
+    case pdaDerived = "pda_derived"
+    case pdaAccountChecked = "pda_account_checked"
+    case idlDriftReviewed = "idl_drift_reviewed"
+    case idlDriftCompared = "idl_drift_compared"
+    case testDetectionRefreshed = "test_detection_refreshed"
+    case testCommandPrepared = "test_command_prepared"
+    case testRunStarted = "test_run_started"
+    case testRunSucceeded = "test_run_succeeded"
+    case testRunFailed = "test_run_failed"
+    case testRunBlocked = "test_run_blocked"
+    case testEvidenceStored = "test_evidence_stored"
+    case testDraftCreated = "test_draft_created"
+    case computeMeasurementStored = "compute_measurement_stored"
+    case computeBaselineSelected = "compute_baseline_selected"
+    case releaseCreated = "release_created"
+    case releaseFailed = "release_failed"
+    case preflightFailed = "preflight_failed"
+    case securityScanStarted = "security_scan_started"
+    case securityScanCompleted = "security_scan_completed"
+    case securityScanFailed = "security_scan_failed"
+    case securityScanEvidenceStored = "security_scan_evidence_stored"
+    case securityFindingDismissed = "security_finding_dismissed"
+    case securityScanReviewed = "security_scan_reviewed"
+    case frontendInspected = "frontend_inspected"
+    case frontendDraftPreviewed = "frontend_draft_previewed"
+    case frontendDraftWritten = "frontend_draft_written"
+    case frontendDraftWriteBlocked = "frontend_draft_write_blocked"
+    case frontendEvidenceStored = "frontend_evidence_stored"
+    case workstationAgentReviewed = "workstation_agent_reviewed"
+    case workstationAgentToolCalled = "workstation_agent_tool_called"
+    case workstationAgentToolBlocked = "workstation_agent_tool_blocked"
+    case workstationAgentApprovalRequested = "workstation_agent_approval_requested"
+    case workstationAgentEvidenceStored = "workstation_agent_evidence_stored"
 
     var title: String {
         rawValue

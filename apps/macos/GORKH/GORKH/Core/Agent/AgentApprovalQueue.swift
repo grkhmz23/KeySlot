@@ -3,8 +3,6 @@ import Foundation
 enum AgentApprovalQueueFilter: String, Codable, CaseIterable, Identifiable {
     case all
     case wallet
-    case zerion
-    case privateWallet
     case readOnly
     case blocked
 
@@ -16,10 +14,6 @@ enum AgentApprovalQueueFilter: String, Codable, CaseIterable, Identifiable {
             return "All"
         case .wallet:
             return "Wallet"
-        case .zerion:
-            return "Zerion"
-        case .privateWallet:
-            return "Private"
         case .readOnly:
             return "Read-only"
         case .blocked:
@@ -67,10 +61,6 @@ struct AgentApprovalQueue: Codable, Equatable {
             return items
         case .wallet:
             return items.filter { $0.lane == .mainWallet }
-        case .zerion:
-            return items.filter { $0.lane == .zerionAgentWallet }
-        case .privateWallet:
-            return items.filter { $0.lane == .cloakPrivate }
         case .readOnly:
             return items.filter { $0.lane == .readOnlyAnalysis || $0.lane == .watchOnlyAnalysis }
         case .blocked:

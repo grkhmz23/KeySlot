@@ -4,9 +4,9 @@ struct AgentAuditView: View {
     let timeline: AgentAuditTimeline
 
     var body: some View {
-        GorkhPanel("Agent / Zerion Audit") {
+        GorkhPanel("Agent Audit") {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Safe local timeline for Agent and Zerion readiness events. Secrets, tokens, and raw command payloads are redacted.")
+                Text("Safe local timeline for Agent readiness events. Secrets, tokens, and raw command payloads are redacted.")
                     .foregroundStyle(GorkhColors.secondaryText)
 
                 if timeline.events.isEmpty {

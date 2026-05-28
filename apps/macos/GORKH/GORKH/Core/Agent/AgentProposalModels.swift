@@ -4,8 +4,6 @@ enum AgentProposalType: String, Codable, CaseIterable, Identifiable, Equatable {
     case mainWalletSwapDraft
     case mainWalletSendDraft
     case pusdPaymentDraft
-    case cloakPrivatePaymentDraft
-    case zerionTinySwap
     case yieldRecommendation
     case lpReviewRecommendation
     case unsupported
@@ -20,10 +18,6 @@ enum AgentProposalType: String, Codable, CaseIterable, Identifiable, Equatable {
             return "Wallet send draft"
         case .pusdPaymentDraft:
             return "PUSD payment draft"
-        case .cloakPrivatePaymentDraft:
-            return "Private payment draft"
-        case .zerionTinySwap:
-            return "Zerion tiny swap"
         case .yieldRecommendation:
             return "Yield review"
         case .lpReviewRecommendation:
@@ -36,9 +30,7 @@ enum AgentProposalType: String, Codable, CaseIterable, Identifiable, Equatable {
 
 enum AgentProposalLane: String, Codable, CaseIterable, Identifiable, Equatable {
     case mainWallet
-    case zerionAgentWallet
     case watchOnlyAnalysis
-    case cloakPrivate
     case readOnlyAnalysis
     case unsupported
 
@@ -48,12 +40,8 @@ enum AgentProposalLane: String, Codable, CaseIterable, Identifiable, Equatable {
         switch self {
         case .mainWallet:
             return "Main Wallet"
-        case .zerionAgentWallet:
-            return "Zerion Agent Wallet"
         case .watchOnlyAnalysis:
             return "Watch-only Analysis"
-        case .cloakPrivate:
-            return "Cloak Private"
         case .readOnlyAnalysis:
             return "Read-only Analysis"
         case .unsupported:
@@ -101,7 +89,6 @@ enum AgentHandoffTarget: String, Codable, CaseIterable, Identifiable, Equatable 
     case walletReceive
     case walletSwap
     case walletSend
-    case walletPrivate
     case walletPortfolio
     case portfolioAssets
     case portfolioWallets
@@ -114,7 +101,6 @@ enum AgentHandoffTarget: String, Codable, CaseIterable, Identifiable, Equatable 
     case portfolioHistory
     case walletSecurity
     case walletActivity
-    case zerionReview
     case none
 
     var id: String { rawValue }
@@ -129,8 +115,6 @@ enum AgentHandoffTarget: String, Codable, CaseIterable, Identifiable, Equatable 
             return "Open Swap Review"
         case .walletSend:
             return "Open Send"
-        case .walletPrivate:
-            return "Open Private"
         case .walletPortfolio:
             return "Open Portfolio"
         case .portfolioAssets:
@@ -155,8 +139,6 @@ enum AgentHandoffTarget: String, Codable, CaseIterable, Identifiable, Equatable 
             return "Open Security"
         case .walletActivity:
             return "Open Activity"
-        case .zerionReview:
-            return "Open Zerion Review"
         case .none:
             return "No handoff"
         }

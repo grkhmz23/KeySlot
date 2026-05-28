@@ -92,9 +92,6 @@ enum TransactionRiskAnalyzer {
         if decoded.network.isMainnet {
             flags.append(.init(kind: .mainnetTransaction, level: .medium, message: "This is a mainnet transaction. Any approval in a destination module can affect real funds."))
         }
-        if programLabels.contains("Cloak") {
-            flags.append(.init(kind: .privateCloakProgramInteraction, level: .high, message: "Cloak private program interaction is present. Review private-state requirements in Wallet -> Private."))
-        }
         if programLabels.intersection(["Jupiter", "Orca Whirlpool", "Raydium AMM", "Raydium CPMM", "Raydium CLMM", "Meteora DLMM", "Kamino", "MarginFi"]).isEmpty == false {
             flags.append(.init(kind: .defiProtocolInteraction, level: .medium, message: "DeFi protocol interaction is present. Confirm route, market, and protocol risk."))
         }

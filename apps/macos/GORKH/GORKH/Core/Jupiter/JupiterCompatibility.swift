@@ -22,7 +22,7 @@ enum JupiterSwapAPIMode: String, Codable, CaseIterable, Equatable {
     var warningText: String {
         switch self {
         case .metisV1:
-            return "Metis v1 is no longer actively maintained by Jupiter. GORKH keeps it in compatibility mode until Swap V2 is reviewed."
+            return "Metis v1 is no longer actively maintained by Jupiter. KeySlot keeps it in compatibility mode until Swap V2 is reviewed."
         case .swapV2OrderExecuteCandidate:
             return "Swap V2 order/execute requires a separate review before execution because Jupiter manages landing through /execute."
         case .swapV2RouterCandidate:

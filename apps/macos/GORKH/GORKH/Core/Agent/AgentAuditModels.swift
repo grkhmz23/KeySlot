@@ -3,20 +3,6 @@ import Foundation
 struct AgentAuditEvent: Codable, Equatable, Identifiable {
     enum Kind: String, Codable, CaseIterable {
         case agentSectionViewed = "agent_section_viewed"
-        case zerionCLIStatusChecked = "zerion_cli_status_checked"
-        case zerionAPIKeyStatusChecked = "zerion_api_key_status_checked"
-        case zerionWalletListChecked = "zerion_wallet_list_checked"
-        case zerionPoliciesChecked = "zerion_policies_checked"
-        case zerionTokensChecked = "zerion_tokens_checked"
-        case zerionProposalDrafted = "zerion_proposal_drafted"
-        case zerionProposalBlocked = "zerion_proposal_blocked"
-        case zerionProposalApproved = "zerion_proposal_approved"
-        case zerionExecutionStarted = "zerion_execution_started"
-        case zerionExecutionSucceeded = "zerion_execution_succeeded"
-        case zerionExecutionFailed = "zerion_execution_failed"
-        case zerionPolicyValidationFailed = "zerion_policy_validation_failed"
-        case zerionCommandBlocked = "zerion_command_blocked"
-        case zerionCommandFailed = "zerion_command_failed"
         case agentChatMessageReceived = "agent_chat_message_received"
         case agentIntentClassified = "agent_intent_classified"
         case agentProposalCreated = "agent_proposal_created"
@@ -61,34 +47,6 @@ struct AgentAuditEvent: Codable, Equatable, Identifiable {
             switch self {
             case .agentSectionViewed:
                 return "Agent section viewed"
-            case .zerionCLIStatusChecked:
-                return "Zerion CLI status checked"
-            case .zerionAPIKeyStatusChecked:
-                return "Zerion API key status checked"
-            case .zerionWalletListChecked:
-                return "Zerion wallet list checked"
-            case .zerionPoliciesChecked:
-                return "Zerion policies checked"
-            case .zerionTokensChecked:
-                return "Zerion tokens checked"
-            case .zerionProposalDrafted:
-                return "Zerion proposal drafted"
-            case .zerionProposalBlocked:
-                return "Zerion proposal blocked"
-            case .zerionProposalApproved:
-                return "Zerion proposal approved"
-            case .zerionExecutionStarted:
-                return "Zerion execution started"
-            case .zerionExecutionSucceeded:
-                return "Zerion execution succeeded"
-            case .zerionExecutionFailed:
-                return "Zerion execution failed"
-            case .zerionPolicyValidationFailed:
-                return "Zerion policy validation failed"
-            case .zerionCommandBlocked:
-                return "Zerion command blocked"
-            case .zerionCommandFailed:
-                return "Zerion command failed"
             case .agentChatMessageReceived:
                 return "Agent chat message received"
             case .agentIntentClassified:
@@ -187,8 +145,8 @@ struct AgentAuditEvent: Codable, Equatable, Identifiable {
         self.id = id
         self.kind = kind
         self.createdAt = createdAt
-        self.message = ZerionRedaction.redact(message)
-        self.details = ZerionRedaction.safeDetails(details)
+        self.message = message
+        self.details = details
     }
 }
 
@@ -198,7 +156,7 @@ struct AgentAuditTimeline: Codable, Equatable {
     static let initial = AgentAuditTimeline(events: [
         AgentAuditEvent(
             kind: .agentSectionViewed,
-            message: "Agent foundation loaded with A2 tiny-swap execution gated.",
+            message: "Agent foundation loaded.",
             details: ["mainWalletAccess": AgentMainWalletAccess.disabled.rawValue]
         )
     ])

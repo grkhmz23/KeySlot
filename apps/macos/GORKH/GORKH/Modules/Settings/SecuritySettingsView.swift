@@ -78,7 +78,7 @@ struct SecuritySettingsView: View {
                     Text("Secrets are stored in macOS Keychain. Metadata and security preferences are stored locally.")
                         .font(.caption)
                         .foregroundStyle(GorkhColors.secondaryText)
-                    Text("GORKH does not send seed phrases, private keys, wallet JSON, or signing seeds to a backend, Assistant, Context, LLM, or Agent. Agent signer access is not implemented.")
+                    Text("KeySlot does not send seed phrases, private keys, wallet JSON, or signing seeds to a backend, Assistant, Context, LLM, or Agent. Agent signer access is not implemented.")
                         .font(.caption)
                         .foregroundStyle(GorkhColors.secondaryText)
                 }

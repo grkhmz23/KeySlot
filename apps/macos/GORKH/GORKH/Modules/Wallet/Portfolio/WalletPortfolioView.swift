@@ -2,8 +2,6 @@ import SwiftUI
 
 struct WalletPortfolioView: View {
     @EnvironmentObject private var walletManager: WalletManager
-    @State private var orcaHarvestMainnetConfirmation = ""
-    @State private var orcaHarvestDevnetSmokeCompleted = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -28,7 +26,7 @@ struct WalletPortfolioView: View {
                         } label: {
                             Label("Refresh", systemImage: "arrow.clockwise")
                         }
-                        .buttonStyle(.gorkhPrimary)
+                        .buttonStyle(.keyslotPrimary)
                         .disabled(walletManager.isBusy)
                     }
 
@@ -71,42 +69,6 @@ struct WalletPortfolioView: View {
             )
             PortfolioAssetListView(summary: walletManager.portfolioSummary)
             PortfolioWalletBreakdownView(summary: walletManager.portfolioSummary)
-            AddWatchOnlyWalletView()
-            WatchOnlyWalletView()
-
-            portfolioSectionHeader(
-                "DeFi",
-                subtitle: "Stake, LSTs, lending, liquidity, and yield are separated from wallet token balances to avoid double-counting."
-            )
-            PortfolioStakeView(summary: walletManager.portfolioSummary.nativeStakeSummary)
-            PortfolioLSTView(summary: walletManager.portfolioSummary.lstSummary)
-            PortfolioLendingView(summary: walletManager.portfolioSummary.lendingSummary)
-            PortfolioLiquidityView(
-                summary: walletManager.portfolioSummary.lpSummary,
-                harvestDraft: walletManager.currentOrcaHarvestDraft,
-                harvestReview: walletManager.currentOrcaHarvestReview,
-                harvestSimulation: walletManager.orcaHarvestSimulationResult,
-                harvestApprovalState: walletManager.orcaHarvestApprovalState,
-                harvestErrorMessage: walletManager.orcaHarvestErrorMessage,
-                mainnetConfirmation: $orcaHarvestMainnetConfirmation,
-                completedDevnetSmoke: $orcaHarvestDevnetSmokeCompleted,
-                prepareHarvestAction: { position in
-                    Task { await walletManager.prepareOrcaHarvest(position: position) }
-                },
-                simulateHarvestAction: {
-                    Task { await walletManager.simulateCurrentOrcaHarvest() }
-                },
-                approveHarvestAction: {
-                    Task {
-                        await walletManager.approveAndSendOrcaHarvest(
-                            mainnetConfirmation: orcaHarvestMainnetConfirmation,
-                            hasCompletedDevnetSmoke: orcaHarvestDevnetSmokeCompleted
-                        )
-                    }
-                },
-                resetHarvestAction: walletManager.resetOrcaHarvestState
-            )
-            PortfolioYieldView(summary: walletManager.portfolioSummary.yieldSummary)
 
             portfolioSectionHeader(
                 "Performance",
@@ -125,7 +87,6 @@ struct WalletPortfolioView: View {
                 snapshots: walletManager.portfolioHistory,
                 clearAction: walletManager.clearPortfolioHistory(confirmation:)
             )
-            PortfolioDeFiPlaceholderView()
         }
         .accessibilityIdentifier("wallet.portfolio")
     }

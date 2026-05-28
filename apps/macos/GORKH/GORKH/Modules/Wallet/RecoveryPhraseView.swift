@@ -9,7 +9,7 @@ struct RecoveryPhraseView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Write this recovery phrase down. GORKH cannot recover it for you.")
+            Text("Write this recovery phrase down. KeySlot cannot recover it for you.")
                 .font(.callout)
                 .fontWeight(.semibold)
                 .foregroundStyle(GorkhColors.warning)
@@ -34,7 +34,7 @@ struct RecoveryPhraseView: View {
                 }
             }
 
-            Text("Avoid screenshots. Store this offline. Never share it with GORKH support, an assistant, an agent, or any website.")
+            Text("Avoid screenshots. Store this offline. Never share it with KeySlot support, an assistant, an agent, or any website.")
                 .font(.caption)
                 .foregroundStyle(GorkhColors.secondaryText)
         }

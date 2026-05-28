@@ -3,41 +3,60 @@ import SwiftUI
 struct WalletSwapView: View {
     @EnvironmentObject private var walletManager: WalletManager
     @State private var inputMint = SwapConstants.nativeSolMint
-    @State private var outputMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+    @State private var outputMintText = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+    @State private var outputDecimalsText = "6"
     @State private var amountText = ""
-    @State private var slippageBps = 50
+    @State private var slippageText = "0.5"
     @State private var mainnetConfirmation = ""
     @State private var completedDevnetSmoke = false
+    @State private var showingPopularTokens = false
+
+    private var effectiveSlippageBps: Int {
+        let pct = Double(slippageText.replacingOccurrences(of: ",", with: ".")) ?? 0.5
+        let bps = Int(pct * 100)
+        return max(1, min(5000, bps))
+    }
+
+    private var effectiveOutputMint: String {
+        outputMintText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var knownOutputToken: TokenMetadata? {
+        walletManager.swapOutputTokenOptions.first { $0.mintAddress == effectiveOutputMint }
+    }
+
+    private var effectiveOutputDecimals: UInt8? {
+        if effectiveOutputMint == SwapConstants.nativeSolMint {
+            return 9
+        }
+        if let known = knownOutputToken {
+            return known.decimals
+        }
+        return UInt8(outputDecimalsText)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            GorkhPanel("Jupiter Swap") {
+            GorkhPanel("Swap") {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 8) {
                         GorkhStatusChip(title: walletManager.selectedNetwork.displayName, systemImage: "network", color: walletManager.selectedNetwork.isMainnet ? GorkhColors.warning : GorkhColors.accent)
                         GorkhStatusChip(title: "Native signer", systemImage: "signature", color: GorkhColors.accent)
-                        GorkhStatusChip(title: "No Agent execution", systemImage: "lock", color: GorkhColors.warning)
                     }
 
-                    Text("Swaps use Jupiter public quote/build APIs. GORKH reviews, simulates, and signs locally only after explicit approval.")
+                    Text("Swap via Jupiter. Paste any SPL token address or pick a popular token.")
                         .font(.caption)
                         .foregroundStyle(GorkhColors.secondaryText)
 
                     if !walletManager.selectedNetwork.isMainnet {
-                        Text("Jupiter swap routing is mainnet-oriented. Devnet swaps are not executed or faked.")
+                        Text("Jupiter routing is mainnet-oriented. Devnet swaps are not executed.")
                             .font(.caption)
                             .foregroundStyle(GorkhColors.warning)
                     }
 
-                    JupiterSwapCompatibilityView(
-                        mode: walletManager.jupiterSwapAPIMode,
-                        hasAPIKey: walletManager.jupiterAPIConfiguration.hasAPIKey,
-                        endpointCompatibility: walletManager.jupiterEndpointCompatibility
-                    )
-
                     HStack(alignment: .top, spacing: 12) {
                         SwapTokenSelectorView(
-                            title: "Input",
+                            title: "Sell",
                             selection: $inputMint,
                             tokenOptions: walletManager.swapInputTokenOptions
                         )
@@ -55,33 +74,80 @@ struct WalletSwapView: View {
                         }
 
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Output")
+                            Text("Buy (mint address)")
                                 .font(.caption)
                                 .foregroundStyle(GorkhColors.secondaryText)
-                            Picker("Output", selection: $outputMint) {
-                                ForEach(walletManager.swapOutputTokenOptions) { token in
-                                    Text("\(token.symbol) - \(token.name)").tag(token.mintAddress)
+
+                            HStack(spacing: 6) {
+                                TextField("Contract address", text: $outputMintText)
+                                    .textFieldStyle(.roundedBorder)
+                                    .font(.system(.body, design: .monospaced))
+
+                                Button {
+                                    if let pasted = NSPasteboard.general.string(forType: .string) {
+                                        outputMintText = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    }
+                                } label: {
+                                    Image(systemName: "doc.on.clipboard")
+                                }
+                                .buttonStyle(.bordered)
+                                .help("Paste from clipboard")
+
+                                Menu {
+                                    ForEach(walletManager.swapOutputTokenOptions) { token in
+                                        Button {
+                                            outputMintText = token.mintAddress
+                                            if let decimals = token.decimals {
+                                                outputDecimalsText = "\(decimals)"
+                                            }
+                                        } label: {
+                                            Text("\(token.symbol) — \(token.name)")
+                                        }
+                                    }
+                                } label: {
+                                    Image(systemName: "chevron.down")
+                                }
+                                .menuStyle(.borderedButton)
+                                .help("Popular tokens")
+                            }
+
+                            HStack(spacing: 8) {
+                                if let token = knownOutputToken {
+                                    GorkhStatusChip(title: token.symbol, systemImage: "checkmark.circle", color: GorkhColors.success)
+                                    Text(token.name)
+                                        .font(.caption2)
+                                        .foregroundStyle(GorkhColors.secondaryText)
+                                } else if SolanaAddressValidator.isValidAddress(effectiveOutputMint) {
+                                    GorkhStatusChip(title: "Unknown token", systemImage: "questionmark.circle", color: GorkhColors.warning)
+                                }
+
+                                if knownOutputToken == nil {
+                                    Text("Decimals:")
+                                        .font(.caption2)
+                                        .foregroundStyle(GorkhColors.secondaryText)
+                                    TextField("6", text: $outputDecimalsText)
+                                        .textFieldStyle(.roundedBorder)
+                                        .frame(width: 50)
                                 }
                             }
-                            .frame(width: 230)
-                            TextField("Manual output mint", text: $outputMint)
-                                .textFieldStyle(.roundedBorder)
-                                .font(.system(.caption, design: .monospaced))
-                                .frame(width: 230)
+
+                            if !effectiveOutputMint.isEmpty && !SolanaAddressValidator.isValidAddress(effectiveOutputMint) {
+                                Text("Invalid Solana address")
+                                    .font(.caption2)
+                                    .foregroundStyle(GorkhColors.danger)
+                            }
                         }
 
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Slippage")
+                            Text("Slippage (%)")
                                 .font(.caption)
                                 .foregroundStyle(GorkhColors.secondaryText)
-                            Picker("Slippage", selection: $slippageBps) {
-                                Text("0.1%").tag(10)
-                                Text("0.5%").tag(50)
-                                Text("1.0%").tag(100)
-                                Text("2.0%").tag(200)
-                            }
-                            .pickerStyle(.segmented)
-                            .frame(width: 230)
+                            TextField("0.5", text: $slippageText)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 80)
+                            Text("\(effectiveSlippageBps) bps")
+                                .font(.caption2)
+                                .foregroundStyle(GorkhColors.secondaryText)
                         }
 
                         Spacer()
@@ -95,24 +161,24 @@ struct WalletSwapView: View {
                                 normalizeInputSelection()
                             }
                         } label: {
-                            Label("Refresh Balances", systemImage: "arrow.clockwise")
+                            Label("Refresh", systemImage: "arrow.clockwise")
                         }
-                        .buttonStyle(.gorkhSecondary)
+                        .buttonStyle(.keyslotSecondary)
                         .disabled(walletManager.isBusy)
 
                         Button {
                             Task {
                                 await walletManager.requestSwapQuote(
                                     inputMint: inputMint,
-                                    outputMint: outputMint,
+                                    outputMint: effectiveOutputMint,
                                     amountText: amountText,
-                                    slippageBps: slippageBps
+                                    slippageBps: effectiveSlippageBps
                                 )
                             }
                         } label: {
-                            Label("Quote", systemImage: "chart.line.uptrend.xyaxis")
+                            Label("Get Quote", systemImage: "chart.line.uptrend.xyaxis")
                         }
-                        .buttonStyle(.gorkhPrimary)
+                        .buttonStyle(.keyslotPrimary)
                         .disabled(!canRequestQuote)
 
                         Button {
@@ -120,7 +186,7 @@ struct WalletSwapView: View {
                         } label: {
                             Label("Build & Review", systemImage: "doc.text.magnifyingglass")
                         }
-                        .buttonStyle(.gorkhSecondary)
+                        .buttonStyle(.keyslotSecondary)
                         .disabled(walletManager.currentSwapQuote == nil || walletManager.isBusy)
 
                         Button {
@@ -128,7 +194,7 @@ struct WalletSwapView: View {
                         } label: {
                             Label("Simulate", systemImage: "waveform.path.ecg")
                         }
-                        .buttonStyle(.gorkhSecondary)
+                        .buttonStyle(.keyslotSecondary)
                         .disabled(walletManager.currentSwapReview?.canApprove != true || walletManager.isBusy)
 
                         Spacer()
@@ -142,7 +208,7 @@ struct WalletSwapView: View {
                 }
             }
 
-            SwapQuoteView(quote: walletManager.currentSwapQuote, inputDecimals: selectedInput?.decimals, outputDecimals: outputDecimals)
+            SwapQuoteView(quote: walletManager.currentSwapQuote, inputDecimals: selectedInput?.decimals, outputDecimals: effectiveOutputDecimals)
             SwapReviewView(review: walletManager.currentSwapReview)
             SwapApprovalView(
                 quote: walletManager.currentSwapQuote,
@@ -181,13 +247,6 @@ struct WalletSwapView: View {
         walletManager.swapInputTokenOptions.first { $0.mintAddress == inputMint }
     }
 
-    private var outputDecimals: UInt8? {
-        if outputMint == SwapConstants.nativeSolMint {
-            return 9
-        }
-        return walletManager.swapOutputTokenOptions.first { $0.mintAddress == outputMint }?.decimals
-    }
-
     private var inputBalanceText: String {
         guard let selectedInput else {
             return "No input balance loaded"
@@ -198,7 +257,7 @@ struct WalletSwapView: View {
     private var canRequestQuote: Bool {
         walletManager.selectedProfile?.canSign == true
             && !amountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && SolanaAddressValidator.isValidAddress(outputMint)
+            && SolanaAddressValidator.isValidAddress(effectiveOutputMint)
             && selectedInput?.canUseAsInput == true
             && !walletManager.isBusy
     }
@@ -224,51 +283,6 @@ struct WalletSwapView: View {
         if !walletManager.swapInputTokenOptions.contains(where: { $0.mintAddress == inputMint }),
            let first = walletManager.swapInputTokenOptions.first {
             inputMint = first.mintAddress
-        }
-    }
-}
-
-private struct JupiterSwapCompatibilityView: View {
-    let mode: JupiterSwapAPIMode
-    let hasAPIKey: Bool
-    let endpointCompatibility: [JupiterEndpointCompatibility]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                GorkhStatusChip(
-                    title: mode.displayName,
-                    systemImage: mode.allowsCurrentExecution ? "arrow.triangle.swap" : "lock.trianglebadge.exclamationmark",
-                    color: mode.allowsCurrentExecution ? GorkhColors.warning : GorkhColors.danger
-                )
-                GorkhStatusChip(
-                    title: hasAPIKey ? "API key present" : "API key missing",
-                    systemImage: hasAPIKey ? "key.fill" : "key.slash",
-                    color: hasAPIKey ? GorkhColors.success : GorkhColors.warning
-                )
-            }
-
-            Text(mode.warningText)
-                .font(.caption)
-                .foregroundStyle(mode.allowsCurrentExecution ? GorkhColors.warning : GorkhColors.danger)
-
-            ForEach(endpointCompatibility, id: \.url) { endpoint in
-                HStack(alignment: .firstTextBaseline) {
-                    Text(endpoint.kind.rawValue)
-                        .font(.caption)
-                        .foregroundStyle(GorkhColors.secondaryText)
-                        .frame(width: 74, alignment: .leading)
-                    Text(endpoint.url)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(GorkhColors.primaryText)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer()
-                    Text(endpoint.canUse ? "allowed" : "blocked")
-                        .font(.caption)
-                        .foregroundStyle(endpoint.canUse ? GorkhColors.success : GorkhColors.danger)
-                }
-            }
         }
     }
 }

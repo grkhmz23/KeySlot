@@ -123,7 +123,7 @@ struct TokenTransferApprovalView: View {
                     systemImage: "signature"
                 )
             }
-            .buttonStyle(.gorkhPrimary)
+            .buttonStyle(.keyslotPrimary)
             .disabled(!canApprove || ShieldReviewPolicy.requiresBlockingReview(shieldReview) || walletManager.vaultState != .unlocked || walletManager.isBusy || draft.recipientTokenAccount == nil)
 
             if let signature = walletManager.lastTransactionSignature {

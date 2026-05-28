@@ -2,7 +2,7 @@ import SwiftUI
 
 struct WalletCreateView: View {
     @EnvironmentObject private var walletManager: WalletManager
-    @State private var label = "GORKH Wallet"
+    @State private var label = "KeySlot Wallet"
     @State private var derivationPath = DerivationPath.defaultSolana
     @State private var recoveryWords: [String] = []
     @State private var savedOffline = false
@@ -18,10 +18,10 @@ struct WalletCreateView: View {
 
                 if recoveryWords.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("GORKH generates a BIP39 recovery phrase locally, derives the Solana signer locally, and stores only the derived signing seed in the macOS Keychain-backed vault.")
+                        Text("KeySlot generates a BIP39 recovery phrase locally, derives the Solana signer locally, and stores only the derived signing seed in the macOS Keychain-backed vault.")
                             .font(.caption)
                             .foregroundStyle(GorkhColors.secondaryText)
-                        Text("The phrase is shown once. GORKH never sends it to a backend, assistant, agent, or model.")
+                        Text("The phrase is shown once. KeySlot never sends it to a backend, assistant, agent, or model.")
                             .font(.caption)
                             .foregroundStyle(GorkhColors.secondaryText)
                     }
@@ -33,7 +33,7 @@ struct WalletCreateView: View {
                     } label: {
                         Label("Generate Recovery Phrase", systemImage: "text.word.spacing")
                     }
-                    .buttonStyle(.gorkhPrimary)
+                    .buttonStyle(.keyslotPrimary)
                     .disabled(walletManager.isBusy)
                 } else if isConfirming {
                     RecoveryPhraseConfirmationView(words: recoveryWords) {
@@ -47,7 +47,7 @@ struct WalletCreateView: View {
                 } else {
                     RecoveryPhraseView(words: recoveryWords)
 
-                    Toggle("I wrote this recovery phrase down and understand GORKH cannot recover it.", isOn: $savedOffline)
+                    Toggle("I wrote this recovery phrase down and understand KeySlot cannot recover it.", isOn: $savedOffline)
                         .toggleStyle(.checkbox)
                         .foregroundStyle(GorkhColors.warning)
 
@@ -57,7 +57,7 @@ struct WalletCreateView: View {
                         } label: {
                             Label("Continue to Confirmation", systemImage: "arrow.right.circle")
                         }
-                        .buttonStyle(.gorkhPrimary)
+                        .buttonStyle(.keyslotPrimary)
                         .disabled(!savedOffline)
 
                         Button {
@@ -65,7 +65,7 @@ struct WalletCreateView: View {
                         } label: {
                             Label("Cancel", systemImage: "xmark.circle")
                         }
-                        .buttonStyle(.gorkhSecondary)
+                        .buttonStyle(.keyslotSecondary)
                     }
                 }
             }

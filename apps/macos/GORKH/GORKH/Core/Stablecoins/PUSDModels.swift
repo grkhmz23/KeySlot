@@ -16,8 +16,8 @@ enum PUSDConstants {
         standardSPL: true
     )
 
-    static let integrationDescription = "Palm USD is a standard 6-decimal SPL stablecoin on Solana. GORKH treats it like any other token, with dedicated treasury views and safe send/receive flows."
-    static let mintRedeemDescription = "Mint/redeem happens outside GORKH through Palm's permissioned perimeter. GORKH does not mint or redeem PUSD."
+    static let integrationDescription = "Palm USD is a standard 6-decimal SPL stablecoin on Solana. KeySlot treats it like any other token, with dedicated treasury views and safe send/receive flows."
+    static let mintRedeemDescription = "Mint/redeem happens outside KeySlot through Palm's permissioned perimeter. KeySlot does not mint or redeem PUSD."
     static let pegEstimateDescription = "Stablecoin peg estimates are informational and not guaranteed market quotes."
 }
 

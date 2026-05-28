@@ -44,21 +44,10 @@ enum AgentIntentType: String, Codable, CaseIterable, Identifiable, Equatable {
     case tokenSwapRequest
     case tokenSendRequest
     case pusdPaymentRequest
-    case cloakStatus
-    case prepareCloakDeposit
-    case cloakPrivatePaymentRequest
-    case prepareCloakPrivatePayment
-    case cloakScanSummary
-    case explainPrivateState
     case yieldSearch
     case lpPositionReview
     case pnlSummary
     case recentActivitySummary
-    case zerionStatus
-    case zerionPolicySummary
-    case zerionTinySwapRequest
-    case zerionPrepareTinySwap
-    case zerionProposalStatus
     case help
     case whatCanYouDo
     case missingFields
@@ -115,18 +104,6 @@ enum AgentIntentType: String, Codable, CaseIterable, Identifiable, Equatable {
             return "Token send request"
         case .pusdPaymentRequest:
             return "PUSD payment request"
-        case .cloakStatus:
-            return "Cloak status"
-        case .prepareCloakDeposit:
-            return "Prepare Cloak deposit"
-        case .cloakPrivatePaymentRequest:
-            return "Private payment request"
-        case .prepareCloakPrivatePayment:
-            return "Prepare private payment"
-        case .cloakScanSummary:
-            return "Cloak scan summary"
-        case .explainPrivateState:
-            return "Private state explanation"
         case .yieldSearch:
             return "Yield search"
         case .lpPositionReview:
@@ -135,16 +112,6 @@ enum AgentIntentType: String, Codable, CaseIterable, Identifiable, Equatable {
             return "Performance summary"
         case .recentActivitySummary:
             return "Recent activity"
-        case .zerionStatus:
-            return "Zerion status"
-        case .zerionPolicySummary:
-            return "Zerion policy summary"
-        case .zerionTinySwapRequest:
-            return "Zerion tiny swap"
-        case .zerionPrepareTinySwap:
-            return "Prepare Zerion tiny swap"
-        case .zerionProposalStatus:
-            return "Zerion proposal status"
         case .help:
             return "Help"
         case .whatCanYouDo:
@@ -166,11 +133,6 @@ enum AgentIntentType: String, Codable, CaseIterable, Identifiable, Equatable {
              .tokenSwapRequest,
              .tokenSendRequest,
              .pusdPaymentRequest,
-             .prepareCloakDeposit,
-             .cloakPrivatePaymentRequest,
-             .prepareCloakPrivatePayment,
-             .zerionTinySwapRequest,
-             .zerionPrepareTinySwap:
             return true
         case .walletOverview,
              .receiveAddress,
@@ -189,16 +151,10 @@ enum AgentIntentType: String, Codable, CaseIterable, Identifiable, Equatable {
              .costBasisHelp,
              .portfolioHistorySummary,
              .riskSummary,
-             .cloakStatus,
-             .cloakScanSummary,
-             .explainPrivateState,
              .yieldSearch,
              .lpPositionReview,
              .pnlSummary,
              .recentActivitySummary,
-             .zerionStatus,
-             .zerionPolicySummary,
-             .zerionProposalStatus,
              .help,
              .whatCanYouDo,
              .missingFields,
@@ -217,7 +173,6 @@ enum AgentRiskFlag: String, Codable, CaseIterable, Identifiable, Equatable {
     case highAmount
     case watchOnlyCannotExecute
     case mainWalletApprovalRequired
-    case zerionPolicyRequired
     case unsupportedAction
     case unsafeSecretRequest
     case readOnlyOnly
@@ -241,8 +196,6 @@ enum AgentRiskFlag: String, Codable, CaseIterable, Identifiable, Equatable {
             return "Watch-only cannot execute"
         case .mainWalletApprovalRequired:
             return "Wallet approval required"
-        case .zerionPolicyRequired:
-            return "Zerion policy required"
         case .unsupportedAction:
             return "Unsupported action"
         case .unsafeSecretRequest:
@@ -333,17 +286,46 @@ struct AgentToolResult: Codable, Equatable, Identifiable {
 enum AgentSafetyRedactor {
     nonisolated static func redact(_ text: String) -> String {
         let patterns: [(pattern: String, replacement: String)] = [
+            (#"(?i)(Authorization\s*:\s*Bearer\s+)[A-Za-z0-9._~+/\-=]+"#, "$1[redacted]"),
             (#"(?i)(private\s*key\s*[:=]\s*)[^\s,}"]+"#, "$1[redacted]"),
             (#"(?i)(seed\s*phrase\s*[:=]\s*)[^\n,}"]+"#, "$1[redacted]"),
             (#"(?i)(mnemonic\s*[:=]\s*)[^\n,}"]+"#, "$1[redacted]"),
             (#"(?i)(wallet\s*json\s*[:=]\s*)[^\n,}"]+"#, "$1[redacted]"),
             (#"(?i)(signing\s*seed\s*[:=]\s*)[^\s,}"]+"#, "$1[redacted]"),
             (#"(?i)(agent\s*token\s*[:=]\s*)[^\s,}"]+"#, "$1[redacted]"),
-            (#"(?i)(ZERION_API_KEY\s*[:=]\s*)[^\s,}"]+"#, "$1[redacted]"),
+            (#"(?i)\b((?:password|passwd|secret|token|api[_-]?key|apikey|private[_-]?key|access[_-]?key|refresh[_-]?token)\s*[:=]\s*)["']?[^"'\s,}]+"#, "$1[redacted]"),
+            (#"(?i)([?&](?:token|api_key|apikey|key|access_key|rpc_key)=)[^&\s]+"#, "$1[redacted]"),
+            (#"\b[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\b"#, "[redacted]"),
+            (#"(?i)\b(?:sk|pk|rk|gsk|zk)_[A-Za-z0-9_\-]{12,}\b"#, "[redacted]"),
+            (#"(/Users/)[^/\s]+(/[^\s,)"']*)"#, "$1[redacted]$2"),
             (#"zk_[A-Za-z0-9_\-]{6,}"#, "[redacted]")
         ]
-        return patterns.reduce(text) { result, entry in
+        let redacted = patterns.reduce(text) { result, entry in
             result.replacingOccurrences(of: entry.pattern, with: entry.replacement, options: .regularExpression)
         }
+        return redactSolanaKeypairArrays(redacted)
+    }
+
+    nonisolated private static func redactSolanaKeypairArrays(_ text: String) -> String {
+        let pattern = #"\[(?:\s*\d{1,3}\s*,){50,}\s*\d{1,3}\s*\]"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return text
+        }
+        var redacted = text
+        let matches = regex.matches(in: redacted, range: NSRange(redacted.startIndex..., in: redacted))
+        for match in matches.reversed() {
+            guard let range = Range(match.range, in: redacted) else { continue }
+            let candidate = String(redacted[range])
+            let values = candidate
+                .trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+                .split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .compactMap(Int.init)
+            guard values.count >= 64, values.allSatisfy({ (0...255).contains($0) }) else {
+                continue
+            }
+            redacted.replaceSubrange(range, with: "[redacted-solana-keypair-array]")
+        }
+        return redacted
     }
 }
