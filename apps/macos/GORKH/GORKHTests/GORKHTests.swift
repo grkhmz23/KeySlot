@@ -909,902 +909,35 @@ struct GORKHTests {
         #expect(!json.contains("seedPhrase"))
     }
 
-    @Test func cloakFeeModelUsesIntegerMathAndKnownConstants() throws {
-        #expect(CloakConstants.programID == "zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW")
-        #expect(CloakConstants.minimumDepositLamports == 10_000_000)
-        #expect(CloakConstants.fixedFeeLamports == 5_000_000)
 
-        let quote = try CloakFeeModel.quote(grossLamports: 50_000_000)
 
-        #expect(quote.variableFeeLamports == 150_000)
-        #expect(quote.totalFeeLamports == 5_150_000)
-        #expect(quote.netLamports == 44_850_000)
-        #expect(try CloakFeeModel.calculateCloakSolFeeLamports(gross: 10_000_000) == 5_030_000)
-        #expect(throws: CloakFeeError.self) {
-            try CloakFeeModel.validateMinimumDeposit(9_999_999)
-        }
-    }
 
-    @Test func cloakDepositDraftIsDraftOnlyAndSafeToSerialize() throws {
-        let draft = try CloakDepositDraft(
-            network: .mainnetBeta,
-            sourceWalletAddress: SolanaConstants.systemProgramID,
-            grossLamports: 50_000_000
-        )
 
-        #expect(draft.actionState == .draftOnly)
-        #expect(draft.mintAddress == CloakConstants.nativeSolMint)
-        #expect(draft.feeQuote.totalFeeLamports == 5_150_000)
-        #expect(draft.networkWarning?.lowercased().contains("mainnet") == true)
 
-        let data = try JSONEncoder().encode(draft)
-        let json = try #require(String(data: data, encoding: .utf8)).lowercased()
 
-        #expect(!json.contains("privatekey"))
-        #expect(!json.contains("seedphrase"))
-        #expect(!json.contains("mnemonic"))
-        #expect(!json.contains("nullifier"))
-        #expect(!json.contains("proofinput"))
-    }
 
-    @Test func cloakBridgeUnavailableCannotExecute() async {
-        let bridge = CloakBridgeUnavailable()
-        let request = CloakBridgeRequestSummary(
-            actionKind: .deposit,
-            network: .mainnetBeta,
-            walletPublicAddress: SolanaConstants.systemProgramID,
-            grossLamports: 50_000_000
-        )
 
-        #expect(bridge.checkAvailability() == .lockedInPhase23)
-        #expect(bridge.validateEnvironment(network: .devnet).status == .locked)
 
-        let response = await bridge.executeDeposit(request: request)
-        #expect(response.status == .locked)
-        #expect(response.requestID == request.id)
-        #expect(response.message.contains("No SDK transaction"))
-    }
 
-    @Test func cloakBridgeContractsContainOnlySafeFields() throws {
-        let quote = try CloakFeeModel.quote(grossLamports: 50_000_000)
-        let request = CloakBridgeRequest(
-            command: .depositPlan,
-            actionKind: .deposit,
-            network: .mainnetBeta,
-            walletPublicAddress: SolanaConstants.systemProgramID,
-            amountLamports: 50_000_000,
-            mintAddress: CloakConstants.nativeSolMint,
-            feeQuote: quote
-        )
-        let response = CloakBridgeResponse.locked(request: request)
 
-        try CloakBridgeContractValidator.validate(request)
-        try CloakBridgeContractValidator.validate(response)
 
-        let requestJSON = try #require(String(data: JSONEncoder().encode(request), encoding: .utf8)).lowercased()
-        let responseJSON = try #require(String(data: JSONEncoder().encode(response), encoding: .utf8)).lowercased()
 
-        for forbidden in ["privatekey", "secretkey", "seedphrase", "mnemonic", "walletjson", "utxoprivatekey", "viewingkey", "nullifier", "proofinput", "serializedtransaction", "transactionpayload"] {
-            #expect(!requestJSON.contains(forbidden))
-            #expect(!responseJSON.contains(forbidden))
-        }
-    }
 
-    @Test func cloakBridgeValidatorRejectsForbiddenFields() throws {
-        #expect(CloakBridgeContractValidator.isForbiddenField("privateKey"))
-        #expect(CloakBridgeContractValidator.isForbiddenField("PRIVATE_KEY"))
-        #expect(CloakBridgeContractValidator.isForbiddenField("serializedTransaction"))
-        #expect(CloakBridgeContractValidator.isForbiddenField("rawSignerBytes"))
-        #expect(throws: CloakBridgeValidationError.self) {
-            try CloakBridgeContractValidator.validate(jsonString: #"{"nested":{"viewingKey":"do-not-send"}}"#)
-        }
-        #expect(throws: CloakBridgeValidationError.self) {
-            try CloakBridgeContractValidator.validate(jsonString: #"{"transactionPayload":"do-not-send"}"#)
-        }
-    }
 
-    @Test func cloakBridgeDecodesSDKEnvironmentValidationFields() throws {
-        let raw = """
-        {
-          "id":"33333333-3333-4333-8333-333333333333",
-          "command":"env-check",
-          "status":"ok",
-          "errorCategory":"none",
-          "message":"Environment check passed.",
-          "programId":"zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW",
-          "sdkValidation":{
-            "sdkInstalled":true,
-            "sdkImportOk":true,
-            "sdkVersion":"0.1.6",
-            "cloakProgramId":"zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW",
-            "expectedProgramId":"zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW",
-            "programIdMatches":true,
-            "nativeSolMint":"So11111111111111111111111111111111111111112",
-            "feeHelpersAvailable":true
-          },
-          "environmentValidation":{
-            "solanaRpcUrlStatus":"present-redacted",
-            "rpcUrlRedacted":"SOLANA_RPC_URL configured (redacted)",
-            "rpcProvider":"rpcfast",
-            "rpcHost":"solana-rpc.rpcfast.com",
-            "rpcFastTokenStatus":"present",
-            "rpcMessage":"Using RPC Fast mainnet endpoint with X-Token header.",
-            "requestedNetwork":"mainnet-beta",
-            "networkSupportedForFutureExecution":true,
-            "helperMode":"dry-run-non-executing",
-            "executionCommandsLocked":true,
-            "keypairPathRequired":false,
-            "walletSecretEnvAccepted":false,
-            "suspiciousEnvVarNames":[]
-          },
-          "timestamp":"2026-01-01T00:00:00Z"
-        }
-        """
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        let response = try decoder.decode(CloakBridgeResponse.self, from: Data(raw.utf8))
 
-        #expect(response.command == .environmentCheck)
-        #expect(response.sdkValidation?.sdkVersion == "0.1.6")
-        #expect(response.sdkValidation?.programIDMatches == true)
-        #expect(response.environmentValidation?.solanaRPCURLStatus == .presentRedacted)
-        #expect(response.environmentValidation?.rpcURLRedacted?.contains("redacted") == true)
-        #expect(response.environmentValidation?.rpcProvider == "rpcfast")
-        #expect(response.environmentValidation?.rpcHost == "solana-rpc.rpcfast.com")
-        #expect(response.environmentValidation?.rpcFastTokenStatus == "present")
-        #expect(response.environmentValidation?.walletSecretEnvAccepted == false)
-    }
 
-    @Test func cloakBridgeExecutionPolicyDisablesHelperByDefault() {
-        let policy = CloakBridgeExecutionPolicy.disabled
 
-        #expect(!policy.helperExecutionEnabled)
-        #expect(policy.canInvokeHelper(command: .health, relativePath: policy.allowlistedHelperRelativePath) == false)
-        #expect(policy.allowedCommands.contains(.health))
-        #expect(policy.allowedCommands.contains(.environmentCheck))
-        #expect(policy.allowedCommands.contains(.depositPlan))
-        #expect(!policy.allowedCommands.contains(.executeDeposit))
-        #expect(!CloakBridgeCommand.executeDeposit.isHelperCommandAllowedInPhase23)
-    }
 
-    @Test func cloakBridgeDepositPlanResponseStaysLocked() throws {
-        let draft = try CloakDepositDraft(
-            network: .mainnetBeta,
-            sourceWalletAddress: SolanaConstants.systemProgramID,
-            grossLamports: 50_000_000
-        )
-        let response = CloakBridgeUnavailable().depositPlan(draft: draft)
 
-        #expect(response.command == .depositPlan)
-        #expect(response.status == .locked)
-        #expect(response.errorCategory == .lockedInPhase23)
-        #expect(response.feeQuote?.totalFeeLamports == 5_150_000)
-        #expect(response.transactionSignature == nil)
-        #expect(response.commitmentPrefix == nil)
-    }
 
-    @Test func cloakHelperDisabledByDefaultDoesNotInvokeRunner() async {
-        let runner = MockCloakHelperProcessRunner(response: .success(.okResponse(command: .health)))
-        let adapter = CloakHelperInvocationAdapter(
-            policy: .disabled,
-            projectRoot: URL(fileURLWithPath: "/tmp/gorkh"),
-            pathResolver: MockCloakHelperPathResolver(),
-            processRunner: runner
-        )
-        let response = await adapter.invoke(CloakBridgeRequest(command: .health, network: .mainnetBeta))
 
-        #expect(response.status == .locked)
-        #expect(response.errorCategory == .lockedInPhase23)
-        #expect(runner.invocationCount == 0)
-    }
 
-    @Test func cloakHelperAllowlistedCommandSucceedsWithMockRunner() async {
-        let runner = MockCloakHelperProcessRunner(response: .success(.okResponse(command: .health)))
-        let adapter = CloakHelperInvocationAdapter(
-            policy: .dryRunEnabledForDevelopment(allowedNodeExecutablePaths: ["/usr/bin/node"]),
-            projectRoot: URL(fileURLWithPath: "/tmp/gorkh"),
-            pathResolver: MockCloakHelperPathResolver(),
-            processRunner: runner
-        )
-        let response = await adapter.invoke(CloakBridgeRequest(command: .health, network: .mainnetBeta))
 
-        #expect(response.status == .ok)
-        #expect(response.command == .health)
-        #expect(runner.invocationCount == 1)
-        #expect(runner.lastCommand == .health)
-    }
 
-    @Test func cloakHelperDepositPlanDryRunReturnsNoExecutablePayload() async throws {
-        let quote = try CloakFeeModel.quote(grossLamports: 50_000_000)
-        let runner = MockCloakHelperProcessRunner(response: .success(.okResponse(
-            command: .depositPlan,
-            status: .locked,
-            errorCategory: .lockedInPhase23,
-            feeQuote: quote
-        )))
-        let adapter = CloakHelperInvocationAdapter(
-            policy: .dryRunEnabledForDevelopment(allowedNodeExecutablePaths: ["/usr/bin/node"]),
-            projectRoot: URL(fileURLWithPath: "/tmp/gorkh"),
-            pathResolver: MockCloakHelperPathResolver(),
-            processRunner: runner
-        )
-        let response = await adapter.invoke(CloakBridgeRequest(
-            command: .depositPlan,
-            actionKind: .deposit,
-            network: .mainnetBeta,
-            walletPublicAddress: SolanaConstants.systemProgramID,
-            amountLamports: 50_000_000,
-            mintAddress: CloakConstants.nativeSolMint,
-            feeQuote: quote
-        ))
 
-        #expect(response.status == .locked)
-        #expect(response.feeQuote?.totalFeeLamports == 5_150_000)
-        #expect(response.transactionSignature == nil)
-        #expect(response.commitmentPrefix == nil)
-    }
 
-    @Test func cloakHelperDecodesTypeScriptDepositPlanResponse() async throws {
-        let raw = """
-        {
-          "id":"11111111-1111-4111-8111-111111111111",
-          "requestId":"22222222-2222-4222-8222-222222222222",
-          "command":"deposit-plan",
-          "actionKind":"deposit",
-          "status":"locked",
-          "errorCategory":"locked-in-phase-2-3",
-          "message":"Deposit plan created with SDK import validation. No transaction payload is returned in Phase 2.3.",
-          "programId":"zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW",
-          "feeQuote":{
-            "grossLamports":"50000000",
-            "fixedFeeLamports":"5000000",
-            "variableFeeLamports":"150000",
-            "totalFeeLamports":"5150000",
-            "netLamports":"44850000",
-            "minimumDepositLamports":"10000000"
-          },
-          "sdkValidation":{
-            "sdkInstalled":true,
-            "sdkImportOk":true,
-            "sdkVersion":"0.1.6",
-            "cloakProgramId":"zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW",
-            "expectedProgramId":"zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW",
-            "programIdMatches":true,
-            "nativeSolMint":"So11111111111111111111111111111111111111112",
-            "feeHelpersAvailable":true
-          },
-          "feeValidation":{
-            "available":true,
-            "source":"sdk",
-            "samples":[
-              {
-                "grossLamports":"50000000",
-                "gorkhFeeLamports":"5150000",
-                "gorkhNetLamports":"44850000",
-                "sdkFeeLamports":"5150000",
-                "sdkNetLamports":"44850000",
-                "matches":true
-              }
-            ],
-            "message":"Cloak SDK SOL fee helpers match the GORKH local model for sample values."
-          },
-          "nextRequiredGates":["signer bridge","wallet unlock","LocalAuthentication","Shield review","explicit approval","audit log","tiny mainnet smoke"],
-          "timestamp":"2026-01-01T00:00:00Z"
-        }
-        """
-        let adapter = CloakHelperInvocationAdapter(
-            policy: .dryRunEnabledForDevelopment(allowedNodeExecutablePaths: ["/usr/bin/node"]),
-            projectRoot: URL(fileURLWithPath: "/tmp/gorkh"),
-            pathResolver: MockCloakHelperPathResolver(),
-            processRunner: MockCloakHelperProcessRunner(rawStdout: raw)
-        )
-        let response = await adapter.invoke(CloakBridgeRequest(
-            command: .depositPlan,
-            actionKind: .deposit,
-            network: .mainnetBeta,
-            walletPublicAddress: SolanaConstants.systemProgramID,
-            amountLamports: 50_000_000,
-            mintAddress: CloakConstants.nativeSolMint,
-            feeQuote: try CloakFeeModel.quote(grossLamports: 50_000_000)
-        ))
 
-        #expect(response.command == .depositPlan)
-        #expect(response.errorCategory == .lockedInPhase23)
-        #expect(response.feeQuote?.totalFeeLamports == 5_150_000)
-        #expect(response.sdkValidation?.sdkImportOk == true)
-        #expect(response.sdkValidation?.programIDMatches == true)
-        #expect(response.sdkValidation?.nativeSOLMint == CloakConstants.nativeSolMint)
-        #expect(response.feeValidation?.allSamplesMatch == true)
-        #expect(response.nextRequiredGates?.contains("Shield review") == true)
-        #expect(response.transactionSignature == nil)
-    }
 
-    @Test func cloakHelperForbiddenCommandIsRejectedBeforeRunner() async {
-        let runner = MockCloakHelperProcessRunner(response: .success(.okResponse(command: .executeDeposit)))
-        let adapter = CloakHelperInvocationAdapter(
-            policy: .dryRunEnabledForDevelopment(allowedNodeExecutablePaths: ["/usr/bin/node"]),
-            projectRoot: URL(fileURLWithPath: "/tmp/gorkh"),
-            pathResolver: MockCloakHelperPathResolver(),
-            processRunner: runner
-        )
-        let response = await adapter.invoke(CloakBridgeRequest(command: .executeDeposit, actionKind: .deposit, network: .mainnetBeta))
-
-        #expect(response.status == .locked)
-        #expect(response.errorCategory == .unsupportedCommand)
-        #expect(runner.invocationCount == 0)
-    }
-
-    @Test func cloakHelperRejectsUserControlledExecutableAndShellPaths() {
-        let resolver = CloakHelperPathResolver()
-
-        #expect(throws: CloakHelperPathError.self) {
-            _ = try resolver.resolveNodeExecutable(candidates: ["/bin/sh"])
-        }
-        #expect(throws: CloakHelperPathError.self) {
-            _ = try resolver.resolve(policy: CloakBridgeExecutionPolicy(
-                helperExecutionEnabled: true,
-                allowlistedHelperRelativePath: "../tools/cloak-bridge/src/index.ts",
-                allowedNodeExecutablePaths: ["/usr/bin/node"],
-                allowedCommands: [.health]
-            ), projectRoot: URL(fileURLWithPath: "/tmp/gorkh"))
-        }
-    }
-
-    @Test func cloakHelperForbiddenResponseIsRejectedByValidator() async {
-        let runner = MockCloakHelperProcessRunner(rawStdout: #"{"command":"health","status":"ok","errorCategory":"none","programId":"zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW","message":"bad","timestamp":"2026-01-01T00:00:00Z","viewingKey":"no"}"#)
-        let adapter = CloakHelperInvocationAdapter(
-            policy: .dryRunEnabledForDevelopment(allowedNodeExecutablePaths: ["/usr/bin/node"]),
-            projectRoot: URL(fileURLWithPath: "/tmp/gorkh"),
-            pathResolver: MockCloakHelperPathResolver(),
-            processRunner: runner
-        )
-        let response = await adapter.invoke(CloakBridgeRequest(command: .health, network: .mainnetBeta))
-
-        #expect(response.status == .locked)
-        #expect(response.errorCategory == .forbiddenField)
-    }
-
-    @Test func cloakHelperStderrRedactionRemovesSensitiveMaterial() {
-        #expect(CloakHelperStderrRedactor.redact("privateKey=abc") == "[redacted cloak helper stderr]")
-        #expect(CloakHelperStderrRedactor.redact("safe warning").contains("safe warning"))
-    }
-
-    @Test func cloakPrivateVaultStatusOnlyStoresNoPrivateReferences() {
-        let walletID = UUID()
-        let vault = CloakPrivateVaultStatusOnly()
-        let status = vault.status(for: walletID)
-
-        #expect(status.walletID == walletID)
-        #expect(status.privateWalletStatus == .statusOnly)
-        #expect(status.availableReferenceKinds.isEmpty)
-        #expect(!status.hasViewingKeyReference)
-        #expect(!status.hasUtxoReference)
-        #expect(!status.hasScanCacheReference)
-        #expect(!status.canClearPrivateData)
-        #expect(throws: CloakPrivateVaultError.self) {
-            try vault.storeReference(kind: .viewingKeyReference, referenceID: "reference-only", for: walletID)
-        }
-    }
-
-    @Test func cloakAuditEventsDropPrivateMaterialKeys() throws {
-        let event = AuditEvent(
-            kind: .cloakDepositDraftCreated,
-            walletID: UUID(),
-            network: .mainnetBeta,
-            publicAddress: SolanaConstants.systemProgramID,
-            message: "Cloak draft",
-            details: [
-                "grossLamports": "50000000",
-                "cloakNote": "do-not-store",
-                "utxoPrivateKey": "do-not-store",
-                "viewingKey": "do-not-store",
-                "nullifierSecret": "do-not-store",
-                "proofInput": "do-not-store"
-            ]
-        )
-
-        let data = try JSONEncoder().encode(event)
-        let json = try #require(String(data: data, encoding: .utf8))
-
-        #expect(json.contains("50000000"))
-        #expect(!json.contains("do-not-store"))
-        #expect(!json.contains("cloakNote"))
-        #expect(!json.contains("utxoPrivateKey"))
-        #expect(!json.contains("viewingKey"))
-        #expect(!json.contains("nullifierSecret"))
-        #expect(!json.contains("proofInput"))
-    }
-
-    @Test func cloakSignerRequestSummarySerializationHasNoForbiddenFields() throws {
-        let draft = try CloakDepositDraft(
-            network: .mainnetBeta,
-            sourceWalletAddress: SolanaConstants.systemProgramID,
-            grossLamports: 50_000_000
-        )
-        let request = CloakSignerRequestSummary.depositPreview(draft: draft)
-
-        try CloakBridgeContractValidator.validate(request)
-        try CloakSignerBridgeValidator.validate(request, expectedWalletPublicKey: SolanaConstants.systemProgramID)
-
-        let data = try JSONEncoder().encode(request)
-        let json = try #require(String(data: data, encoding: .utf8)).lowercased()
-
-        #expect(json.contains("draftfingerprint"))
-        for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "utxoprivatekey", "viewingkey", "nullifier", "proofinput", "serializedtransaction", "transactionpayload", "transactionbytes", "messagebytes"] {
-            #expect(!json.contains(forbidden))
-        }
-    }
-
-    @Test func cloakSignerValidatorRejectsUnsafeOrMismatchedRequests() throws {
-        let valid = CloakSignerRequestSummary(
-            requestKind: .signTransactionPreview,
-            walletPublicKey: SolanaConstants.systemProgramID,
-            network: .mainnetBeta,
-            actionKind: .deposit,
-            amountLamports: 50_000_000,
-            mintAddress: CloakConstants.nativeSolMint,
-            feeQuote: try CloakFeeModel.quote(grossLamports: 50_000_000),
-            humanReadableSummary: "safe",
-            expectedTransactionPurpose: "safe",
-            expectedMessagePurpose: "safe",
-            draftFingerprint: "abc123"
-        )
-
-        #expect(throws: CloakSignerBridgeValidationError.self) {
-            try CloakSignerBridgeValidator.validate(CloakSignerRequestSummary(
-                requestKind: valid.requestKind,
-                walletPublicKey: valid.walletPublicKey,
-                network: valid.network,
-                actionKind: valid.actionKind,
-                amountLamports: valid.amountLamports,
-                mintAddress: valid.mintAddress,
-                programID: "bad-program",
-                feeQuote: valid.feeQuote,
-                humanReadableSummary: valid.humanReadableSummary,
-                expectedTransactionPurpose: valid.expectedTransactionPurpose,
-                expectedMessagePurpose: valid.expectedMessagePurpose,
-                draftFingerprint: valid.draftFingerprint
-            ))
-        }
-        #expect(throws: CloakSignerBridgeValidationError.self) {
-            try CloakSignerBridgeValidator.validate(CloakSignerRequestSummary(
-                requestKind: valid.requestKind,
-                walletPublicKey: valid.walletPublicKey,
-                network: .devnet,
-                actionKind: valid.actionKind,
-                amountLamports: valid.amountLamports,
-                mintAddress: valid.mintAddress,
-                feeQuote: valid.feeQuote,
-                humanReadableSummary: valid.humanReadableSummary,
-                expectedTransactionPurpose: valid.expectedTransactionPurpose,
-                expectedMessagePurpose: valid.expectedMessagePurpose,
-                draftFingerprint: valid.draftFingerprint
-            ))
-        }
-        #expect(throws: CloakSignerBridgeValidationError.self) {
-            try CloakSignerBridgeValidator.validate(CloakSignerRequestSummary(
-                requestKind: valid.requestKind,
-                walletPublicKey: valid.walletPublicKey,
-                network: valid.network,
-                actionKind: valid.actionKind,
-                amountLamports: 9_999_999,
-                mintAddress: valid.mintAddress,
-                feeQuote: nil,
-                humanReadableSummary: valid.humanReadableSummary,
-                expectedTransactionPurpose: valid.expectedTransactionPurpose,
-                expectedMessagePurpose: valid.expectedMessagePurpose,
-                draftFingerprint: valid.draftFingerprint
-            ))
-        }
-        #expect(throws: CloakSignerBridgeValidationError.self) {
-            try CloakSignerBridgeValidator.validate(CloakSignerRequestSummary(
-                requestKind: valid.requestKind,
-                walletPublicKey: valid.walletPublicKey,
-                network: valid.network,
-                actionKind: valid.actionKind,
-                amountLamports: valid.amountLamports,
-                mintAddress: valid.mintAddress,
-                feeQuote: valid.feeQuote,
-                humanReadableSummary: valid.humanReadableSummary,
-                expectedTransactionPurpose: valid.expectedTransactionPurpose,
-                expectedMessagePurpose: valid.expectedMessagePurpose,
-                draftFingerprint: ""
-            ))
-        }
-        #expect(throws: CloakSignerBridgeValidationError.self) {
-            try CloakSignerBridgeValidator.validate(valid, expectedWalletPublicKey: "different-wallet")
-        }
-    }
-
-    @Test func cloakSignerPolicyReturnsLockedAndRequiresAllApprovalGates() throws {
-        let draft = try CloakDepositDraft(
-            network: .mainnetBeta,
-            sourceWalletAddress: SolanaConstants.systemProgramID,
-            grossLamports: 50_000_000
-        )
-        let request = CloakSignerRequestSummary.depositPreview(draft: draft)
-        let result = CloakSignerBridgePolicy.locked.signingDecision(
-            request: request,
-            expectedWalletPublicKey: SolanaConstants.systemProgramID
-        )
-
-        #expect(result.state == .locked)
-        #expect(result.failures.contains("Signing is not enabled for Cloak in Phase 2.4."))
-        #expect(result.requirements.contains(.walletUnlocked))
-        #expect(result.requirements.contains(.localAuthentication))
-        #expect(result.requirements.contains(.shieldReviewCompleted))
-        #expect(result.requirements.contains(.explicitUserApproval))
-        #expect(result.requirements.contains(.mainnetConfirmationPhrase))
-        #expect(result.requirements.contains(.draftFingerprintMatch))
-        #expect(result.requirements.contains(.auditBeforeSigning))
-        #expect(result.requirements.contains(.auditAfterSigning))
-        #expect(result.requirements.contains(.executionLocked))
-    }
-
-    @Test func cloakBridgeDecodesLockedSignerPlaceholderFromHelper() throws {
-        let raw = """
-        {
-          "id":"11111111-1111-4111-8111-111111111111",
-          "requestId":"22222222-2222-4222-8222-222222222222",
-          "command":"deposit-plan",
-          "actionKind":"deposit",
-          "status":"locked",
-          "errorCategory":"locked-in-phase-2-3",
-          "message":"Deposit plan created with locked signer preview.",
-          "programId":"zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW",
-          "feeQuote":{
-            "grossLamports":"50000000",
-            "fixedFeeLamports":"5000000",
-            "variableFeeLamports":"150000",
-            "totalFeeLamports":"5150000",
-            "netLamports":"44850000",
-            "minimumDepositLamports":"10000000"
-          },
-          "signerRequestSummary":{
-            "id":"33333333-3333-4333-8333-333333333333",
-            "requestKind":"sign_transaction_preview",
-            "walletPublicKey":"11111111111111111111111111111111",
-            "network":"mainnet-beta",
-            "actionKind":"deposit",
-            "amountLamports":"50000000",
-            "mintAddress":"So11111111111111111111111111111111111111112",
-            "programId":"zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW",
-            "feeQuote":{
-              "grossLamports":"50000000",
-              "fixedFeeLamports":"5000000",
-              "variableFeeLamports":"150000",
-              "totalFeeLamports":"5150000",
-              "netLamports":"44850000",
-              "minimumDepositLamports":"10000000"
-            },
-            "humanReadableSummary":"Future Cloak SOL deposit review for 50000000 lamports.",
-            "expectedTransactionPurpose":"Create a reviewed Cloak public deposit into a shielded balance.",
-            "expectedMessagePurpose":"Future viewing-key registration may require a separately reviewed message signature.",
-            "draftFingerprint":"abc123",
-            "approvalState":"locked",
-            "bridgeState":"locked",
-            "timestamp":"2026-01-01T00:00:00Z"
-          },
-          "timestamp":"2026-01-01T00:00:00Z"
-        }
-        """
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        let response = try decoder.decode(CloakBridgeResponse.self, from: Data(raw.utf8))
-
-        #expect(response.signerRequestSummary?.requestKind == .signTransactionPreview)
-        #expect(response.signerRequestSummary?.amountLamports == 50_000_000)
-        #expect(response.signerRequestSummary?.bridgeState == .locked)
-        #expect(response.signerRequestSummary?.programID == CloakConstants.programID)
-        #expect(response.transactionSignature == nil)
-    }
-
-    @Test func cloakSigningRequestValidatorRequiresExactApprovedContext() throws {
-        let requestID = UUID()
-        let fingerprint = "approved-fingerprint"
-        let request = try CloakBridgeSigningRequest.testRequest(
-            requestID: requestID,
-            fingerprint: fingerprint
-        )
-        let context = CloakSigningApprovalContext(
-            requestID: requestID,
-            command: .executeDeposit,
-            actionKind: .deposit,
-            walletPublicKey: SolanaConstants.systemProgramID,
-            network: .mainnetBeta,
-            amountLamports: 50_000_000,
-            mintAddress: CloakConstants.nativeSolMint,
-            programID: CloakConstants.programID,
-            approvedDraftFingerprint: fingerprint,
-            feeAcknowledged: true,
-            shieldReviewCompleted: true,
-            explicitApproval: true,
-            mainnetConfirmation: TransactionApprovalPolicy.requiredMainnetConfirmation
-        )
-
-        try CloakSigningRequestValidator.validate(request, context: context)
-
-        #expect(throws: CloakExecutionBridgeError.self) {
-            try CloakSigningRequestValidator.validate(
-                request.replacing(programID: "bad-program"),
-                context: context
-            )
-        }
-        #expect(throws: CloakExecutionBridgeError.self) {
-            try CloakSigningRequestValidator.validate(
-                request.replacing(walletPublicKey: "different-wallet"),
-                context: context
-            )
-        }
-        #expect(throws: CloakExecutionBridgeError.self) {
-            try CloakSigningRequestValidator.validate(
-                request.replacing(amountLamports: 49_999_999),
-                context: context
-            )
-        }
-        #expect(throws: CloakExecutionBridgeError.self) {
-            try CloakSigningRequestValidator.validate(
-                request.replacing(expiresAt: Date().addingTimeInterval(-1)),
-                context: context
-            )
-        }
-        #expect(throws: CloakExecutionBridgeError.self) {
-            try CloakSigningRequestValidator.validate(
-                request,
-                context: CloakSigningApprovalContext(
-                    requestID: requestID,
-                    command: .executeDeposit,
-                    actionKind: .deposit,
-                    walletPublicKey: SolanaConstants.systemProgramID,
-                    network: .mainnetBeta,
-                    amountLamports: 50_000_000,
-                    mintAddress: CloakConstants.nativeSolMint,
-                    programID: CloakConstants.programID,
-                    approvedDraftFingerprint: fingerprint,
-                    feeAcknowledged: true,
-                    shieldReviewCompleted: true,
-                    explicitApproval: false,
-                    mainnetConfirmation: TransactionApprovalPolicy.requiredMainnetConfirmation
-                )
-            )
-        }
-    }
-
-    @Test func cloakPrivateRecordMetadataAndExecutionFramesStaySafeToSerialize() throws {
-        let metadata = CloakPrivateRecordMetadata(
-            id: UUID(),
-            walletID: UUID(),
-            walletPublicKey: SolanaConstants.systemProgramID,
-            mintAddress: CloakConstants.nativeSolMint,
-            amountLamports: 44_850_000,
-            commitmentPrefix: "abcdef123456",
-            leafIndex: 7,
-            depositSignature: "depositSignature",
-            withdrawSignature: nil,
-            requestID: UUID(),
-            state: .deposited,
-            createdAt: Date(),
-            updatedAt: Date()
-        )
-        let frame = CloakExecutionResultFrame(
-            type: "result",
-            response: CloakBridgeResponse(
-                requestID: metadata.requestID,
-                command: .executeDeposit,
-                actionKind: .deposit,
-                status: .ok,
-                message: "safe",
-                transactionSignature: "depositSignature",
-                commitmentPrefix: "abcdef123456"
-            ),
-            secureOutputStateBase64: Data([1, 2, 3]).base64EncodedString(),
-            secureViewingStateBase64: Data([4, 5, 6]).base64EncodedString(),
-            secureSpentStateBase64: nil,
-            leafIndex: 7
-        )
-
-        try CloakBridgeContractValidator.validate(metadata)
-        try CloakBridgeContractValidator.validate(frame.response)
-
-        let combined = try #require(String(
-            data: JSONEncoder().encode([String(data: JSONEncoder().encode(metadata), encoding: .utf8) ?? ""]),
-            encoding: .utf8
-        )).lowercased()
-        for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "utxoprivatekey", "nullifier", "proofinput", "transactionpayload"] {
-            #expect(!combined.contains(forbidden))
-        }
-        #expect(frame.response.transactionSignature == "depositSignature")
-        #expect(frame.secureOutputStateBase64 != nil)
-    }
-
-    @Test func cloakPhase25AllowsOnlyDepositAndFullWithdrawExecutionCommands() {
-        let policy = CloakBridgeExecutionPolicy.phase25Enabled(allowedNodeExecutablePaths: ["/usr/bin/node"])
-
-        #expect(policy.allowedCommands.contains(.executeDeposit))
-        #expect(policy.allowedCommands.contains(.fullWithdraw))
-        #expect(CloakBridgeCommand.executeDeposit.isHelperCommandAllowedInPhase25)
-        #expect(CloakBridgeCommand.fullWithdraw.isHelperCommandAllowedInPhase25)
-        #expect(!policy.allowedCommands.contains(.partialWithdraw))
-        #expect(!CloakBridgeCommand.partialWithdraw.isHelperCommandAllowedInPhase25)
-        #expect(!CloakBridgeCommand.privateTransfer.isHelperCommandAllowedInPhase25)
-        #expect(!CloakBridgeCommand.swap.isHelperCommandAllowedInPhase25)
-    }
-
-    @Test func cloakPhase26AddsReadOnlyScanWithoutPartialWithdraw() {
-        let policy = CloakBridgeExecutionPolicy.phase26Enabled(allowedNodeExecutablePaths: ["/usr/bin/node"])
-
-        #expect(policy.allowedCommands.contains(.scan))
-        #expect(policy.canInvokeHelper(command: .scan, relativePath: policy.allowlistedHelperRelativePath))
-        #expect(CloakBridgeCommand.scan.isHelperCommandAllowedInPhase26)
-        #expect(!policy.allowedCommands.contains(.partialWithdraw))
-        #expect(!CloakBridgeCommand.partialWithdraw.isHelperCommandAllowedInPhase26)
-        #expect(!CloakBridgeCommand.complianceExport.isHelperCommandAllowedInPhase26)
-    }
-
-    @Test func cloakScanSummarySerializesWithoutSecretFields() throws {
-        let summary = CloakScanSummary(
-            status: .loaded,
-            transactions: [
-                CloakScanTransactionSummary(
-                    signature: "scanSignature",
-                    txType: "deposit",
-                    amountLamports: "10000000",
-                    feeLamports: "5000000",
-                    netAmountLamports: "5000000",
-                    runningBalanceLamports: "5000000",
-                    timestampMillis: "1767225600000",
-                    recipient: nil,
-                    commitmentPrefix: "abcdef123456",
-                    mintAddress: CloakConstants.nativeSolMint,
-                    symbol: "SOL",
-                    status: "scanned"
-                )
-            ],
-            totalDepositsLamports: "10000000",
-            totalWithdrawalsLamports: "0",
-            totalFeesLamports: "5000000",
-            netChangeLamports: "5000000",
-            finalBalanceLamports: "5000000",
-            transactionCount: 1,
-            scannedAt: Date(),
-            lastSignature: "scanSignature",
-            errorMessage: nil,
-            rpcProvider: "rpcfast",
-            rpcHost: "solana-rpc.rpcfast.com",
-            complianceSummary: CloakComplianceSummary(
-                transactionCount: 1,
-                totalDepositsLamports: "10000000",
-                totalWithdrawalsLamports: "0",
-                totalFeesLamports: "5000000",
-                netChangeLamports: "5000000",
-                finalBalanceLamports: "5000000",
-                mintBreakdown: [
-                    CloakComplianceMintBreakdown(mintAddress: CloakConstants.nativeSolMint, symbol: "SOL", netLamports: "5000000")
-                ],
-                dateRangeStart: "1767225600000",
-                dateRangeEnd: "1767225600000",
-                generatedAt: Date()
-            )
-        )
-
-        try CloakBridgeContractValidator.validate(summary)
-        let json = try #require(String(data: JSONEncoder().encode(summary), encoding: .utf8)).lowercased()
-        for forbidden in ["privatekey", "secretkey", "signingseed", "seedphrase", "mnemonic", "walletjson", "utxoprivatekey", "viewingkey", "nullifier", "proofinput", "transactionpayload", "serializedtransaction"] {
-            #expect(!json.contains(forbidden))
-        }
-        #expect(json.contains("scansignature"))
-        #expect(json.contains("solana-rpc.rpcfast.com"))
-    }
-
-    @Test func cloakScanCacheClearKeepsOnlySafeSummaries() throws {
-        let suiteName = "ai.gorkh.tests.cloak.scan.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let store = CloakScanCacheStore(defaults: defaults)
-        let walletID = UUID()
-        let summary = CloakScanSummary(
-            status: .empty,
-            transactions: [],
-            totalDepositsLamports: "0",
-            totalWithdrawalsLamports: "0",
-            totalFeesLamports: "0",
-            netChangeLamports: "0",
-            finalBalanceLamports: "0",
-            transactionCount: 0,
-            scannedAt: Date(),
-            lastSignature: nil,
-            errorMessage: nil,
-            rpcProvider: "fallback",
-            rpcHost: "api.mainnet-beta.solana.com",
-            complianceSummary: nil
-        )
-
-        store.upsert(summary: summary, walletID: walletID)
-        #expect(store.load(walletID: walletID)?.status == .empty)
-        let persisted = try #require(defaults.data(forKey: CloakScanCacheStore.cacheKey))
-        let persistedText = try #require(String(data: persisted, encoding: .utf8)).lowercased()
-        #expect(!persistedText.contains("viewingkey"))
-        #expect(!persistedText.contains("utxoprivatekey"))
-        #expect(!persistedText.contains("nullifier"))
-        #expect(!persistedText.contains("proofinput"))
-
-        store.clear(walletID: walletID)
-        #expect(store.load(walletID: walletID) == nil)
-    }
-
-    @Test func cloakActivityReconcilerReportsMatchedLocalOnlyAndChainOnly() {
-        let walletID = UUID()
-        let localMatched = CloakPrivateRecordMetadata(
-            id: UUID(),
-            walletID: walletID,
-            walletPublicKey: SolanaConstants.systemProgramID,
-            mintAddress: CloakConstants.nativeSolMint,
-            amountLamports: 10_000_000,
-            commitmentPrefix: "localmatch",
-            leafIndex: 1,
-            depositSignature: "matchedSignature",
-            withdrawSignature: nil,
-            requestID: UUID(),
-            state: .deposited,
-            createdAt: Date(),
-            updatedAt: Date()
-        )
-        let localOnly = CloakPrivateRecordMetadata(
-            id: UUID(),
-            walletID: walletID,
-            walletPublicKey: SolanaConstants.systemProgramID,
-            mintAddress: CloakConstants.nativeSolMint,
-            amountLamports: 20_000_000,
-            commitmentPrefix: "localonly",
-            leafIndex: 2,
-            depositSignature: "localOnlySignature",
-            withdrawSignature: nil,
-            requestID: UUID(),
-            state: .deposited,
-            createdAt: Date(),
-            updatedAt: Date()
-        )
-        let summary = CloakScanSummary(
-            status: .loaded,
-            transactions: [
-                CloakScanTransactionSummary(signature: "matchedSignature", txType: "deposit", amountLamports: "10000000", feeLamports: "0", netAmountLamports: "10000000", runningBalanceLamports: nil, timestampMillis: nil, recipient: nil, commitmentPrefix: "localmatch", mintAddress: CloakConstants.nativeSolMint, symbol: "SOL", status: "scanned"),
-                CloakScanTransactionSummary(signature: "chainOnlySignature", txType: "withdraw", amountLamports: "5000000", feeLamports: "0", netAmountLamports: "-5000000", runningBalanceLamports: nil, timestampMillis: nil, recipient: nil, commitmentPrefix: "chainonly", mintAddress: CloakConstants.nativeSolMint, symbol: "SOL", status: "scanned")
-            ],
-            totalDepositsLamports: "10000000",
-            totalWithdrawalsLamports: "5000000",
-            totalFeesLamports: "0",
-            netChangeLamports: "5000000",
-            finalBalanceLamports: "5000000",
-            transactionCount: 2,
-            scannedAt: Date(),
-            lastSignature: "chainOnlySignature",
-            errorMessage: nil,
-            rpcProvider: "rpcfast",
-            rpcHost: "solana-rpc.rpcfast.com",
-            complianceSummary: nil
-        )
-
-        let reconciled = CloakActivityReconciler.reconcile(localRecords: [localMatched, localOnly], scanSummary: summary)
-
-        #expect(reconciled.contains { $0.state == .matched && $0.chainSignature == "matchedSignature" })
-        #expect(reconciled.contains { $0.state == .localOnly && $0.chainSignature == "localOnlySignature" })
-        #expect(reconciled.contains { $0.state == .chainOnly && $0.chainSignature == "chainOnlySignature" })
-    }
-
-    @Test func cloakScanPolicyRequiresMainnetUnlockAndScanCredential() {
-        let status = CloakVaultStatus(
-            walletID: UUID(),
-            privateWalletStatus: .ready,
-            availableReferenceKinds: [.encryptedUtxoReference, .viewingKeyReference],
-            storageDescription: "ready",
-            canClearPrivateData: true
-        )
-
-        #expect(CloakScanPolicy.credentialStatus(vaultStatus: status, vaultState: .unlocked) == .stored)
-        #expect(CloakScanPolicy.canScan(vaultStatus: status, vaultState: .unlocked, network: .mainnetBeta))
-        #expect(!CloakScanPolicy.canScan(vaultStatus: status, vaultState: .locked, network: .mainnetBeta))
-        #expect(!CloakScanPolicy.canScan(vaultStatus: status, vaultState: .unlocked, network: .devnet))
-    }
 
     @Test func portfolioModelsAndSnapshotsSerializeWithoutSecrets() throws {
         let profile = WalletProfile(label: "Portfolio", publicAddress: SolanaConstants.systemProgramID)
@@ -3811,7 +2944,7 @@ struct GORKHTests {
         #expect(WalletActivityCategory.category(for: .pnlRefreshed) == .pnl)
         #expect(WalletActivityStatus.status(for: .swapSimulationFailed) == .failed)
 
-        let activitySource = try sourceText(relativePath: "GORKH/Modules/Wallet/AuditLogView.swift")
+        let activitySource = try sourceText(relativePath: "KeySlot/Modules/Wallet/AuditLogView.swift")
         #expect(activitySource.contains("GorkhPanel(\"Activity\")"))
         #expect(activitySource.contains("DisclosureGroup(\"Technical details\")"))
         #expect(!activitySource.contains("GorkhPanel(\"Audit Log\")"))
@@ -3853,12 +2986,12 @@ struct GORKHTests {
 
     @Test func walletProductionUXSourceDoesNotAddExecutionOrForbiddenProductCopy() throws {
         let files = [
-            "GORKH/Modules/Wallet/WalletOverviewView.swift",
-            "GORKH/Modules/Wallet/WalletReceiveView.swift",
-            "GORKH/Modules/Wallet/WalletSectionNavigation.swift",
-            "GORKH/Modules/Wallet/WalletSecurityStatusStripView.swift",
-            "GORKH/Modules/Wallet/WalletEmptyStateView.swift",
-            "GORKH/Modules/Wallet/WalletView.swift"
+            "KeySlot/Modules/Wallet/WalletOverviewView.swift",
+            "KeySlot/Modules/Wallet/WalletReceiveView.swift",
+            "KeySlot/Modules/Wallet/WalletSectionNavigation.swift",
+            "KeySlot/Modules/Wallet/WalletSecurityStatusStripView.swift",
+            "KeySlot/Modules/Wallet/WalletEmptyStateView.swift",
+            "KeySlot/Modules/Wallet/WalletView.swift"
         ]
         let source = try files.map(sourceText(relativePath:)).joined(separator: "\n").lowercased()
 
@@ -3879,15 +3012,15 @@ struct GORKHTests {
     }
 
     @Test func walletProductionQAChecklistAndWindowSizingArePresent() throws {
-        let appSource = try sourceText(relativePath: "GORKH/App/GORKHApp.swift")
+        let appSource = try sourceText(relativePath: "KeySlot/App/KeySlotApp.swift")
         #expect(appSource.contains(".defaultSize(width: 1360, height: 860)"))
         #expect(appSource.contains(".windowResizability(.contentMinSize)"))
 
-        let overviewSource = try sourceText(relativePath: "GORKH/Modules/Wallet/WalletOverviewView.swift")
-        let portfolioSource = try sourceText(relativePath: "GORKH/Modules/Wallet/Portfolio/WalletPortfolioView.swift")
-        let receiveSource = try sourceText(relativePath: "GORKH/Modules/Wallet/WalletReceiveView.swift")
-        let activitySource = try sourceText(relativePath: "GORKH/Modules/Wallet/AuditLogView.swift")
-        let walletSource = try sourceText(relativePath: "GORKH/Modules/Wallet/WalletView.swift")
+        let overviewSource = try sourceText(relativePath: "KeySlot/Modules/Wallet/WalletOverviewView.swift")
+        let portfolioSource = try sourceText(relativePath: "KeySlot/Modules/Wallet/Portfolio/WalletPortfolioView.swift")
+        let receiveSource = try sourceText(relativePath: "KeySlot/Modules/Wallet/WalletReceiveView.swift")
+        let activitySource = try sourceText(relativePath: "KeySlot/Modules/Wallet/AuditLogView.swift")
+        let walletSource = try sourceText(relativePath: "KeySlot/Modules/Wallet/WalletView.swift")
 
         #expect(overviewSource.contains("wallet.overview"))
         #expect(portfolioSource.contains("wallet.portfolio"))
@@ -3909,7 +3042,6 @@ struct GORKHTests {
 
         let readiness = try sourceText(relativePath: "../../../docs/qa/wallet-release-readiness.md")
         #expect(readiness.contains("Wallet Release Readiness"))
-        #expect(readiness.contains("Cloak tiny mainnet deposit/withdraw/scan"))
         #expect(readiness.contains("Orca harvest with an owned LP position"))
         #expect(readiness.contains("RPC Fast token read-path smoke"))
     }
@@ -3950,67 +3082,6 @@ struct GORKHTests {
         }
     }
 
-    @Test func agentSectionAndZerionFoundationGateTinySwapOnly() throws {
-        #expect(GORKHModule.allCases.map(\.title) == ["Wallet", "Agent", "Transaction Studio", "Developer Workstation", "Settings"])
-
-        let sourceFiles = [
-            "GORKH/App/AppState.swift",
-            "GORKH/App/GORKHShellView.swift",
-            "GORKH/Core/Agent/AgentModels.swift",
-            "GORKH/Core/Agent/AgentChatModels.swift",
-            "GORKH/Core/Agent/AgentIntentClassifier.swift",
-            "GORKH/Core/Agent/AgentFullAppIntent.swift",
-            "GORKH/Core/Agent/AgentExecutionLaneRouter.swift",
-            "GORKH/Core/Agent/AgentPolicyEngine.swift",
-            "GORKH/Core/Agent/AgentProposalFactory.swift",
-            "GORKH/Core/Agent/AgentProposalModels.swift",
-            "GORKH/Core/Agent/AgentMemoryStore.swift",
-            "GORKH/Core/Agent/AgentToolModels.swift",
-            "GORKH/Core/Agent/AgentToolRegistry.swift",
-            "GORKH/Core/Agent/AgentToolExecutor.swift",
-            "GORKH/Core/Agent/AgentContextHydrator.swift",
-            "GORKH/Core/Agent/AgentApprovalQueue.swift",
-            "GORKH/Core/Agent/AgentHandoffCoordinator.swift",
-            "GORKH/Core/Agent/AgentAIStatusModels.swift",
-            "GORKH/Core/Agent/AgentLLMProvider.swift",
-            "GORKH/Core/Agent/HostedDeepSeekAgentProvider.swift",
-            "GORKH/Core/Agent/AgentHostedAPIClient.swift",
-            "GORKH/Core/Agent/AgentHostedAPIContracts.swift",
-            "GORKH/Core/Agent/AgentHostedAPIValidator.swift",
-            "GORKH/Core/Agent/AgentHostedResponseSanitizer.swift",
-            "GORKH/Core/Agent/AgentHostedAISmokeModels.swift",
-            "GORKH/Core/Agent/AgentHostedErrorNormalizer.swift",
-            "GORKH/Core/Agent/AgentRedactedContextBuilder.swift",
-            "GORKH/Core/Agent/AgentToolBoundary.swift",
-            "GORKH/Core/Agent/AgentLLMResponseModels.swift",
-            "GORKH/Modules/Agent/AgentView.swift",
-            "GORKH/Modules/Agent/AgentChatView.swift",
-            "GORKH/Modules/Agent/AgentGuardrailBannerView.swift",
-            "GORKH/Modules/Agent/AgentApprovalQueueView.swift",
-            "GORKH/Modules/Agent/AgentHandoffCardView.swift",
-            "GORKH/Modules/Agent/AgentFullAppHelpView.swift",
-            "GORKH/Modules/Agent/AgentAIStatusView.swift",
-            "GORKH/Modules/Agent/AgentIntentCardView.swift",
-            "GORKH/Modules/Agent/AgentProposalCardView.swift",
-            "GORKH/Modules/Agent/AgentOverviewView.swift",
-            "GORKH/Modules/Agent/ZerionExecutorView.swift",
-            "GORKH/Modules/Agent/ZerionPolicyCenterView.swift",
-            "GORKH/Modules/Agent/ZerionProposalView.swift",
-            "GORKH/Modules/Agent/ZerionExecutionReviewView.swift"
-        ]
-        let source = try sourceFiles.map(sourceText(relativePath:)).joined(separator: "\n").lowercased()
-
-        #expect(source.contains("agent"))
-        #expect(source.contains("chat"))
-        #expect(source.contains("zerion executor"))
-        #expect(source.contains("policy center"))
-        #expect(source.contains("proposals only") || source.contains("tiny swap only"))
-        #expect(source.contains("separate zerion wallet"))
-        #expect(source.contains("main wallet disabled"))
-        #expect(source.contains("no bridge / send / signing"))
-        #expect(GORKHModule.allCases.contains(.developerWorkstation))
-        #expect(!source.contains("nft"))
-    }
 
     @Test func agentHostedAIConfigurationAndFallbackNeedNoUserModelKey() async throws {
         let configuration = AgentHostedAPIConfiguration(environment: [
@@ -4183,340 +3254,14 @@ struct GORKHTests {
         #expect(script.contains("oversized"))
     }
 
-    @Test func agentHostedAIRequestRedactionBlocksForbiddenFieldsAndMinimizesContext() throws {
-        let demoPublicAddress = "11111111111111111111111111111111"
-        #expect(throws: AgentRedactedContextError.self) {
-            _ = try AgentRedactedContextBuilder.redactedUserMessageForAI("use private key: abc")
-        }
-        #expect(throws: AgentRedactedContextError.self) {
-            _ = try AgentRedactedContextBuilder.redactedUserMessageForAI("runShell now")
-        }
 
-        let redacted = try AgentRedactedContextBuilder.redactedUserMessageForAI("summarize my portfolio")
-        #expect(redacted.status == .clean)
 
-        let context = try AgentRedactedContextBuilder.build(
-            portfolioSummary: .empty(),
-            pnlSummary: .empty(),
-            pusdCirculationSnapshot: .idle(),
-            auditEvents: [
-                AuditEvent(
-                    kind: .walletCreated,
-                    walletID: nil,
-                    network: .mainnetBeta,
-                    publicAddress: demoPublicAddress,
-                    message: "safe event",
-                    details: ["public": "ok"]
-                )
-            ],
-            selectedProfile: WalletProfile(label: "Demo", publicAddress: demoPublicAddress, walletOrigin: .watchOnly),
-            selectedNetwork: .mainnetBeta,
-            rpcSecurityStatus: RPCProviderSecurityStatus(
-                provider: .rpcFast,
-                network: .mainnetBeta,
-                tokenStatus: .missing,
-                tokenEnvironmentNames: [RPCFastConfiguration.mainnetTokenEnvironmentName],
-                beamStatus: "locked"
-            ),
-            zerionStatus: .unchecked,
-            builtAt: Date(timeIntervalSince1970: 0)
-        )
-        let payload = try #require(String(data: JSONEncoder().encode(context), encoding: .utf8)).lowercased()
-        #expect(payload.contains("context_minimized"))
-        #expect(payload.contains("gorkh_rpcfast_mainnet_token") == false)
-        for forbidden in ["privatekey", "secretkey", "seedphrase", "signingseed", "walletjson", "transactionpayload", "serializedtransaction", "unsignedtransaction", "agenttoken", "nft"] {
-            #expect(!payload.contains(forbidden))
-        }
-    }
 
-    @Test func agentHostedAIToolBoundaryBlocksExecutionSuggestions() async throws {
-        let decision = AgentToolBoundary.evaluate([
-            "summarizePortfolio",
-            "draftSwapProposal",
-            "executeSwap",
-            "sendTransaction",
-            "runShell",
-            "arbitraryCommand"
-        ])
-        #expect(decision.allowed == ["summarizePortfolio", "draftSwapProposal"])
-        #expect(decision.blocked == ["executeSwap", "sendTransaction", "runShell", "arbitraryCommand"])
 
-        let responseJSON = """
-        {
-          "assistantMessage": "I can explain this, but execution must use review.",
-          "suggestedIntent": "tokenSwapRequest",
-          "missingFields": [],
-          "proposalSuggestion": {"title":"Swap draft","explanation":"Review in Wallet.","riskNotes":["Policy required"],"missingFields":[]},
-          "toolSuggestions": ["draftSwapProposal", "executeSwap"],
-          "safetyWarnings": ["No direct execution"],
-          "modelInfo": {"provider":"gorkh-hosted","model":"deepseek-backed","contractVersion":"2026-05-10.a5"},
-          "requestId": "mock-swap"
-        }
-        """
-        let provider = HostedDeepSeekProvider(client: AgentHostedAPIClient(
-            configuration: AgentHostedAPIConfiguration(environment: [
-                AgentHostedAPIConfiguration.baseURLEnvironmentName: "https://agent.gorkh.example"
-            ]),
-            transport: MockAgentHTTPTransport(payload: responseJSON)
-        ))
-        let result = await provider.respond(to: try sampleAgentLLMRequest(message: "swap 1 USDC to SOL"), redactionStatus: .clean)
-        #expect(result.status.mode == .hostedDeepSeek)
-        #expect(result.status.providerState == .degraded)
-        #expect(result.toolBoundaryDecision.allowed == ["draftSwapProposal"])
-        #expect(result.toolBoundaryDecision.blocked == ["executeSwap"])
 
-        let classification = AgentIntentClassifier().classify("swap 100 USDC to SOL")
-        let policy = AgentPolicyEngine.evaluate(
-            classification: classification,
-            lane: AgentExecutionLaneRouter.route(classification),
-            context: AgentPolicyContext(walletCanSign: false, walletIsWatchOnly: true, selectedNetwork: .mainnetBeta, zerionStatus: .unchecked)
-        )
-        #expect(policy.status == .blocked)
-    }
 
-    @Test func zerionCommandAllowlistBlocksTradingSigningAndUnsafeArguments() throws {
-        #expect(try ZerionCLICommandBuilder.command(from: ["--help"]) == .help)
-        #expect(try ZerionCLICommandBuilder.command(from: ["chains"]) == .chains)
-        #expect(try ZerionCLICommandBuilder.command(from: ["wallet", "list"]) == .walletList)
-        #expect(try ZerionCLICommandBuilder.command(from: ["agent", "list-policies"]) == .agentListPolicies)
-        #expect(try ZerionCLICommandBuilder.command(from: ["agent", "list-tokens"]) == .agentListTokens)
-        #expect(try ZerionCLICommandBuilder.command(from: ["swap", "--help"]) == .swapHelp)
-        #expect(try ZerionCLICommandBuilder.command(from: ["agent", "--help"]) == .agentHelp)
-        #expect(try ZerionCLICommandBuilder.command(from: ["portfolio", "0x0000000000000000000000000000000000000000"]) == .portfolio(address: "0x0000000000000000000000000000000000000000"))
 
-        for blocked in [
-            ["swap"],
-            ["bridge"],
-            ["send"],
-            ["sign-message"],
-            ["sign-typed-data"],
-            ["wallet", "import"],
-            ["wallet", "fund"],
-            ["agent", "create-policy"],
-            ["agent", "create-token"],
-            ["agent", "revoke-token"]
-        ] {
-            #expect(throws: ZerionCLICommandValidationError.self) {
-                try ZerionCLICommandBuilder.command(from: blocked)
-            }
-        }
 
-        #expect(throws: ZerionCLICommandValidationError.self) {
-            try ZerionCLICommandBuilder.command(from: ["chains;rm"])
-        }
-    }
-
-    @Test func zerionPathResolverAcceptsOnlyValidatedExecutablePaths() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("gorkh-zerion-path-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let executable = directory.appendingPathComponent("zerion")
-        FileManager.default.createFile(atPath: executable.path, contents: Data("#!/usr/bin/env node\n".utf8))
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
-
-        let resolver = ZerionCLIPathResolver(environment: ["PATH": directory.path], knownPaths: [])
-        let resolution = resolver.resolve()
-
-        #expect(resolution.status == .installed)
-        #expect(resolution.executablePath == executable.path)
-        #expect(resolver.isValidExecutable("zerion") == false)
-        #expect(resolver.isValidExecutable("/tmp/../zerion") == false)
-        #expect(resolver.isValidExecutable(executable.deletingLastPathComponent().appendingPathComponent("not-zerion").path) == false)
-    }
-
-    @Test func zerionSecretsAndAuditAreRedacted() throws {
-        let apiKey = "zk_" + "unit-test-placeholder"
-        #expect(ZerionRedaction.apiKeyStatus(from: ["ZERION_API_KEY": apiKey]) == .presentRedacted)
-        #expect(ZerionRedaction.apiKeyStatus(from: ["ZERION_API_KEY": "bad-placeholder"]) == .malformedRedacted)
-        #expect(ZerionRedaction.apiKeyStatus(from: [:]) == .missing)
-
-        let redacted = ZerionRedaction.redact("ZERION_API_KEY=\(apiKey) agent token: spend-power")
-        #expect(!redacted.contains(apiKey))
-        #expect(!redacted.contains("spend-power"))
-        #expect(redacted.contains("[redacted"))
-
-        let event = AgentAuditEvent(
-            kind: .zerionAPIKeyStatusChecked,
-            message: "checked \(apiKey)",
-            details: [
-                "agentToken": "spend-power",
-                "network": "base"
-            ]
-        )
-        let json = try #require(String(data: JSONEncoder().encode(event), encoding: .utf8)).lowercased()
-        #expect(!json.contains(apiKey.lowercased()))
-        #expect(!json.contains("spend-power"))
-        #expect(!json.contains("agenttoken"))
-        #expect(json.contains("base"))
-    }
-
-    @Test func zerionProposalsAreDraftOnlyAndModelsContainNoWalletSecrets() throws {
-        let proposal = ZerionProposal.sampleDraft
-        #expect(proposal.canExecuteInA1 == false)
-        #expect(proposal.status == .draft)
-        #expect(AgentSafetyPolicy.zerionA1.mainWalletAccess == .disabled)
-        #expect(AgentSafetyPolicy.zerionA1.canUseNativeSigner == false)
-        #expect(AgentSafetyPolicy.zerionA1.canReadCloakVault == false)
-        #expect(AgentSafetyPolicy.zerionA1.canRunTradingCommands == false)
-        #expect(AgentSafetyPolicy.zerionA2.mainWalletAccess == .disabled)
-        #expect(AgentSafetyPolicy.zerionA2.canUseNativeSigner == false)
-        #expect(AgentSafetyPolicy.zerionA2.canReadCloakVault == false)
-
-        let payload = try JSONEncoder().encode([
-            String(data: JSONEncoder().encode(proposal), encoding: .utf8) ?? "",
-            String(data: JSONEncoder().encode(AgentSafetyPolicy.zerionA1), encoding: .utf8) ?? ""
-        ])
-        let json = try #require(String(data: payload, encoding: .utf8)).lowercased()
-
-        for forbidden in [
-            "privatekey",
-            "secretkey",
-            "seedphrase",
-            "signingseed",
-            "walletjson",
-            "zerion_api_key",
-            "agenttoken",
-            "transactionpayload",
-            "serializedtransaction",
-            "nft"
-        ] {
-            #expect(!json.contains(forbidden))
-        }
-    }
-
-    @Test func zerionHelpParserAndTinySwapCommandBuilderValidateFixedShape() throws {
-        let chainFirst = ZerionCLIHelpParser.parse(
-            topHelp: "--json --wallet",
-            swapHelp: "zerion swap <chain> <amount> <from-token> <to-token>\nzerion swap base 1 USDC ETH",
-            agentHelp: "agent list-tokens"
-        )
-        #expect(chainFirst.swapCommandShape == .chainFirst)
-        #expect(chainFirst.supportsJSONFlag)
-        #expect(chainFirst.supportsWalletFlag)
-
-        let proposal = ZerionTinySwapProposal.sampleBaseTinySwap
-        let plan = try ZerionSwapCommandBuilder.build(proposal: proposal, helpProbe: chainFirst)
-        #expect(plan.arguments == ["swap", "base", "1", "USDC", "ETH", "--wallet", "manual-zerion-wallet", "--json"])
-        #expect(plan.redactedPreview.contains("zerion swap base 1 USDC ETH"))
-        #expect(!plan.redactedPreview.contains("ZERION_API_KEY"))
-
-        let tokenFirst = ZerionCLIHelpParser.parse(
-            topHelp: "--json --wallet --chain",
-            swapHelp: "zerion swap <from> <to> <amount> --chain <chain>\nzerion swap usdc eth 100 --chain base",
-            agentHelp: ""
-        )
-        let tokenFirstPlan = try ZerionSwapCommandBuilder.build(proposal: proposal, helpProbe: tokenFirst)
-        #expect(tokenFirstPlan.arguments == ["swap", "USDC", "ETH", "1", "--chain", "base", "--wallet", "manual-zerion-wallet", "--json"])
-
-        #expect(throws: ZerionSwapCommandBuilderError.self) {
-            try ZerionSwapCommandBuilder.build(proposal: proposal, helpProbe: .unchecked)
-        }
-    }
-
-    @Test func agentIntentClassifierCoversWalletDeFiAndPrivateRequests() {
-        let classifier = AgentIntentClassifier()
-        let mint = "CZzgUBvxaMLwMhVSLgqJn3npmxoTo6nzMNQPAnwtHF3s"
-
-        let buy = classifier.classify("buy \(mint) for 5 SOL")
-        #expect(buy.intentType == .tokenBuyRequest)
-        #expect(buy.amount == Decimal(5))
-        #expect(buy.sourceAsset == "SOL")
-        #expect(buy.targetAsset == mint)
-        #expect(buy.chain == "solana")
-
-        let swap = classifier.classify("swap 100 USDC to SOL")
-        #expect(swap.intentType == .tokenSwapRequest)
-        #expect(swap.amount == Decimal(100))
-        #expect(swap.sourceAsset == "USDC")
-        #expect(swap.targetAsset == "SOL")
-
-        let pusd = classifier.classify("send 10 PUSD to \(SolanaConstants.systemProgramID)")
-        #expect(pusd.intentType == .pusdPaymentRequest)
-        #expect(pusd.sourceAsset == "PUSD")
-        #expect(pusd.recipient == SolanaConstants.systemProgramID)
-
-        let privatePayment = classifier.classify("prepare a private Cloak payment")
-        #expect(privatePayment.intentType == .cloakPrivatePaymentRequest)
-        #expect(privatePayment.missingFields.contains("amount"))
-        #expect(privatePayment.missingFields.contains("recipient"))
-
-        let lp = classifier.classify("check my LP pools and find better positions")
-        #expect(lp.intentType == .lpPositionReview)
-        #expect(lp.riskFlags.contains(.readOnlyOnly))
-
-        let yield = classifier.classify("find safer yield for USDC")
-        #expect(yield.intentType == .yieldSearch)
-        #expect(yield.sourceAsset == "USDC")
-
-        let recent = classifier.classify("show what changed today")
-        #expect(recent.intentType == .recentActivitySummary)
-    }
-
-    @Test func agentPolicyRoutesProposalsWithoutChatExecution() throws {
-        let classifier = AgentIntentClassifier()
-        let status = ZerionStatusSnapshot(
-            cliStatus: .installed,
-            executablePath: "/opt/homebrew/bin/zerion",
-            nodeStatus: .installed,
-            nodeVersion: "v22.22.2",
-            apiKeyStatus: .presentRedacted,
-            agentTokenStatus: .presentRedacted,
-            policyStatus: .loaded,
-            swapHelpStatus: .succeeded,
-            swapCommandShape: .chainFirst,
-            walletCount: 1,
-            policyCount: 1,
-            tokenCount: 1,
-            supportedChains: ["base", "solana"],
-            errors: [],
-            checkedAt: Date(timeIntervalSince1970: 0)
-        )
-
-        let mainSwap = classifier.classify("swap 1 USDC to SOL")
-        let mainLane = AgentExecutionLaneRouter.route(mainSwap, walletIsWatchOnly: false)
-        #expect(mainLane == .mainWallet)
-        let mainDecision = AgentPolicyEngine.evaluate(
-            classification: mainSwap,
-            lane: mainLane,
-            context: AgentPolicyContext(walletCanSign: true, walletIsWatchOnly: false, selectedNetwork: .mainnetBeta, zerionStatus: status)
-        )
-        let proposal = AgentProposalFactory.makeProposal(classification: mainSwap, lane: mainLane, decision: mainDecision)
-        #expect(proposal.status == .readyForReview)
-        #expect(proposal.handoffTarget == .walletSwap)
-        #expect(proposal.policyDecision.warnings.contains { $0.contains("destination Wallet module") })
-
-        let watchOnlyLane = AgentExecutionLaneRouter.route(mainSwap, walletIsWatchOnly: true)
-        let watchOnlyDecision = AgentPolicyEngine.evaluate(
-            classification: mainSwap,
-            lane: watchOnlyLane,
-            context: AgentPolicyContext(walletCanSign: false, walletIsWatchOnly: true, selectedNetwork: .mainnetBeta, zerionStatus: status)
-        )
-        #expect(watchOnlyLane == .watchOnlyAnalysis)
-        #expect(watchOnlyDecision.status == .blocked)
-
-        let highZerion = classifier.classify("zerion swap 100 USDC to ETH on base")
-        let zerionDecision = AgentPolicyEngine.evaluate(
-            classification: highZerion,
-            lane: AgentExecutionLaneRouter.route(highZerion),
-            context: AgentPolicyContext(walletCanSign: true, walletIsWatchOnly: false, selectedNetwork: .mainnetBeta, zerionStatus: status)
-        )
-        #expect(zerionDecision.status == .blocked)
-        #expect(zerionDecision.reasons.contains { $0.lowercased().contains("cap") })
-
-        let safeZerion = classifier.classify("zerion swap 1 USDC to ETH on base")
-        let safeDecision = AgentPolicyEngine.evaluate(
-            classification: safeZerion,
-            lane: AgentExecutionLaneRouter.route(safeZerion),
-            context: AgentPolicyContext(walletCanSign: true, walletIsWatchOnly: false, selectedNetwork: .mainnetBeta, zerionStatus: status)
-        )
-        let safeProposal = AgentProposalFactory.makeProposal(classification: safeZerion, lane: .zerionAgentWallet, decision: safeDecision)
-        #expect(safeProposal.status == .readyForReview)
-        #expect(safeProposal.handoffTarget == .zerionReview)
-        let tiny = try #require(AgentProposalFactory.makeZerionTinySwap(from: safeProposal))
-        #expect(tiny.chain == .base)
-        #expect(tiny.fromToken == "USDC")
-        #expect(tiny.toToken == "ETH")
-    }
 
     @Test func agentBlocksUnsupportedUnsafeAndMissingFieldRequests() {
         let classifier = AgentIntentClassifier()
@@ -4539,210 +3284,8 @@ struct GORKHTests {
         #expect(unsafe.riskFlags.contains(.unsafeSecretRequest))
     }
 
-    @Test func agentFullAppIntentTaxonomyCoversWalletPortfolioPrivateAndZerion() {
-        let classifier = AgentIntentClassifier()
 
-        #expect(classifier.classify("show wallet overview").intentType == .walletOverview)
-        #expect(classifier.classify("show receive address").intentType == .receiveAddress)
-        #expect(classifier.classify("prepare a swap of 0.1 SOL to USDC").intentType == .prepareSwap)
-        #expect(classifier.classify("is my wallet safe for mainnet?").intentType == .securityStatus)
-        #expect(classifier.classify("check RPC status").intentType == .rpcStatus)
-        #expect(classifier.classify("show asset breakdown").intentType == .assetBreakdown)
-        #expect(classifier.classify("show PUSD treasury balance").intentType == .pusdTreasurySummary)
-        #expect(classifier.classify("show stake LST summary").intentType == .stakeLstSummary)
-        #expect(classifier.classify("show lending summary").intentType == .lendingSummary)
-        #expect(classifier.classify("show liquidity summary").intentType == .liquiditySummary)
-        #expect(classifier.classify("why is my PnL partial?").intentType == .pnlSummary)
-        #expect(classifier.classify("explain private state").intentType == .explainPrivateState)
-        #expect(classifier.classify("show Cloak scan history").intentType == .cloakScanSummary)
-        #expect(classifier.classify("show Zerion policy status").intentType == .zerionPolicySummary)
 
-        let full = AgentFullAppIntentClassifier.classify("find better yield for USDC")
-        #expect(full.classification.intentType == .yieldSearch)
-        #expect(full.appArea == .portfolio)
-        #expect(full.defaultToolID == .getYieldSummary)
-
-        let zerion = AgentFullAppIntentClassifier.classify("use my Zerion agent wallet to prepare a tiny swap of 1 USDC to ETH on base")
-        #expect(zerion.classification.intentType == .zerionPrepareTinySwap || zerion.classification.intentType == .zerionTinySwapRequest)
-        #expect(zerion.appArea == .zerion)
-        #expect(AgentExecutionLaneRouter.route(zerion.classification) == .zerionAgentWallet)
-    }
-
-    @Test func agentToolRegistryApprovalQueueHandoffAndContextStaySafe() throws {
-        #expect(AgentToolRegistry.evaluate(toolID: .getWalletOverviewSummary).allowed == ["getWalletOverviewSummary"])
-        #expect(AgentToolRegistry.evaluate(toolID: .executeSwap).blocked == ["executeSwap"])
-
-        let boundary = AgentToolBoundary.evaluate(["getRPCStatus", "draftMainWalletSwap", "executeSend", "runShell"])
-        #expect(boundary.allowed == ["getRPCStatus", "draftMainWalletSwap"])
-        #expect(boundary.blocked == ["executeSend", "runShell"])
-
-        let classification = AgentIntentClassifier().classify("prepare a swap of 0.1 SOL to USDC")
-        let proposal = AgentProposalFactory.makeProposal(
-            classification: classification,
-            lane: .mainWallet,
-            decision: .allowed(warnings: ["Destination review required."])
-        )
-        let queue = AgentApprovalQueue(proposals: [proposal])
-        #expect(queue.readyCount == 1)
-        #expect(queue.filtered(by: .wallet).first?.handoffTarget == .walletSwap)
-        let handoff = AgentHandoffCoordinator.instruction(for: proposal)
-        #expect(handoff.walletSection == .swap)
-        #expect(handoff.instruction.lowercased().contains("approval"))
-
-        var memory = AgentMemoryStore()
-        memory.remember(intent: classification, proposal: proposal)
-        #expect(memory.entries.count == 1)
-        memory.clear()
-        #expect(memory.entries.isEmpty)
-
-        let context = AgentToolExecutionContext(
-            portfolioSummary: .empty(),
-            pnlSummary: .empty(),
-            pusdCirculationSnapshot: .idle(),
-            auditEvents: [],
-            selectedProfile: WalletProfile(label: "Demo", publicAddress: "11111111111111111111111111111111", walletOrigin: .watchOnly),
-            selectedNetwork: .mainnetBeta,
-            walletBalance: nil,
-            vaultState: .missing,
-            rpcSecurityStatus: RPCProviderSecurityStatus(
-                provider: .rpcFast,
-                network: .mainnetBeta,
-                tokenStatus: .missing,
-                tokenEnvironmentNames: [RPCFastConfiguration.mainnetTokenEnvironmentName],
-                beamStatus: "locked"
-            ),
-            cloakAdapterStatus: .lockedInPhase23,
-            cloakVaultStatus: .statusOnly(walletID: nil),
-            cloakScanSummary: .idle(),
-            zerionStatus: .unchecked
-        )
-        let rpcResult = try #require(AgentToolExecutor.execute(classification: AgentIntentClassifier().classify("check RPC status"), context: context))
-        #expect(rpcResult.title == "RPC status")
-        #expect(rpcResult.summary.lowercased().contains("redacted"))
-
-        let hydrated = try AgentContextHydrator.hydrate(
-            portfolioSummary: .empty(),
-            pnlSummary: .empty(),
-            pusdCirculationSnapshot: .idle(),
-            auditEvents: [],
-            selectedProfile: context.selectedProfile,
-            selectedNetwork: .mainnetBeta,
-            rpcSecurityStatus: context.rpcSecurityStatus,
-            zerionStatus: .unchecked,
-            builtAt: Date(timeIntervalSince1970: 0)
-        )
-        let payload = try #require(String(data: JSONEncoder().encode(hydrated), encoding: .utf8)).lowercased()
-        #expect(payload.contains("hosted_ai_advisory_only"))
-        #expect(payload.contains("no_direct_chat_execution"))
-        for forbidden in ["privatekey", "secretkey", "seedphrase", "signingseed", "walletjson", "transactionpayload", "serializedtransaction", "unsignedtransaction", "agenttoken"] {
-            #expect(!payload.contains(forbidden))
-        }
-
-        let docs = try sourceText(relativePath: "../../../docs/architecture/agent-full-app-orchestrator.md")
-        let smoke = try sourceText(relativePath: "../../../docs/qa/agent-full-app-orchestrator-smoke.md")
-        #expect(docs.contains("approval-based orchestrator"))
-        #expect(smoke.contains("Agent Full-App Orchestrator Smoke"))
-    }
-
-    @Test func agentInteractiveHandoffQADocQueueAndBlockedStatesStaySafe() throws {
-        let qa = try sourceText(relativePath: "../../../docs/qa/agent-orchestrator-interactive-qa.md")
-        for phrase in [
-            "summarize my portfolio",
-            "show what changed today",
-            "is my wallet safe?",
-            "check RPC status",
-            "prepare a swap of 0.1 SOL to USDC",
-            "prepare a PUSD payment request",
-            "prepare a private Cloak payment",
-            "find safer yield for USDC",
-            "check my LP positions",
-            "why is my PnL partial?",
-            "use Zerion to prepare a tiny swap",
-            "execute this swap now from chat",
-            "buy this token",
-            "send 10 SOL from watch-only wallet"
-        ] {
-            #expect(qa.contains(phrase))
-        }
-        #expect(qa.contains("Queue has no execution button."))
-        #expect(qa.lowercased().contains("agent chat cannot sign"))
-
-        let handoffExpectations: [(AgentIntentType, AgentHandoffTarget, WalletSection?)] = [
-            (.walletOverview, .walletOverview, .overview),
-            (.receiveAddress, .walletReceive, .overview),
-            (.prepareSend, .walletSend, .send),
-            (.prepareSwap, .walletSwap, .swap),
-            (.prepareCloakPrivatePayment, .walletPrivate, .privateWallet),
-            (.securityStatus, .walletSecurity, .security),
-            (.activitySummary, .walletActivity, .activity),
-            (.assetBreakdown, .portfolioAssets, .portfolio),
-            (.walletBreakdown, .portfolioWallets, .portfolio),
-            (.pusdTreasurySummary, .portfolioPUSD, .portfolio),
-            (.stakeLstSummary, .portfolioStake, .portfolio),
-            (.lendingSummary, .portfolioLending, .portfolio),
-            (.liquiditySummary, .portfolioLiquidity, .portfolio),
-            (.yieldSummary, .portfolioYield, .portfolio),
-            (.pnlSummary, .portfolioPnL, .portfolio),
-            (.portfolioHistorySummary, .portfolioHistory, .portfolio),
-            (.zerionPrepareTinySwap, .zerionReview, nil)
-        ]
-        for (intent, target, walletSection) in handoffExpectations {
-            #expect(AgentHandoffCoordinator.target(for: intent) == target)
-            let instruction = AgentHandoffCoordinator.instruction(for: target)
-            #expect(instruction.walletSection == walletSection)
-            let safeInstruction = instruction.instruction.lowercased()
-            #expect(safeInstruction.contains("approval") || safeInstruction.contains("review") || safeInstruction.contains("no funds move"))
-        }
-
-        let readyClassification = AgentIntentClassifier().classify("prepare a swap of 0.1 SOL to USDC")
-        let readyProposal = AgentProposalFactory.makeProposal(
-            classification: readyClassification,
-            lane: .mainWallet,
-            decision: .allowed(warnings: ["Destination review required."])
-        )
-        let blockedClassification = AgentIntentClassifier().classify("send 10 SOL to 11111111111111111111111111111111")
-        let blockedDecision = AgentPolicyEngine.evaluate(
-            classification: blockedClassification,
-            lane: .mainWallet,
-            context: AgentPolicyContext(
-                walletCanSign: false,
-                walletIsWatchOnly: true,
-                selectedNetwork: .mainnetBeta,
-                zerionStatus: .unchecked
-            )
-        )
-        let blockedProposal = AgentProposalFactory.makeProposal(classification: blockedClassification, lane: .mainWallet, decision: blockedDecision)
-        let queue = AgentApprovalQueue(proposals: [readyProposal, blockedProposal])
-        #expect(queue.filtered(by: .wallet).count == 2)
-        #expect(queue.filtered(by: .blocked).first?.canOpenHandoff == false)
-        #expect(queue.filtered(by: .blocked).first?.statusDetail.lowercased().contains("cannot sign") == true)
-        #expect(queue.filtered(by: .wallet).contains(where: { $0.canOpenHandoff && $0.handoffTarget == .walletSwap }))
-
-        let ambiguous = AgentIntentClassifier().classify("buy this token")
-        #expect(ambiguous.missingFields.isEmpty == false)
-        let ambiguousDecision = AgentPolicyEngine.evaluate(
-            classification: ambiguous,
-            lane: .mainWallet,
-            context: AgentPolicyContext(walletCanSign: true, walletIsWatchOnly: false, selectedNetwork: .mainnetBeta, zerionStatus: .unchecked)
-        )
-        #expect(ambiguousDecision.status == .needsMoreInput)
-
-        let hostedUnavailable = AgentAIStatus.localSafeMode(reason: "Hosted AI endpoint is not configured.")
-        #expect(hostedUnavailable.mode == .localSafeMode)
-        #expect(hostedUnavailable.message.contains("Hosted AI endpoint is not configured."))
-
-        let zerion = AgentIntentClassifier().classify("use Zerion to prepare a tiny swap of 1 USDC to ETH on base")
-        let zerionDecision = AgentPolicyEngine.evaluate(
-            classification: zerion,
-            lane: AgentExecutionLaneRouter.route(zerion),
-            context: AgentPolicyContext(walletCanSign: true, walletIsWatchOnly: false, selectedNetwork: .mainnetBeta, zerionStatus: .unchecked)
-        )
-        #expect(zerionDecision.status == .blocked)
-        #expect(zerionDecision.reasons.contains(where: { $0.contains("Zerion CLI") }))
-
-        #expect(AgentToolRegistry.evaluate(toolID: .executeSend).blocked == ["executeSend"])
-        #expect(AgentToolRegistry.evaluate(toolID: .sendTransaction).blocked == ["sendTransaction"])
-    }
 
     @Test func transactionStudioDetectsDecodesReviewsAndStaysReadOnly() throws {
         let signature = Base58.encode(Data(repeating: 2, count: 64))
@@ -4803,38 +3346,38 @@ struct GORKHTests {
         }
 
         let studioCoreFiles = try [
-            "GORKH/Core/TransactionStudio/TransactionStudioModels.swift",
-            "GORKH/Core/TransactionStudio/TransactionStudioInputDetector.swift",
-            "GORKH/Core/TransactionStudio/TransactionDecoder.swift",
-            "GORKH/Core/TransactionStudio/TransactionInstructionParser.swift",
-            "GORKH/Core/TransactionStudio/TransactionAddressLookupModels.swift",
-            "GORKH/Core/TransactionStudio/TransactionAccountEnrichmentModels.swift",
-            "GORKH/Core/TransactionStudio/TransactionAccountEnrichmentService.swift",
-            "GORKH/Core/TransactionStudio/TransactionAccountWatchListBuilder.swift",
-            "GORKH/Core/TransactionStudio/TransactionSimulationDiffModels.swift",
-            "GORKH/Core/TransactionStudio/TransactionSimulationDiffBuilder.swift",
-            "GORKH/Core/TransactionStudio/TransactionProgramCatalog.swift",
-            "GORKH/Core/TransactionStudio/SystemInstructionParser.swift",
-            "GORKH/Core/TransactionStudio/SPLTokenInstructionParser.swift",
-            "GORKH/Core/TransactionStudio/Token2022InstructionParser.swift",
-            "GORKH/Core/TransactionStudio/ATAInstructionParser.swift",
-            "GORKH/Core/TransactionStudio/ComputeBudgetInstructionParser.swift",
-            "GORKH/Core/TransactionStudio/MemoInstructionParser.swift",
-            "GORKH/Core/TransactionStudio/JupiterInstructionLabeler.swift",
-            "GORKH/Core/TransactionStudio/TransactionStudioSmokeModels.swift",
-            "GORKH/Core/TransactionStudio/TransactionInstructionLabeler.swift",
-            "GORKH/Core/TransactionStudio/TransactionRiskAnalyzer.swift",
-            "GORKH/Core/TransactionStudio/TransactionSimulationService.swift",
-            "GORKH/Core/TransactionStudio/TransactionExplanationBuilder.swift",
-            "GORKH/Core/TransactionStudio/TransactionStudioHistoryStore.swift",
-            "GORKH/Core/TransactionStudio/TransactionStudioHandoffModels.swift",
-            "GORKH/Modules/TransactionStudio/TransactionStudioView.swift",
-            "GORKH/Modules/TransactionStudio/TransactionStudioInputView.swift",
-            "GORKH/Modules/TransactionStudio/TransactionInstructionTimelineView.swift",
-            "GORKH/Modules/TransactionStudio/TransactionRiskReviewView.swift",
-            "GORKH/Modules/TransactionStudio/TransactionSimulationView.swift",
-            "GORKH/Modules/TransactionStudio/TransactionExplanationView.swift",
-            "GORKH/Modules/TransactionStudio/TransactionStudioHistoryView.swift"
+            "KeySlot/Core/TransactionStudio/TransactionStudioModels.swift",
+            "KeySlot/Core/TransactionStudio/TransactionStudioInputDetector.swift",
+            "KeySlot/Core/TransactionStudio/TransactionDecoder.swift",
+            "KeySlot/Core/TransactionStudio/TransactionInstructionParser.swift",
+            "KeySlot/Core/TransactionStudio/TransactionAddressLookupModels.swift",
+            "KeySlot/Core/TransactionStudio/TransactionAccountEnrichmentModels.swift",
+            "KeySlot/Core/TransactionStudio/TransactionAccountEnrichmentService.swift",
+            "KeySlot/Core/TransactionStudio/TransactionAccountWatchListBuilder.swift",
+            "KeySlot/Core/TransactionStudio/TransactionSimulationDiffModels.swift",
+            "KeySlot/Core/TransactionStudio/TransactionSimulationDiffBuilder.swift",
+            "KeySlot/Core/TransactionStudio/TransactionProgramCatalog.swift",
+            "KeySlot/Core/TransactionStudio/SystemInstructionParser.swift",
+            "KeySlot/Core/TransactionStudio/SPLTokenInstructionParser.swift",
+            "KeySlot/Core/TransactionStudio/Token2022InstructionParser.swift",
+            "KeySlot/Core/TransactionStudio/ATAInstructionParser.swift",
+            "KeySlot/Core/TransactionStudio/ComputeBudgetInstructionParser.swift",
+            "KeySlot/Core/TransactionStudio/MemoInstructionParser.swift",
+            "KeySlot/Core/TransactionStudio/JupiterInstructionLabeler.swift",
+            "KeySlot/Core/TransactionStudio/TransactionStudioSmokeModels.swift",
+            "KeySlot/Core/TransactionStudio/TransactionInstructionLabeler.swift",
+            "KeySlot/Core/TransactionStudio/TransactionRiskAnalyzer.swift",
+            "KeySlot/Core/TransactionStudio/TransactionSimulationService.swift",
+            "KeySlot/Core/TransactionStudio/TransactionExplanationBuilder.swift",
+            "KeySlot/Core/TransactionStudio/TransactionStudioHistoryStore.swift",
+            "KeySlot/Core/TransactionStudio/TransactionStudioHandoffModels.swift",
+            "KeySlot/Modules/TransactionStudio/TransactionStudioView.swift",
+            "KeySlot/Modules/TransactionStudio/TransactionStudioInputView.swift",
+            "KeySlot/Modules/TransactionStudio/TransactionInstructionTimelineView.swift",
+            "KeySlot/Modules/TransactionStudio/TransactionRiskReviewView.swift",
+            "KeySlot/Modules/TransactionStudio/TransactionSimulationView.swift",
+            "KeySlot/Modules/TransactionStudio/TransactionExplanationView.swift",
+            "KeySlot/Modules/TransactionStudio/TransactionStudioHistoryView.swift"
         ].map { try sourceText(relativePath: $0) }.joined(separator: "\n").lowercased()
         for forbidden in ["sendtransaction(", "requestairdrop(", "signtransaction(", "getprogramaccounts", "jito", "beam", "buildbundle", "/bin/sh", "eval("] {
             #expect(!studioCoreFiles.contains(forbidden))
@@ -5165,337 +3708,10 @@ struct GORKHTests {
         #expect(!fixtures.contains("nft"))
     }
 
-    @Test func shieldReviewSummarizesApprovalsWithoutSigningOrPersistingPayloads() throws {
-        let recipient = Base58.encode(Data(repeating: 8, count: 32))
-        let sender = Base58.encode(Data(repeating: 9, count: 32))
-        let solDraft = TransactionDraft(
-            network: .mainnetBeta,
-            fromAddress: sender,
-            toAddress: recipient,
-            amountLamports: 1_000_000
-        )
-        let failedSimulation = SimulationResult(
-            status: .failed,
-            logs: ["Program failed"],
-            estimatedFeeLamports: 5_000,
-            errorMessage: "unit simulation failed",
-            simulatedAt: Date(timeIntervalSince1970: 1)
-        )
-        let solReview = ShieldReviewService.reviewSOLTransfer(draft: solDraft, simulation: failedSimulation)
-        #expect(solReview.title.contains("SOL"))
-        #expect(solReview.programLabels.contains("System Program"))
-        #expect(solReview.parsedActions.contains { $0.label.contains("System transfer") })
-        #expect(solReview.riskFlags.contains { $0.kind == TransactionRiskFlagKind.nativeSOLTransfer.rawValue })
-        #expect(solReview.riskFlags.contains { $0.kind == TransactionRiskFlagKind.simulationFailed.rawValue })
-        #expect(!ShieldReviewPolicy.canContinueAfterReview(summary: solReview, simulationRequired: true))
 
-        let ataPlan = AssociatedTokenAccountPlan(
-            recipientOwnerAddress: recipient,
-            mintAddress: Base58.encode(Data(repeating: 10, count: 32)),
-            tokenProgramKind: .token2022,
-            associatedTokenAddress: Base58.encode(Data(repeating: 11, count: 32)),
-            recipientTokenAccountExists: false,
-            shouldCreateAssociatedTokenAccount: true,
-            creationSupported: true,
-            rentExemptLamports: 2_039_280,
-            message: "Create recipient ATA."
-        )
-        let tokenDraft = TokenTransferDraft(
-            network: .mainnetBeta,
-            ownerAddress: sender,
-            sourceTokenAccount: Base58.encode(Data(repeating: 12, count: 32)),
-            mintAddress: ataPlan.mintAddress,
-            tokenProgramKind: .token2022,
-            recipientOwnerAddress: recipient,
-            recipientTokenAccount: ataPlan.associatedTokenAddress,
-            amountRaw: 1_234_500,
-            amountText: "1.2345",
-            decimals: 6,
-            availableAmountRaw: 2_000_000,
-            ataPlan: ataPlan,
-            tokenSymbol: "UNIT",
-            tokenName: "Unit Token"
-        )
-        let tokenReview = ShieldReviewService.reviewTokenTransfer(
-            draft: tokenDraft,
-            simulation: SimulationResult(status: .success, logs: [], estimatedFeeLamports: 6_000, errorMessage: nil, simulatedAt: Date(timeIntervalSince1970: 2))
-        )
-        #expect(tokenReview.programLabels.contains("Token-2022"))
-        #expect(tokenReview.programLabels.contains("Associated Token Account"))
-        #expect(tokenReview.parsedActions.contains { $0.label.contains("Token transferChecked") })
-        #expect(tokenReview.riskFlags.contains { $0.kind == TransactionRiskFlagKind.token2022TransferHook.rawValue })
-        #expect(tokenReview.riskFlags.contains { $0.kind == TransactionRiskFlagKind.token2022TransferFee.rawValue })
-
-        let quote = JupiterQuoteSummary(
-            inputMint: SwapConstants.nativeSolMint,
-            outputMint: ataPlan.mintAddress,
-            inAmount: 100_000_000,
-            outAmount: 99_000,
-            otherAmountThreshold: 98_000,
-            swapMode: "ExactIn",
-            slippageBps: 50,
-            priceImpactPct: Decimal(string: "0.01"),
-            routePlan: [
-                SwapRouteLeg(
-                    ammKey: "unit-amm",
-                    label: "Jupiter",
-                    inputMint: SwapConstants.nativeSolMint,
-                    outputMint: ataPlan.mintAddress,
-                    inAmount: 100_000_000,
-                    outAmount: 99_000,
-                    feeAmount: nil,
-                    feeMint: nil,
-                    percent: 100,
-                    bps: nil
-                )
-            ],
-            contextSlot: nil,
-            timeTaken: nil,
-            rawQuoteJSON: Data("{}".utf8)
-        )
-        let swapReview = SwapTransactionReview(
-            transactionVersion: "v0",
-            feePayer: sender,
-            signerAccounts: [sender],
-            writableAccounts: [sender, recipient],
-            programSummaries: [
-                SwapInstructionProgramSummary(programID: TransactionInstructionLabeler.jupiterV6ProgramID, label: "Jupiter", instructionCount: 1)
-            ],
-            accountSummaries: [],
-            requiredSignatureCount: 1,
-            messageBase64: "safe-message-summary",
-            transactionFingerprint: "unit-swap",
-            addressLookupTableCount: 1,
-            riskWarnings: [
-                SwapRouteRiskWarning(severity: .warning, message: "Unit route warning.")
-            ],
-            warnings: [],
-            blockingReasons: []
-        )
-        let swapShield = ShieldReviewService.reviewSwap(
-            quote: quote,
-            review: swapReview,
-            simulation: failedSimulation,
-            network: .mainnetBeta
-        )
-        #expect(swapShield.programLabels.contains("Jupiter"))
-        #expect(swapShield.riskFlags.contains { $0.kind == TransactionRiskFlagKind.addressLookupTableUse.rawValue })
-        #expect(swapShield.riskFlags.contains { $0.message.contains("Unit route warning") })
-
-        let orcaPlan = OrcaHarvestPlan(
-            walletPublicAddress: sender,
-            positionMint: Base58.encode(Data(repeating: 13, count: 32)),
-            positionAddress: Base58.encode(Data(repeating: 14, count: 32)),
-            poolAddress: Base58.encode(Data(repeating: 15, count: 32)),
-            tokenAMint: Base58.encode(Data(repeating: 16, count: 32)),
-            tokenBMint: Base58.encode(Data(repeating: 17, count: 32)),
-            feeOwedA: nil,
-            feeOwedB: nil,
-            rewardOwed: nil,
-            instructionCount: 1,
-            writableAccountCount: 3,
-            signerAccounts: [sender],
-            programIDs: [OrcaHarvestConstants.whirlpoolProgramID],
-            instructions: [],
-            source: OrcaHarvestConstants.source,
-            expiresAt: Date(timeIntervalSince1970: 300),
-            warning: "unit warning"
-        )
-        let orcaDraft = OrcaHarvestDraft(
-            walletID: UUID(),
-            walletPublicAddress: sender,
-            network: .mainnetBeta,
-            positionMint: orcaPlan.positionMint,
-            positionAddress: orcaPlan.positionAddress ?? "",
-            poolAddress: orcaPlan.poolAddress ?? "",
-            plan: orcaPlan,
-            createdAt: Date(timeIntervalSince1970: 3)
-        )
-        let orcaShield = ShieldReviewService.reviewOrcaHarvest(draft: orcaDraft, review: nil, simulation: failedSimulation)
-        #expect(orcaShield.programLabels.contains("Orca Whirlpool"))
-        #expect(orcaShield.riskFlags.contains { $0.kind == TransactionRiskFlagKind.defiProtocolInteraction.rawValue })
-
-        let cloakDraft = try CloakDepositDraft(network: .mainnetBeta, sourceWalletAddress: sender, grossLamports: 20_000_000)
-        let cloakShield = ShieldReviewService.reviewCloakDeposit(draft: cloakDraft)
-        #expect(cloakShield.riskLevel == .high)
-        #expect(cloakShield.explanation.lowercased().contains("private proof") == false)
-        #expect(cloakShield.explanation.lowercased().contains("raw cloak transaction bytes are not exposed"))
-
-        let zerionShield = ShieldReviewService.reviewZerionTinySwap(
-            proposal: .sampleBaseTinySwap,
-            decision: .blocked(["unit policy missing"], cap: 5),
-            commandPlan: .unavailable(reason: "command unavailable")
-        )
-        #expect(zerionShield.status == .externalSummary)
-        #expect(zerionShield.explanation.contains("raw transaction decode unavailable"))
-        #expect(zerionShield.explanation.contains("GORKH main wallet") == false || zerionShield.riskFlags.contains { $0.message.contains("main-wallet") || $0.message.contains("main wallet") })
-
-        let unavailable = ShieldReviewSummary.unavailable(title: "Unit unavailable", reason: "internal decode error", requirements: [.review])
-        #expect(ShieldReviewPolicy.requiresBlockingReview(unavailable))
-
-        let handoff = ShieldReviewHandoffBuilder.safeSummary(for: tokenReview).lowercased()
-        #expect(handoff.contains("no raw transaction payload"))
-        #expect(!handoff.contains("serializedtransaction"))
-        #expect(!handoff.contains("transactionpayload"))
-
-        let encoded = try #require(String(data: JSONEncoder().encode(tokenReview), encoding: .utf8)).lowercased()
-        for forbidden in ["privatekey", "secretkey", "seedphrase", "mnemonic", "walletjson", "signingseed", "serializedtransaction", "transactionpayload"] {
-            #expect(!encoded.contains(forbidden))
-        }
-
-        let shieldSource = try [
-            "GORKH/Core/ShieldReview/ShieldReviewModels.swift",
-            "GORKH/Core/ShieldReview/ShieldReviewService.swift",
-            "GORKH/Core/ShieldReview/ShieldReviewPolicy.swift",
-            "GORKH/Core/ShieldReview/ShieldReviewHandoff.swift",
-            "GORKH/Modules/ShieldReview/ShieldReviewCard.swift",
-            "GORKH/Modules/ShieldReview/ShieldReviewDetailView.swift"
-        ].map { try sourceText(relativePath: $0) }.joined(separator: "\n").lowercased()
-        for forbidden in ["sendtransaction(", "requestairdrop(", "signtransaction(", "broadcast(", "buildbundle", "/bin/sh", "eval("] {
-            #expect(!shieldSource.contains(forbidden))
-        }
-        #expect(!shieldSource.contains("nft"))
-
-        let architecture = try sourceText(relativePath: "../../../docs/architecture/shield-review-integration.md").lowercased()
-        let smoke = try sourceText(relativePath: "../../../docs/qa/shield-review-approval-smoke.md").lowercased()
-        #expect(architecture.contains("review-only"))
-        #expect(architecture.contains("no external dapp signing"))
-        #expect(smoke.contains("sol send"))
-        #expect(smoke.contains("zerion"))
-        #expect(!architecture.contains("nft"))
-        #expect(!smoke.contains("nft"))
-    }
-
-    @Test func shieldReviewStudioHandoffsAreTransientAndPayloadAware() throws {
-        let sender = Base58.encode(Data(repeating: 31, count: 32))
-        let recipient = Base58.encode(Data(repeating: 32, count: 32))
-        let blockhash = Base58.encode(Data(repeating: 33, count: 32))
-        let draft = TransactionDraft(
-            network: .devnet,
-            fromAddress: sender,
-            toAddress: recipient,
-            amountLamports: 42_000
-        )
-        let message = try SolanaTransactionBuilder.makeTransferMessage(draft: draft, recentBlockhash: blockhash)
-        let transactionBase64 = SolanaTransactionBuilder.makeUnsignedTransactionBase64(message: message)
-        let now = Date()
-        let exact = ShieldReviewPayloadPolicy.makeHandoff(
-            sourceFlow: .solSend,
-            safeSummary: "Shield Review safe summary",
-            transactionBase64: transactionBase64,
-            now: now
-        )
-
-        #expect(exact.payloadAvailability == .transientPayload)
-        #expect(exact.transientTransactionBase64 == transactionBase64)
-        #expect(exact.sourceFlow == .solSend)
-        #expect(exact.redactionStatus == "redacted_safe")
-
-        let exactBase64 = try #require(exact.transientTransactionBase64)
-        let exactData = try #require(Data(base64Encoded: exactBase64))
-        let decoded = try TransactionDecoder.decode(
-            data: exactData,
-            inputKind: .importHandoff,
-            fetchedSignature: nil,
-            slot: nil,
-            blockTime: nil,
-            network: .devnet
-        )
-        #expect(decoded.programSummaries.contains { $0.label == "System Program" })
-        #expect(decoded.instructions.contains { $0.decodedAction.contains("System transfer") })
-
-        let summaryOnly = ShieldReviewPayloadPolicy.summaryOnly(
-            sourceFlow: .cloakDeposit,
-            safeSummary: "Cloak summary without proof input",
-            now: now
-        )
-        #expect(summaryOnly.payloadAvailability == .summaryOnly)
-        #expect(summaryOnly.transientTransactionBase64 == nil)
-        #expect(summaryOnly.sourceFlow == .cloakDeposit)
-
-        let rejected = ShieldReviewPayloadPolicy.makeHandoff(
-            sourceFlow: .jupiterSwap,
-            safeSummary: "safe",
-            transactionBase64: "not-base64",
-            now: now
-        )
-        #expect(rejected.payloadAvailability == .unavailable)
-        #expect(rejected.transientTransactionBase64 == nil)
-
-        let store = ShieldReviewHandoffStore()
-        store.store(exact)
-        #expect(store.count == 1)
-        #expect(store.take(exact.id)?.payloadAvailability == .transientPayload)
-        #expect(store.count == 0)
-
-        let expired = ShieldReviewStudioHandoff(
-            id: UUID(),
-            sourceFlow: .splSend,
-            safeSummary: "Expired safe summary",
-            transientTransactionBase64: transactionBase64,
-            createdAt: Date(timeIntervalSince1970: 10),
-            expiresAt: Date(timeIntervalSince1970: 9),
-            redactionStatus: "redacted_safe",
-            payloadAvailability: .transientPayload
-        )
-        store.store(expired)
-        let expiredRead = try #require(store.take(expired.id))
-        #expect(expiredRead.payloadAvailability == .summaryOnly)
-        #expect(expiredRead.transientTransactionBase64 == nil)
-        #expect(expiredRead.redactionStatus == "payload_expired")
-
-        let history = TransactionStudioHistoryEntry(
-            inputKind: .importHandoff,
-            publicReference: "Shield Review SOL send",
-            summary: "Safe summary only",
-            riskLevel: .medium,
-            simulationStatus: .notRun,
-            recognizedInstructionCount: 1,
-            unknownInstructionCount: 0,
-            transactionVersion: decoded.transactionVersion,
-            altUsed: false,
-            accountDiffAvailable: false,
-            loadedAccountCount: 0,
-            topProgramCategories: decoded.programSummaries.map(\.category.title),
-            createdAt: now
-        )
-        let historyJSON = try #require(String(data: JSONEncoder().encode(history), encoding: .utf8))
-        #expect(!historyJSON.contains(transactionBase64))
-        #expect(!historyJSON.lowercased().contains("serializedtransaction"))
-        #expect(!historyJSON.lowercased().contains("transactionpayload"))
-
-        let docs = try [
-            "../../../docs/architecture/shield-review-integration.md",
-            "../../../docs/architecture/transaction-studio.md",
-            "../../../docs/qa/shield-review-approval-smoke.md",
-            "../../../docs/qa/shield-review-approval-regression.md"
-        ].map { try sourceText(relativePath: $0) }.joined(separator: "\n").lowercased()
-        #expect(docs.contains("exact transaction"))
-        #expect(docs.contains("summary-only"))
-        #expect(docs.contains("watch-only"))
-        #expect(docs.contains("raw payload"))
-        #expect(!docs.contains("nft"))
-
-        let shieldSource = try [
-            "GORKH/Core/ShieldReview/ShieldReviewModels.swift",
-            "GORKH/Core/ShieldReview/ShieldReviewService.swift",
-            "GORKH/Core/ShieldReview/ShieldReviewPolicy.swift",
-            "GORKH/Core/ShieldReview/ShieldReviewHandoff.swift",
-            "GORKH/Core/ShieldReview/ShieldReviewStudioHandoff.swift",
-            "GORKH/Core/ShieldReview/ShieldReviewPayloadPolicy.swift",
-            "GORKH/Core/ShieldReview/ShieldReviewHandoffStore.swift",
-            "GORKH/Modules/ShieldReview/ShieldReviewCard.swift",
-            "GORKH/Modules/ShieldReview/ShieldReviewDetailView.swift",
-            "GORKH/Modules/TransactionStudio/TransactionStudioView.swift"
-        ].map { try sourceText(relativePath: $0) }.joined(separator: "\n").lowercased()
-        for forbidden in ["sendtransaction(", "requestairdrop(", "signtransaction(", "broadcast(", "buildbundle", "/bin/sh", "eval("] {
-            #expect(!shieldSource.contains(forbidden))
-        }
-        #expect(!shieldSource.contains("nft"))
-    }
 
     @Test func agentMemoryAndAuditRedactionContainNoSecrets() throws {
-        let sensitive = "ZERION_API_KEY=zk_unit_test_secret agent token: spend-power private key: abc"
+        let sensitive = "API_KEY=zk_unit_test_secret agent token: spend-power private key: abc"
         let message = AgentChatMessage(role: .user, text: sensitive)
         #expect(!message.text.contains("zk_unit_test_secret"))
         #expect(!message.text.contains("spend-power"))
@@ -5523,311 +3739,12 @@ struct GORKHTests {
         }
     }
 
-    @Test func zerionTinySwapPolicyBlocksUnsafeOrUnreadyExecution() {
-        let now = Date(timeIntervalSince1970: 1_000)
-        let policy = ZerionPolicySummary(
-            id: "manual-policy",
-            name: "manual-policy",
-            allowedChains: ["base"],
-            expiresAt: Date(timeIntervalSince1970: 2_000),
-            deniesTransfers: true,
-            deniesApprovals: true,
-            allowlistCount: 1,
-            walletBinding: "manual-zerion-wallet",
-            status: .loaded
-        )
-        let token = ZerionAgentTokenSummary(id: "token-redacted", policyID: "manual-policy", status: .presentRedacted, expiresAt: nil)
-        let policySnapshot = ZerionPolicyCenterSnapshot(
-            policies: [policy],
-            tokens: [token],
-            status: .loaded,
-            unavailableReason: nil,
-            updatedAt: now
-        )
-        let status = ZerionStatusSnapshot(
-            cliStatus: .installed,
-            executablePath: "/opt/homebrew/bin/zerion",
-            nodeStatus: .installed,
-            nodeVersion: "v22.22.2",
-            apiKeyStatus: .presentRedacted,
-            agentTokenStatus: .presentRedacted,
-            policyStatus: .loaded,
-            swapHelpStatus: .succeeded,
-            swapCommandShape: .chainFirst,
-            walletCount: 1,
-            policyCount: 1,
-            tokenCount: 1,
-            supportedChains: ["base"],
-            errors: [],
-            checkedAt: now
-        )
-        let help = ZerionCLIHelpProbe(
-            topHelpAvailable: true,
-            swapHelpAvailable: true,
-            agentHelpAvailable: true,
-            swapCommandShape: .chainFirst,
-            supportsJSONFlag: true,
-            supportsWalletFlag: true,
-            supportsChainFlag: true,
-            checkedAt: now
-        )
-        let proposal = ZerionTinySwapProposal(
-            zerionWalletName: "manual-zerion-wallet",
-            chain: .base,
-            fromToken: "USDC",
-            toToken: "ETH",
-            amount: 1,
-            estimatedNotionalUSD: 1,
-            policyID: "manual-policy",
-            policyName: "manual-policy",
-            expiresAt: nil,
-            riskNotes: [],
-            createdAt: now
-        )
-        let approval = ZerionExecutionApproval(
-            proposalID: proposal.id,
-            proposalFingerprint: proposal.fingerprint,
-            confirmationPhrase: ZerionTinySwapProposal.requiredConfirmationPhrase,
-            unknownValueAcknowledged: false,
-            approvedAt: now
-        )
-        let context = ZerionExecutionPolicyContext(
-            statusSnapshot: status,
-            policySnapshot: policySnapshot,
-            helpProbe: help,
-            now: now
-        )
-        #expect(ZerionExecutionPolicy.validate(proposal: proposal, approval: approval, context: context).canExecute)
 
-        let wrongChain = ZerionTinySwapProposal(
-            zerionWalletName: "manual-zerion-wallet",
-            chain: .solana,
-            fromToken: "SOL",
-            toToken: "USDC",
-            amount: Decimal(string: "0.001") ?? 0,
-            estimatedNotionalUSD: 1,
-            policyID: "manual-policy",
-            policyName: "manual-policy",
-            expiresAt: nil,
-            riskNotes: [],
-            createdAt: now
-        )
-        let wrongChainDecision = ZerionExecutionPolicy.validate(proposal: wrongChain, approval: ZerionExecutionApproval(
-            proposalID: wrongChain.id,
-            proposalFingerprint: wrongChain.fingerprint,
-            confirmationPhrase: ZerionTinySwapProposal.requiredConfirmationPhrase,
-            unknownValueAcknowledged: false,
-            approvedAt: now
-        ), context: context)
-        #expect(!wrongChainDecision.canExecute)
-        #expect(wrongChainDecision.blockingReasons.contains { $0.lowercased().contains("chain") })
 
-        let aboveCap = ZerionTinySwapProposal(
-            zerionWalletName: "manual-zerion-wallet",
-            chain: .base,
-            fromToken: "USDC",
-            toToken: "ETH",
-            amount: 10,
-            estimatedNotionalUSD: 10,
-            policyID: "manual-policy",
-            policyName: "manual-policy",
-            expiresAt: nil,
-            riskNotes: [],
-            createdAt: now
-        )
-        #expect(!ZerionExecutionPolicy.validate(proposal: aboveCap, approval: ZerionExecutionApproval(
-            proposalID: aboveCap.id,
-            proposalFingerprint: aboveCap.fingerprint,
-            confirmationPhrase: ZerionTinySwapProposal.requiredConfirmationPhrase,
-            unknownValueAcknowledged: false,
-            approvedAt: now
-        ), context: context).canExecute)
 
-        let stale = ZerionTinySwapProposal(
-            zerionWalletName: "manual-zerion-wallet",
-            chain: .base,
-            fromToken: "USDC",
-            toToken: "ETH",
-            amount: 1,
-            estimatedNotionalUSD: 1,
-            policyID: "manual-policy",
-            policyName: "manual-policy",
-            expiresAt: nil,
-            riskNotes: [],
-            createdAt: now.addingTimeInterval(-3600)
-        )
-        #expect(!ZerionExecutionPolicy.validate(proposal: stale, approval: ZerionExecutionApproval(
-            proposalID: stale.id,
-            proposalFingerprint: "mismatch",
-            confirmationPhrase: ZerionTinySwapProposal.requiredConfirmationPhrase,
-            unknownValueAcknowledged: false,
-            approvedAt: now
-        ), context: context).canExecute)
-
-        var missingAPI = status
-        missingAPI = ZerionStatusSnapshot(
-            cliStatus: missingAPI.cliStatus,
-            executablePath: missingAPI.executablePath,
-            nodeStatus: missingAPI.nodeStatus,
-            nodeVersion: missingAPI.nodeVersion,
-            apiKeyStatus: .missing,
-            agentTokenStatus: missingAPI.agentTokenStatus,
-            policyStatus: missingAPI.policyStatus,
-            swapHelpStatus: missingAPI.swapHelpStatus,
-            swapCommandShape: missingAPI.swapCommandShape,
-            walletCount: missingAPI.walletCount,
-            policyCount: missingAPI.policyCount,
-            tokenCount: missingAPI.tokenCount,
-            supportedChains: missingAPI.supportedChains,
-            errors: [],
-            checkedAt: now
-        )
-        #expect(!ZerionExecutionPolicy.validate(proposal: proposal, approval: approval, context: ZerionExecutionPolicyContext(
-            statusSnapshot: missingAPI,
-            policySnapshot: policySnapshot,
-            helpProbe: help,
-            now: now
-        )).canExecute)
-    }
-
-    @Test func zerionExecutionResultParsingAndModelsStaySafe() throws {
-        let success = ZerionCommandResult(
-            command: "zerion_tiny_swap",
-            status: .succeeded,
-            exitCode: 0,
-            stdoutSummary: #"{"status":"submitted","chain":"base","txHash":"0xabc123"}"#,
-            stderrSummary: "",
-            completedAt: Date(timeIntervalSince1970: 0)
-        )
-        let parsed = ZerionExecutionResultParser.parse(commandResult: success, fallbackChain: .base)
-        #expect(parsed.status == .executed)
-        #expect(parsed.transactionHash == "0xabc123")
-        #expect(parsed.explorerURL?.absoluteString.contains("basescan.org") == true)
-
-        let failure = ZerionCommandResult(
-            command: "zerion_tiny_swap",
-            status: .failed,
-            exitCode: 1,
-            stdoutSummary: "",
-            stderrSummary: #"{"errors":[{"code":"POLICY_DENIED","message":"policy rejected"}]}"#,
-            completedAt: Date(timeIntervalSince1970: 0)
-        )
-        let failed = ZerionExecutionResultParser.parse(commandResult: failure, fallbackChain: .base)
-        #expect(failed.status == .failed)
-        #expect(failed.message.lowercased().contains("policy"))
-
-        let encoded = try JSONEncoder().encode([
-            String(data: JSONEncoder().encode(ZerionTinySwapProposal.sampleBaseTinySwap), encoding: .utf8) ?? "",
-            String(data: JSONEncoder().encode(parsed), encoding: .utf8) ?? ""
-        ])
-        let json = try #require(String(data: encoded, encoding: .utf8)).lowercased()
-        for forbidden in ["privatekey", "secretkey", "seedphrase", "signingseed", "walletjson", "zerion_api_key", "agenttoken", "nft"] {
-            #expect(!json.contains(forbidden))
-        }
-    }
-
-    @Test func agentZerionDocsExistAndStateExecutionBoundaries() throws {
-        let architecture = try sourceText(relativePath: "../../../docs/architecture/agent-zerion-executor.md").lowercased()
-        let operatorArchitecture = try sourceText(relativePath: "../../../docs/architecture/agent-policy-wallet-operator.md").lowercased()
-        let smoke = try sourceText(relativePath: "../../../docs/qa/agent-zerion-foundation-smoke.md").lowercased()
-        let tinySmoke = try sourceText(relativePath: "../../../docs/qa/zerion-tiny-transaction-smoke.md").lowercased()
-        let operatorSmoke = try sourceText(relativePath: "../../../docs/qa/agent-policy-wallet-operator-smoke.md").lowercased()
-        let hostedArchitecture = try sourceText(relativePath: "../../../docs/architecture/agent-hosted-ai.md").lowercased()
-        let hostedContract = try sourceText(relativePath: "../../../docs/architecture/agent-hosted-api-contract.md").lowercased()
-        let hostedRedaction = try sourceText(relativePath: "../../../docs/security/agent-ai-redaction-boundary.md").lowercased()
-        let hostedSmoke = try sourceText(relativePath: "../../../docs/qa/agent-hosted-ai-smoke.md").lowercased()
-
-        #expect(architecture.contains("a2 allows one policy-validated tiny same-chain zerion swap only"))
-        #expect(architecture.contains("phase a3 adds agent chat as a proposal and handoff layer"))
-        #expect(architecture.contains("separate from the gorkh wallet"))
-        #expect(architecture.contains("a1 allows read/status zerion cli commands only"))
-        #expect(architecture.contains("if help is unavailable or ambiguous, live execution remains locked"))
-        #expect(operatorArchitecture.contains("chat does not execute transactions"))
-        #expect(operatorArchitecture.contains("watch-only wallets remain analysis-only"))
-        #expect(operatorArchitecture.contains("zerion uses a separate policy-scoped agent wallet"))
-        #expect(smoke.contains("zerion executor"))
-        #expect(smoke.contains("do not add"))
-        #expect(smoke.contains("a2"))
-        #expect(tinySmoke.contains("zerion tiny transaction smoke"))
-        #expect(tinySmoke.contains("separate zerion wallet"))
-        #expect(tinySmoke.contains("do not run bridge, send, sign-message, or sign-typed-data"))
-        #expect(operatorSmoke.contains("agent policy wallet operator smoke"))
-        #expect(operatorSmoke.contains("chat never executes"))
-        #expect(hostedArchitecture.contains("gorkh hosted agent api"))
-        #expect(hostedArchitecture.contains("local safe mode"))
-        #expect(hostedArchitecture.contains("cannot approve, execute, sign"))
-        #expect(hostedContract.contains("post /v1/agent/chat"))
-        #expect(hostedContract.contains("all response fields are advisory"))
-        #expect(hostedRedaction.contains("response sanitization blocks unsafe tool suggestions"))
-        #expect(hostedSmoke.contains("agent hosted ai smoke"))
-        #expect(hostedSmoke.contains("no proposal execution"))
-        #expect(hostedSmoke.contains("scripts/agent-hosted-ai-smoke.sh --mock"))
-        #expect(!architecture.contains("nft"))
-        #expect(!tinySmoke.contains("nft"))
-        #expect(!operatorArchitecture.contains("nft"))
-        #expect(!operatorSmoke.contains("nft"))
-        #expect(!hostedArchitecture.contains("nft"))
-        #expect(!hostedContract.contains("nft"))
-        #expect(!hostedRedaction.contains("nft"))
-        #expect(!hostedSmoke.contains("nft"))
-    }
-
-    @Test func zerionHackathonDemoPackExistsAndStaysSecretFree() throws {
-        let runbook = try sourceText(relativePath: "../../../docs/demo/zerion-agent-demo-runbook.md")
-        let policies = try sourceText(relativePath: "../../../docs/demo/zerion-policy-templates.md")
-        let video = try sourceText(relativePath: "../../../docs/demo/zerion-agent-video-script.md")
-        let submission = try sourceText(relativePath: "../../../docs/demo/zerion-submission-summary.md")
-        let e2e = try sourceText(relativePath: "../../../docs/qa/zerion-agent-e2e-smoke.md")
-        let release = try sourceText(relativePath: "../../../docs/qa/wallet-release-readiness.md")
-
-        let lowercasedDocs = [runbook, policies, video, submission, e2e, release].joined(separator: "\n").lowercased()
-        #expect(lowercasedDocs.contains("separate zerion wallet") || lowercasedDocs.contains("separate tiny-funded zerion wallet"))
-        #expect(lowercasedDocs.contains("scoped policy"))
-        #expect(lowercasedDocs.contains("agent tokens have spending power"))
-        #expect(lowercasedDocs.contains("transaction hash/signature"))
-        #expect(lowercasedDocs.contains("do not claim a live transaction"))
-        #expect(lowercasedDocs.contains("a7 demo pack"))
-        #expect(lowercasedDocs.contains("a8 rehearsal"))
-        #expect(lowercasedDocs.contains("zerion cli was not resolved in path") || lowercasedDocs.contains("zerion cli status: not resolved in path"))
-        #expect(lowercasedDocs.contains("no live transaction was executed") || lowercasedDocs.contains("status: blocked before live transaction"))
-
-        let demoDocs = [runbook, policies, video, submission, e2e].joined(separator: "\n")
-        for forbidden in [
-            "zk_",
-            "ZERION_API_KEY=",
-            "agent token value",
-            "PRIVATE_KEY",
-            "SECRET_KEY",
-            "MNEMONIC",
-            "SEED",
-            "WALLET_JSON",
-            "RPCFAST",
-            "DEEPSEEK_API_KEY"
-        ] {
-            #expect(!demoDocs.contains(forbidden))
-        }
-        #expect(!demoDocs.lowercased().contains("nft"))
-
-        let uiCopy = try [
-            "GORKH/Modules/Agent/ZerionExecutorView.swift",
-            "GORKH/Modules/Agent/ZerionPolicyCenterView.swift",
-            "GORKH/Modules/Agent/ZerionProposalView.swift",
-            "GORKH/Modules/Agent/ZerionExecutionReviewView.swift"
-        ].map(sourceText(relativePath:)).joined(separator: "\n").lowercased()
-        #expect(uiCopy.contains("separate zerion wallet") || uiCopy.contains("separate tiny-funded"))
-        #expect(uiCopy.contains("scoped policy"))
-        #expect(uiCopy.contains("gorkh main-wallet access") || uiCopy.contains("does not use the gorkh main wallet"))
-        #expect(uiCopy.contains("no arbitrary shell"))
-
-        let cliCommandSource = try sourceText(relativePath: "GORKH/Core/Zerion/ZerionCLICommand.swift")
-        #expect(!cliCommandSource.contains("case bridge"))
-        #expect(!cliCommandSource.contains("case send"))
-        #expect(!cliCommandSource.contains("case signMessage"))
-        #expect(!cliCommandSource.contains("case signTypedData"))
-    }
 
     @Test func sharedXcodeSchemeContainsNoSecretEnvironmentValues() throws {
-        let scheme = try sourceText(relativePath: "GORKH.xcodeproj/xcshareddata/xcschemes/GORKH.xcscheme")
+        let scheme = try sourceText(relativePath: "KeySlot.xcodeproj/xcshareddata/xcschemes/GORKH.xcscheme")
         let uppercased = scheme.uppercased()
         for forbidden in [
             "RPCFAST",
@@ -5841,7 +3758,6 @@ struct GORKHTests {
             "MNEMONIC",
             "SEED",
             "WALLET_JSON",
-            "ZERION_API_KEY",
             "WALLET_PRIVATE_KEY",
             "EVM_PRIVATE_KEY",
             "SOLANA_PRIVATE_KEY",
@@ -5854,11 +3770,11 @@ struct GORKHTests {
 
     @Test func walletProductionCopyKeepsSafetyClaimsHonest() throws {
         let files = [
-            "GORKH/Modules/Wallet/WalletInspectorView.swift",
-            "GORKH/Modules/Wallet/WalletOverviewView.swift",
-            "GORKH/Modules/Wallet/WalletReceiveView.swift",
-            "GORKH/Modules/Wallet/Private/WalletPrivateView.swift",
-            "GORKH/Modules/Wallet/Portfolio/PortfolioPnLView.swift"
+            "KeySlot/Modules/Wallet/WalletInspectorView.swift",
+            "KeySlot/Modules/Wallet/WalletOverviewView.swift",
+            "KeySlot/Modules/Wallet/WalletReceiveView.swift",
+            "KeySlot/Modules/Wallet/Private/WalletPrivateView.swift",
+            "KeySlot/Modules/Wallet/Portfolio/PortfolioPnLView.swift"
         ]
         let source = try files.map(sourceText(relativePath:)).joined(separator: "\n").lowercased()
 
@@ -6629,67 +4545,7 @@ struct GORKHTests {
         #expect(!importedStatus.recoveryPhraseExportAvailable)
     }
 
-    @Test func walletDeleteRemovesMetadataAndVaultSecret() throws {
-        let vault = InMemoryWalletVault()
-        let suiteName = "ai.gorkh.tests.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let auditURL = FileManager.default.temporaryDirectory.appendingPathComponent("gorkh-delete-test-\(UUID().uuidString).jsonl")
-        defer { try? FileManager.default.removeItem(at: auditURL) }
-        let manager = WalletManager(
-            vault: vault,
-            rpcClient: SolanaRPCClient(),
-            auditLog: AuditLog(fileURL: auditURL),
-            metadataStore: WalletMetadataStore(defaults: defaults),
-            securitySettingsStore: WalletSecuritySettingsStore(defaults: defaults),
-            localAuthenticationService: MockLocalAuthenticationService(result: .success),
-            mnemonicService: Bip39MnemonicService.shared,
-            cloakBridge: CloakBridgeUnavailable(),
-            cloakPrivateVault: CloakPrivateVaultStatusOnly(),
-            cloakHelperInvocationAdapter: .disabled()
-        )
 
-        manager.createWallet(label: "Delete Me")
-        let profile = try #require(manager.selectedProfile)
-        #expect(vault.containsSecret(for: profile.id))
-
-        manager.deleteSelectedWallet(confirmation: "wrong")
-        #expect(vault.containsSecret(for: profile.id))
-        #expect(!manager.profiles.isEmpty)
-
-        manager.deleteSelectedWallet(confirmation: "DELETE WALLET")
-        #expect(!vault.containsSecret(for: profile.id))
-        #expect(manager.profiles.isEmpty)
-        #expect(manager.auditEvents.contains { $0.kind == .walletDeleted })
-    }
-
-    @Test func localAuthenticationGateBlocksFailedUnlock() async throws {
-        let vault = InMemoryWalletVault()
-        let suiteName = "ai.gorkh.tests.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let auditURL = FileManager.default.temporaryDirectory.appendingPathComponent("gorkh-auth-test-\(UUID().uuidString).jsonl")
-        defer { try? FileManager.default.removeItem(at: auditURL) }
-        let manager = WalletManager(
-            vault: vault,
-            rpcClient: SolanaRPCClient(),
-            auditLog: AuditLog(fileURL: auditURL),
-            metadataStore: WalletMetadataStore(defaults: defaults),
-            securitySettingsStore: WalletSecuritySettingsStore(defaults: defaults),
-            localAuthenticationService: MockLocalAuthenticationService(result: .failed("Denied")),
-            mnemonicService: Bip39MnemonicService.shared,
-            cloakBridge: CloakBridgeUnavailable(),
-            cloakPrivateVault: CloakPrivateVaultStatusOnly(),
-            cloakHelperInvocationAdapter: .disabled()
-        )
-
-        manager.createWallet(label: "Auth")
-        manager.lockWallet()
-        await manager.unlockWallet()
-
-        #expect(manager.vaultState == .locked)
-        #expect(manager.auditEvents.contains { $0.kind == .localAuthenticationFailed })
-    }
 
     @Test func mockVaultStoresAndDeletesSecrets() throws {
         let vault = InMemoryWalletVault()
@@ -6726,11 +4582,9 @@ struct GORKHTests {
             "pusd",
             "send",
             "swap",
-            "private / cloak",
             "security",
             "activity",
             "agent",
-            "zerion",
             "hosted ai",
             "transaction studio",
             "shield review",
@@ -6764,7 +4618,6 @@ struct GORKHTests {
             AgentToolID.executeSwap,
             .executeSend,
             .executeBridge,
-            .executeCloakPayment,
             .signTransaction,
             .sendTransaction,
             .runShell,
@@ -6778,16 +4631,16 @@ struct GORKHTests {
         }
 
         let transactionStudioSource = try [
-            "GORKH/Core/TransactionStudio/TransactionStudioModels.swift",
-            "GORKH/Core/TransactionStudio/TransactionSimulationService.swift",
-            "GORKH/Core/TransactionStudio/TransactionStudioHistoryStore.swift",
-            "GORKH/Modules/TransactionStudio/TransactionStudioView.swift"
+            "KeySlot/Core/TransactionStudio/TransactionStudioModels.swift",
+            "KeySlot/Core/TransactionStudio/TransactionSimulationService.swift",
+            "KeySlot/Core/TransactionStudio/TransactionStudioHistoryStore.swift",
+            "KeySlot/Modules/TransactionStudio/TransactionStudioView.swift"
         ].map(sourceText(relativePath:)).joined(separator: "\n").lowercased()
         let shieldReviewSource = try [
-            "GORKH/Core/ShieldReview/ShieldReviewModels.swift",
-            "GORKH/Core/ShieldReview/ShieldReviewService.swift",
-            "GORKH/Core/ShieldReview/ShieldReviewPayloadPolicy.swift",
-            "GORKH/Modules/ShieldReview/ShieldReviewCard.swift"
+            "KeySlot/Core/ShieldReview/ShieldReviewModels.swift",
+            "KeySlot/Core/ShieldReview/ShieldReviewService.swift",
+            "KeySlot/Core/ShieldReview/ShieldReviewPayloadPolicy.swift",
+            "KeySlot/Modules/ShieldReview/ShieldReviewCard.swift"
         ].map(sourceText(relativePath:)).joined(separator: "\n").lowercased()
 
         for forbidden in [
@@ -6974,16 +4827,16 @@ struct GORKHTests {
         }
         #expect(!lowercasedDocs.contains("nft"))
 
-        let shell = try sourceText(relativePath: "GORKH/App/GORKHShellView.swift")
-        let appState = try sourceText(relativePath: "GORKH/App/AppState.swift")
+        let shell = try sourceText(relativePath: "KeySlot/App/KeySlotShellView.swift")
+        let appState = try sourceText(relativePath: "KeySlot/App/AppState.swift")
         #expect(shell.contains("DeveloperWorkstationView"))
         #expect(appState.contains("developerWorkstation"))
 
         let workstationSource = try [
-            "GORKH/Core/DeveloperWorkstation/WorkstationCommandRunner.swift",
-            "GORKH/Core/DeveloperWorkstation/WorkstationCommandBuilders.swift",
-            "GORKH/Core/DeveloperWorkstation/WorkstationRPCPlaygroundService.swift",
-            "GORKH/Modules/DeveloperWorkstation/DeveloperWorkstationView.swift"
+            "KeySlot/Core/DeveloperWorkstation/WorkstationCommandRunner.swift",
+            "KeySlot/Core/DeveloperWorkstation/WorkstationCommandBuilders.swift",
+            "KeySlot/Core/DeveloperWorkstation/WorkstationRPCPlaygroundService.swift",
+            "KeySlot/Modules/DeveloperWorkstation/DeveloperWorkstationView.swift"
         ].map(sourceText(relativePath:)).joined(separator: "\n").lowercased()
         for forbidden in [
             "/bin/sh",
@@ -7561,14 +5414,14 @@ struct GORKHTests {
         #expect(releaseEvidence.contains("local/live"))
 
         let workstationSource = try [
-            "GORKH/Core/DeveloperWorkstation/WorkstationToolchainInstaller.swift",
-            "GORKH/Core/DeveloperWorkstation/WorkstationAVMModernization.swift",
-            "GORKH/Core/DeveloperWorkstation/WorkstationAVMInstaller.swift",
-            "GORKH/Core/DeveloperWorkstation/WorkstationProgramOperationEvidence.swift",
-            "GORKH/Core/DeveloperWorkstation/WorkstationLocalnetSmokeRunner.swift",
-            "GORKH/Core/DeveloperWorkstation/WorkstationLocalValidator.swift",
-            "GORKH/Core/DeveloperWorkstation/WorkstationProgramOpsRunner.swift",
-            "GORKH/Modules/DeveloperWorkstation/DeveloperWorkstationView.swift"
+            "KeySlot/Core/DeveloperWorkstation/WorkstationToolchainInstaller.swift",
+            "KeySlot/Core/DeveloperWorkstation/WorkstationAVMModernization.swift",
+            "KeySlot/Core/DeveloperWorkstation/WorkstationAVMInstaller.swift",
+            "KeySlot/Core/DeveloperWorkstation/WorkstationProgramOperationEvidence.swift",
+            "KeySlot/Core/DeveloperWorkstation/WorkstationLocalnetSmokeRunner.swift",
+            "KeySlot/Core/DeveloperWorkstation/WorkstationLocalValidator.swift",
+            "KeySlot/Core/DeveloperWorkstation/WorkstationProgramOpsRunner.swift",
+            "KeySlot/Modules/DeveloperWorkstation/DeveloperWorkstationView.swift"
         ].map(sourceText(relativePath:)).joined(separator: "\n").lowercased()
         #expect(workstationSource.contains("geometryreader"))
         #expect(workstationSource.contains("workstationsidebar"))
@@ -7747,15 +5600,6 @@ private struct MockLocalAuthenticationService: LocalAuthenticationService {
     }
 }
 
-private struct MockCloakHelperPathResolver: CloakHelperPathResolving {
-    func resolve(policy: CloakBridgeExecutionPolicy, projectRoot: URL?) throws -> CloakHelperResolvedPath {
-        CloakHelperResolvedPath(
-            nodeExecutable: URL(fileURLWithPath: "/usr/bin/node"),
-            helperScript: URL(fileURLWithPath: "/tmp/gorkh/tools/cloak-bridge/src/index.ts"),
-            helperRelativePath: policy.allowlistedHelperRelativePath
-        )
-    }
-}
 
 private struct MockMarginFiHelperBridge: MarginFiHelperBridging {
     let result: LendingAdapterResult?
@@ -7968,133 +5812,7 @@ private final class MockOrcaHelperProcessRunner: OrcaHelperProcessRunning {
     }
 }
 
-private final class MockCloakHelperProcessRunner: CloakHelperProcessRunning {
-    enum Response {
-        case success(CloakBridgeResponse)
-        case failure(Int32, String)
-    }
 
-    private let response: Response?
-    private let rawStdout: String?
-    private(set) var invocationCount = 0
-    private(set) var lastCommand: CloakBridgeCommand?
-
-    init(response: Response) {
-        self.response = response
-        self.rawStdout = nil
-    }
-
-    init(rawStdout: String) {
-        self.response = nil
-        self.rawStdout = rawStdout
-    }
-
-    func run(
-        resolvedPath: CloakHelperResolvedPath,
-        command: CloakBridgeCommand,
-        stdin: Data
-    ) async throws -> CloakHelperProcessResult {
-        invocationCount += 1
-        lastCommand = command
-
-        if let rawStdout {
-            return CloakHelperProcessResult(exitCode: 0, stdout: Data(rawStdout.utf8), stderr: "")
-        }
-
-        switch response {
-        case .success(let response):
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            return CloakHelperProcessResult(
-                exitCode: 0,
-                stdout: try encoder.encode(response),
-                stderr: ""
-            )
-        case .failure(let code, let stderr):
-            return CloakHelperProcessResult(exitCode: code, stdout: Data(), stderr: stderr)
-        case .none:
-            return CloakHelperProcessResult(exitCode: 1, stdout: Data(), stderr: "missing mock response")
-        }
-    }
-}
-
-private extension CloakBridgeResponse {
-    static func okResponse(
-        command: CloakBridgeCommand,
-        status: CloakBridgeStatus = .ok,
-        errorCategory: CloakBridgeErrorCategory = .none,
-        feeQuote: CloakFeeQuote? = nil,
-        sdkValidation: CloakSDKValidation? = nil,
-        feeValidation: CloakFeeValidation? = nil,
-        environmentValidation: CloakEnvironmentValidation? = nil,
-        nextRequiredGates: [String]? = nil
-    ) -> CloakBridgeResponse {
-        CloakBridgeResponse(
-            requestID: UUID(),
-            command: command,
-            actionKind: command == .depositPlan ? .deposit : nil,
-            status: status,
-            errorCategory: errorCategory,
-            message: "Mock response",
-            feeQuote: feeQuote,
-            sdkValidation: sdkValidation,
-            feeValidation: feeValidation,
-            environmentValidation: environmentValidation,
-            nextRequiredGates: nextRequiredGates
-        )
-    }
-}
-
-@MainActor private extension CloakBridgeSigningRequest {
-    static func testRequest(
-        requestID: UUID,
-        fingerprint: String,
-        id: UUID = UUID(),
-        programID: String = CloakConstants.programID,
-        walletPublicKey: String = SolanaConstants.systemProgramID,
-        amountLamports: UInt64 = 50_000_000,
-        expiresAt: Date = Date().addingTimeInterval(120)
-    ) throws -> CloakBridgeSigningRequest {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        let object: [String: Any] = [
-            "type": "sign-request",
-            "id": id.uuidString,
-            "requestId": requestID.uuidString,
-            "signingKind": "sign_transaction",
-            "walletPublicKey": walletPublicKey,
-            "network": WalletNetwork.mainnetBeta.rawValue,
-            "actionKind": CloakActionKind.deposit.rawValue,
-            "amountLamports": "\(amountLamports)",
-            "mintAddress": CloakConstants.nativeSolMint,
-            "programId": programID,
-            "draftFingerprint": fingerprint,
-            "purpose": "Approve Cloak SOL deposit transaction.",
-            "payloadBase64": Data([1, 2, 3]).base64EncodedString(),
-            "timestamp": ISO8601DateFormatter().string(from: Date()),
-            "expiresAt": ISO8601DateFormatter().string(from: expiresAt)
-        ]
-        let data = try JSONSerialization.data(withJSONObject: object)
-        return try decoder.decode(CloakBridgeSigningRequest.self, from: data)
-    }
-
-    func replacing(
-        programID: String? = nil,
-        walletPublicKey: String? = nil,
-        amountLamports: UInt64? = nil,
-        expiresAt: Date? = nil
-    ) throws -> CloakBridgeSigningRequest {
-        try CloakBridgeSigningRequest.testRequest(
-            requestID: requestID ?? UUID(),
-            fingerprint: draftFingerprint,
-            id: id,
-            programID: programID ?? self.programID,
-            walletPublicKey: walletPublicKey ?? self.walletPublicKey,
-            amountLamports: amountLamports ?? self.amountLamports,
-            expiresAt: expiresAt ?? self.expiresAt
-        )
-    }
-}
 
 private func sampleTokenBalance(
     tokenAccount: String = Base58.encode(Data(repeating: 3, count: 32)),
@@ -8688,7 +6406,6 @@ private func sampleAgentLLMRequest(message: String) throws -> AgentLLMChatReques
             tokenEnvironmentNames: [RPCFastConfiguration.mainnetTokenEnvironmentName],
             beamStatus: "locked"
         ),
-        zerionStatus: .unchecked,
         builtAt: Date(timeIntervalSince1970: 0)
     )
     let redacted = try AgentRedactedContextBuilder.redactedUserMessageForAI(message)
