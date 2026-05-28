@@ -72,6 +72,9 @@ final class WalletManager: ObservableObject {
     private let jupiterSwapClient: JupiterSwapClient
     private let orcaHelperBridge: any OrcaHelperBridging
     private let derivationService: SolanaDerivationService
+    private let vaultExportCodeService: VaultExportCodeServicing
+    private let envelopeStore: ExportRecoveryEnvelopeStoring
+    private let exportService: WalletVaultExportServicing
     private var lockController: WalletLockController
     private var unlockedSecrets: [UUID: WalletSecret] = [:]
     private var preparedMessage: Data?
@@ -245,7 +248,10 @@ final class WalletManager: ObservableObject {
         pusdCirculationClient: PUSDCirculationClient? = nil,
         jupiterQuoteClient: JupiterQuoteClient? = nil,
         jupiterSwapClient: JupiterSwapClient? = nil,
-        orcaHelperBridge: (any OrcaHelperBridging)? = nil
+        orcaHelperBridge: (any OrcaHelperBridging)? = nil,
+        vaultExportCodeService: VaultExportCodeServicing? = nil,
+        envelopeStore: ExportRecoveryEnvelopeStoring? = nil,
+        exportService: WalletVaultExportServicing? = nil
     ) {
         let resolvedPortfolioPriceClient = portfolioPriceClient ?? JupiterPriceClient()
         self.vault = vault
@@ -264,6 +270,15 @@ final class WalletManager: ObservableObject {
         self.jupiterSwapClient = jupiterSwapClient ?? JupiterSwapClient()
         self.orcaHelperBridge = orcaHelperBridge ?? OrcaHelperBridge.liveDefault()
         self.derivationService = SolanaDerivationService(mnemonicService: mnemonicService)
+        self.vaultExportCodeService = vaultExportCodeService ?? VaultExportCodeService()
+        self.envelopeStore = envelopeStore ?? KeychainExportRecoveryEnvelopeStore()
+        self.exportService = exportService ?? WalletVaultExportService(
+            vault: vault,
+            codeService: self.vaultExportCodeService,
+            envelopeStore: self.envelopeStore,
+            derivationService: self.derivationService,
+            mnemonicService: mnemonicService
+        )
         self.rpcHealthSnapshot = .unchecked(network: .devnet, configuration: rpcClient.configuration)
         let policy = securitySettingsStore.loadPolicy()
         self.securityPolicy = policy
@@ -418,7 +433,7 @@ final class WalletManager: ObservableObject {
 
     func generateRecoveryPhrase() -> [String] {
         do {
-            return try mnemonicService.generate(wordCount: 12)
+            return try mnemonicService.generate(wordCount: 24)
         } catch {
             statusMessage = error.localizedDescription
             vaultState = .error(error.localizedDescription)
@@ -427,7 +442,7 @@ final class WalletManager: ObservableObject {
         }
     }
 
-    func createRecoveryWallet(label: String, recoveryWords: [String], derivationPath: DerivationPath) {
+    func createRecoveryWallet(label: String, recoveryWords: [String], derivationPath: DerivationPath, vaultExportCode: String) {
         let phrase = recoveryWords.joined(separator: " ")
         runSensitiveOperation {
             let keypair = try derivationService.deriveKeypair(mnemonic: phrase, path: derivationPath)
@@ -436,10 +451,20 @@ final class WalletManager: ObservableObject {
                 publicAddress: keypair.publicAddress,
                 selectedNetwork: selectedNetwork,
                 walletOrigin: .generatedRecovery,
-                derivationPath: derivationPath.rawValue
+                derivationPath: derivationPath.rawValue,
+                vaultExportCodeVersion: VaultExportCodeVerifier.currentVersion,
+                recoveryEnvelopeVersion: ExportRecoveryEnvelope.currentVersion
             )
             let secret = try WalletSecret(seed: keypair.seed)
             try vault.saveSecret(secret, for: profile.id)
+
+            // Create and store encrypted recovery envelope
+            guard let verifier = vaultExportCodeService.createVerifier(from: vaultExportCode) else {
+                throw WalletVaultError.invalidSecret
+            }
+            let envelope = try ExportRecoveryEnvelopeCrypto.encrypt(mnemonic: phrase, code: vaultExportCode)
+            try vaultExportCodeService.saveVerifier(verifier, for: profile.id)
+            try envelopeStore.saveEnvelope(envelope, for: profile.id)
 
             profiles.append(profile)
             selectedWalletID = profile.id
@@ -454,7 +479,9 @@ final class WalletManager: ObservableObject {
                 message: "Wallet created from recovery phrase locally.",
                 details: [
                     "origin": profile.walletOrigin.rawValue,
-                    "derivationPath": derivationPath.rawValue
+                    "derivationPath": derivationPath.rawValue,
+                    "vaultExportCodeVersion": String(VaultExportCodeVerifier.currentVersion),
+                    "recoveryEnvelopeVersion": String(ExportRecoveryEnvelope.currentVersion)
                 ]
             )
             statusMessage = "Recovery wallet created and unlocked on this Mac."
@@ -506,6 +533,25 @@ final class WalletManager: ObservableObject {
             let secret = try WalletSecret(seed: keypair.seed)
             try vault.saveSecret(secret, for: profile.id)
 
+            profiles.append(profile)
+            selectedWalletID = profile.id
+            unlockedSecrets[profile.id] = secret
+            noteUserActivity()
+            saveMetadata()
+            refreshVaultState()
+            record(
+                kind: .walletImported,
+                walletID: profile.id,
+                publicAddress: profile.publicAddress,
+                message: "Wallet imported from recovery phrase.",
+                details: [
+                    "origin": profile.walletOrigin.rawValue,
+                    "derivationPath": derivationPath.rawValue
+                ]
+            )
+            statusMessage = "Wallet imported and unlocked."
+        }
+    }
 
     func addWatchOnlyWallet(label: String, publicAddress: String, tag: String?) {
         noteUserActivity()
@@ -606,6 +652,193 @@ final class WalletManager: ObservableObject {
             details: ["profileKind": profile.profileKind.rawValue]
         )
         statusMessage = "Watch-only wallet removed."
+    }
+
+    // MARK: - Vault Export
+
+    @Published private(set) var exportResult: WalletExportResult<String>?
+    @Published private(set) var backupExportResult: WalletExportResult<WalletBackupPayload>?
+    @Published private(set) var backupRestoreResult: WalletBackupRestoreResult?
+
+    func exportRecoveryPhrase(code: String) async {
+        guard let profile = selectedProfile else {
+            exportResult = .failed("No wallet selected.")
+            return
+        }
+        guard profile.canSign else {
+            exportResult = .failed("Watch-only wallets have no recovery phrase to export.")
+            return
+        }
+
+        record(kind: .exportStarted, walletID: profile.id, publicAddress: profile.publicAddress, message: "Recovery phrase export requested.")
+
+        let authResult = await localAuthenticationService.authenticate(reason: "Export the recovery phrase for \(profile.label).")
+        guard authResult.succeeded else {
+            record(kind: .exportLocalAuthCancelled, walletID: profile.id, publicAddress: profile.publicAddress, message: "Local authentication cancelled during recovery phrase export.")
+            exportResult = .localAuthFailed
+            return
+        }
+
+        let result = exportService.exportRecoveryPhrase(for: profile, code: code)
+        switch result {
+        case .success:
+            record(kind: .recoveryPhraseExported, walletID: profile.id, publicAddress: profile.publicAddress, message: "Recovery phrase exported after local authentication and Vault Export Code verification.")
+        case .locked(let remaining):
+            record(kind: .exportCooldownTriggered, walletID: profile.id, publicAddress: profile.publicAddress, message: "Export cooldown active.", details: ["remainingSeconds": String(format: "%.0f", remaining)])
+        case .wrongCode:
+            record(kind: .exportCodeFailed, walletID: profile.id, publicAddress: profile.publicAddress, message: "Vault Export Code verification failed during recovery phrase export.")
+        case .failed(let message):
+            record(kind: .exportCodeFailed, walletID: profile.id, publicAddress: profile.publicAddress, message: message)
+        case .missingEnvelope:
+            record(kind: .exportCodeFailed, walletID: profile.id, publicAddress: profile.publicAddress, message: "Recovery envelope not found for this wallet.")
+        case .localAuthFailed:
+            break // handled above
+        }
+        exportResult = result
+    }
+
+    func exportPrivateKey(code: String) async {
+        guard let profile = selectedProfile else {
+            exportResult = .failed("No wallet selected.")
+            return
+        }
+        guard profile.canSign else {
+            exportResult = .failed("Watch-only wallets have no private key to export.")
+            return
+        }
+
+        record(kind: .exportStarted, walletID: profile.id, publicAddress: profile.publicAddress, message: "Private key export requested.")
+
+        let authResult = await localAuthenticationService.authenticate(reason: "Export the private key for \(profile.label).")
+        guard authResult.succeeded else {
+            record(kind: .exportLocalAuthCancelled, walletID: profile.id, publicAddress: profile.publicAddress, message: "Local authentication cancelled during private key export.")
+            exportResult = .localAuthFailed
+            return
+        }
+
+        let result = exportService.exportPrivateKey(for: profile, code: code)
+        switch result {
+        case .success:
+            record(kind: .privateKeyExported, walletID: profile.id, publicAddress: profile.publicAddress, message: "Private key exported after local authentication and Vault Export Code verification.")
+        case .locked(let remaining):
+            record(kind: .exportCooldownTriggered, walletID: profile.id, publicAddress: profile.publicAddress, message: "Export cooldown active.", details: ["remainingSeconds": String(format: "%.0f", remaining)])
+        case .wrongCode:
+            record(kind: .exportCodeFailed, walletID: profile.id, publicAddress: profile.publicAddress, message: "Vault Export Code verification failed during private key export.")
+        case .failed(let message):
+            record(kind: .exportCodeFailed, walletID: profile.id, publicAddress: profile.publicAddress, message: message)
+        case .missingEnvelope:
+            record(kind: .exportCodeFailed, walletID: profile.id, publicAddress: profile.publicAddress, message: "Private key envelope not found for this wallet.")
+        case .localAuthFailed:
+            break
+        }
+        exportResult = result
+    }
+
+    func exportBackup(code: String) async {
+        guard let profile = selectedProfile else {
+            backupExportResult = .failed("No wallet selected.")
+            return
+        }
+        guard profile.canSign else {
+            backupExportResult = .failed("Watch-only wallets have no backup to export.")
+            return
+        }
+
+        record(kind: .exportStarted, walletID: profile.id, publicAddress: profile.publicAddress, message: "Encrypted backup export requested.")
+
+        let authResult = await localAuthenticationService.authenticate(reason: "Export an encrypted backup for \(profile.label).")
+        guard authResult.succeeded else {
+            record(kind: .exportLocalAuthCancelled, walletID: profile.id, publicAddress: profile.publicAddress, message: "Local authentication cancelled during encrypted backup export.")
+            backupExportResult = .localAuthFailed
+            return
+        }
+
+        let result = exportService.exportBackup(for: profile, code: code)
+        switch result {
+        case .success:
+            record(kind: .encryptedBackupExported, walletID: profile.id, publicAddress: profile.publicAddress, message: "Encrypted backup exported after local authentication and Vault Export Code verification.")
+        case .locked(let remaining):
+            record(kind: .exportCooldownTriggered, walletID: profile.id, publicAddress: profile.publicAddress, message: "Export cooldown active.", details: ["remainingSeconds": String(format: "%.0f", remaining)])
+        case .wrongCode:
+            record(kind: .exportCodeFailed, walletID: profile.id, publicAddress: profile.publicAddress, message: "Vault Export Code verification failed during encrypted backup export.")
+        case .failed(let message):
+            record(kind: .exportCodeFailed, walletID: profile.id, publicAddress: profile.publicAddress, message: message)
+        case .missingEnvelope:
+            record(kind: .exportCodeFailed, walletID: profile.id, publicAddress: profile.publicAddress, message: "Recovery envelope not found for this wallet.")
+        case .localAuthFailed:
+            break
+        }
+        backupExportResult = result
+    }
+
+    func restoreBackup(payload: WalletBackupPayload, code: String) {
+        record(kind: .backupRestoreAttempted, walletID: nil, publicAddress: payload.walletPublicAddress, message: "Backup restore attempted.", details: [
+            "schemaVersion": String(payload.schemaVersion),
+            "productName": payload.productName
+        ])
+
+        let result = exportService.restoreBackup(payload: payload, code: code, existingProfiles: profiles)
+        switch result {
+        case .success(let profile):
+            // The exportService.restoreBackup validates the mnemonic and derivation path.
+            // We must also re-create the signing secret and encrypted envelope from the backup payload.
+            restoreWalletFromBackup(profile: profile, payload: payload, code: code)
+        case .wrongCode:
+            record(kind: .backupRestoreFailed, walletID: nil, publicAddress: payload.walletPublicAddress, message: "Backup restore failed: incorrect Vault Export Code.")
+        case .locked(let remaining):
+            record(kind: .exportCooldownTriggered, walletID: nil, publicAddress: payload.walletPublicAddress, message: "Backup restore locked.", details: ["remainingSeconds": String(format: "%.0f", remaining)])
+        case .failed(let message):
+            record(kind: .backupRestoreFailed, walletID: nil, publicAddress: payload.walletPublicAddress, message: "Backup restore failed: \(message).")
+        }
+        backupRestoreResult = result
+    }
+
+    private func restoreWalletFromBackup(profile: WalletProfile, payload: WalletBackupPayload, code: String) {
+        runSensitiveOperation {
+            let mnemonic = try ExportRecoveryEnvelopeCrypto.decrypt(
+                envelope: payload.encryptedRecoveryEnvelope,
+                code: code
+            )
+            let path = try DerivationPath(payload.derivationPath)
+            let keypair = try derivationService.deriveKeypair(mnemonic: mnemonic, path: path)
+            guard keypair.publicAddress == profile.publicAddress else {
+                throw WalletBackupError.addressMismatch
+            }
+
+            let secret = try WalletSecret(seed: keypair.seed)
+            try vault.saveSecret(secret, for: profile.id)
+
+            // Re-create verifier and envelope so the restored wallet has its own independent copy
+            guard let verifier = vaultExportCodeService.createVerifier(from: code) else {
+                throw WalletVaultError.invalidSecret
+            }
+            let envelope = try ExportRecoveryEnvelopeCrypto.encrypt(mnemonic: mnemonic, code: code)
+            try vaultExportCodeService.saveVerifier(verifier, for: profile.id)
+            try envelopeStore.saveEnvelope(envelope, for: profile.id)
+
+            profiles.append(profile)
+            selectedWalletID = profile.id
+            unlockedSecrets[profile.id] = secret
+            saveMetadata()
+            refreshVaultState()
+            record(
+                kind: .backupRestoreSucceeded,
+                walletID: profile.id,
+                publicAddress: profile.publicAddress,
+                message: "Backup restored successfully.",
+                details: [
+                    "derivationPath": path.rawValue,
+                    "schemaVersion": String(payload.schemaVersion)
+                ]
+            )
+            statusMessage = "Backup restored and wallet unlocked."
+        }
+    }
+
+    func clearExportResults() {
+        exportResult = nil
+        backupExportResult = nil
+        backupRestoreResult = nil
     }
 
     func previewMnemonicAddress(mnemonic: String, derivationPath: DerivationPath) throws -> String {

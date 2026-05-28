@@ -190,19 +190,29 @@ enum AgentRedactedContextBuilder {
             }
         }
         
-        // Check for vault passphrase indicators
+        // Check for vault passphrase / export code indicators
         let passphraseIndicators = [
             "vault passphrase:",
             "passphrase:",
             "vault password:",
-            "keyslot passphrase"
+            "keyslot passphrase",
+            "vault export code",
+            "exportcode",
+            "export code:"
         ]
         for indicator in passphraseIndicators {
             if lowered.contains(indicator) {
-                return "vault passphrase indicator detected"
+                return "vault secret indicator detected"
             }
         }
-        
+
+        // Check for Vault Export Code format (XXXX-XXXX-... or 32 hex chars)
+        let codePattern = #"\b[a-f0-9]{4}(?:-[a-f0-9]{4}){7}\b"#
+        if let regex = try? NSRegularExpression(pattern: codePattern, options: []),
+           regex.firstMatch(in: text, options: [], range: NSRange(text.startIndex..., in: text)) != nil {
+            return "vault export code pattern detected"
+        }
+
         let forbiddenTerms = [
             "private key",
             "privatekey",
@@ -225,7 +235,9 @@ enum AgentRedactedContextBuilder {
             "unsignedtransaction",
             "/bin/sh",
             "runshell",
-            "arbitrarycommand"
+            "arbitrarycommand",
+            "keypair array",
+            "solana cli json"
         ]
         return forbiddenTerms.first { lowered.contains($0) }
     }

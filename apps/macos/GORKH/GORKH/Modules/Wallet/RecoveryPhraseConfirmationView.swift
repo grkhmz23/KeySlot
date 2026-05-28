@@ -8,7 +8,9 @@ struct RecoveryPhraseConfirmationView: View {
     @State private var attempted = false
 
     private var challengeIndexes: [Int] {
-        [2, 6, 10].filter { $0 < words.count }
+        // For 24-word phrases, challenge 6 words; for shorter phrases, challenge 3
+        let base = words.count >= 24 ? [2, 5, 8, 12, 16, 21] : [2, 6, 10]
+        return base.filter { $0 < words.count }
     }
 
     var body: some View {

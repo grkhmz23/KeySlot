@@ -6439,3 +6439,345 @@ private extension Data {
         map { String(format: "%02x", $0) }.joined()
     }
 }
+
+
+// MARK: - Wallet Vault v1 Tests
+
+extension GORKHTests {
+
+    // MARK: Vault Export Code Generation
+
+    @Test func vaultExportCodeGenerates128BitsOfEntropy() {
+        let code = VaultExportCode.generate()
+        let normalized = VaultExportCode.normalize(code)
+        #expect(normalized.count == 32)
+        #expect(VaultExportCode.isValidFormat(code))
+
+        // Verify hex format
+        let hexChars = CharacterSet(charactersIn: "0123456789abcdef")
+        #expect(normalized.rangeOfCharacter(from: hexChars.inverted) == nil)
+    }
+
+    @Test func vaultExportCodeFormatValidationAcceptsValidCodes() {
+        #expect(VaultExportCode.isValidFormat("abcd-ef12-3456-7890-abcd-ef12-3456-7890"))
+        #expect(VaultExportCode.isValidFormat("ABCD-EF12-3456-7890-ABCD-EF12-3456-7890"))
+        #expect(VaultExportCode.isValidFormat("0000-0000-0000-0000-0000-0000-0000-0000"))
+    }
+
+    @Test func vaultExportCodeFormatValidationRejectsMalformedCodes() {
+        #expect(!VaultExportCode.isValidFormat(""))
+        #expect(!VaultExportCode.isValidFormat("1234"))
+        #expect(!VaultExportCode.isValidFormat("1234-5678-90ab-cdef"))
+        #expect(!VaultExportCode.isValidFormat("zzzz-zzzz-zzzz-zzzz-zzzz-zzzz-zzzz-zzzz"))
+        #expect(!VaultExportCode.isValidFormat("1234-5678-90AB-CDEF-1234-5678-90AB-CDEF-EXTRA"))
+    }
+
+    // MARK: Vault Export Code Verifier
+
+    @Test func vaultExportCodeVerifierCreatesAndVerifiesCorrectly() throws {
+        let code = VaultExportCode.generate()
+        let verifier = try #require(VaultExportCodeVerifier(code: code))
+        #expect(verifier.verify(code: code))
+    }
+
+    @Test func vaultExportCodeVerifierRejectsWrongCode() throws {
+        let code1 = VaultExportCode.generate()
+        let code2 = VaultExportCode.generate()
+        let verifier = try #require(VaultExportCodeVerifier(code: code1))
+        #expect(!verifier.verify(code: code2))
+    }
+
+    @Test func vaultExportCodeVerifierRejectsInvalidFormat() {
+        #expect(VaultExportCodeVerifier(code: "invalid") == nil)
+        #expect(VaultExportCodeVerifier(code: "1234") == nil)
+    }
+
+    @Test func plaintextVaultExportCodeIsNotStoredInVerifier() throws {
+        let code = VaultExportCode.generate()
+        let verifier = try #require(VaultExportCodeVerifier(code: code))
+        let data = try JSONEncoder().encode(verifier)
+        let json = try #require(String(data: data, encoding: .utf8)).lowercased()
+        #expect(!json.contains(VaultExportCode.normalize(code)))
+    }
+
+    // MARK: Export Recovery Envelope
+
+    @Test func exportRecoveryEnvelopeEncryptsAndDecryptsMnemonic() throws {
+        let code = VaultExportCode.generate()
+        let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        let envelope = try ExportRecoveryEnvelopeCrypto.encrypt(mnemonic: mnemonic, code: code)
+        let decrypted = try ExportRecoveryEnvelopeCrypto.decrypt(envelope: envelope, code: code)
+        #expect(decrypted == mnemonic)
+    }
+
+    @Test func exportRecoveryEnvelopeFailsWithWrongCode() throws {
+        let code1 = VaultExportCode.generate()
+        let code2 = VaultExportCode.generate()
+        let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        let envelope = try ExportRecoveryEnvelopeCrypto.encrypt(mnemonic: mnemonic, code: code1)
+        #expect(throws: ExportRecoveryEnvelope.EnvelopeError.self) {
+            try ExportRecoveryEnvelopeCrypto.decrypt(envelope: envelope, code: code2)
+        }
+    }
+
+    @Test func exportRecoveryEnvelopeContainsNoPlaintextMnemonic() throws {
+        let code = VaultExportCode.generate()
+        let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        let envelope = try ExportRecoveryEnvelopeCrypto.encrypt(mnemonic: mnemonic, code: code)
+        let data = try JSONEncoder().encode(envelope)
+        let json = try #require(String(data: data, encoding: .utf8)).lowercased()
+        #expect(!json.contains("abandon"))
+        #expect(!json.contains("mnemonic"))
+    }
+
+    @Test func exportRecoveryEnvelopeVersioningWorks() throws {
+        let code = VaultExportCode.generate()
+        let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        let envelope = try ExportRecoveryEnvelopeCrypto.encrypt(mnemonic: mnemonic, code: code)
+        #expect(envelope.version == ExportRecoveryEnvelope.currentVersion)
+    }
+
+    // MARK: Wallet Backup Encoder
+
+    @Test func walletBackupEncoderRoundTripsPayload() throws {
+        let code = VaultExportCode.generate()
+        let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        let envelope = try ExportRecoveryEnvelopeCrypto.encrypt(mnemonic: mnemonic, code: code)
+        let payload = WalletBackupPayload(
+            schemaVersion: WalletBackupPayload.currentSchemaVersion,
+            productName: "KeySlot",
+            walletPublicAddress: "11111111111111111111111111111111",
+            walletLabel: "Test",
+            derivationPath: DerivationPath.defaultSolana.rawValue,
+            createdAt: Date(),
+            encryptedRecoveryEnvelope: envelope,
+            compatibilityMetadata: .default
+        )
+        let data = try WalletBackupEncoder.encode(payload)
+        let decoded = try WalletBackupEncoder.decode(data)
+        #expect(decoded.walletPublicAddress == payload.walletPublicAddress)
+        #expect(decoded.walletLabel == payload.walletLabel)
+        #expect(decoded.schemaVersion == WalletBackupPayload.currentSchemaVersion)
+    }
+
+    @Test func walletBackupPayloadContainsNoPlaintextSecrets() throws {
+        let code = VaultExportCode.generate()
+        let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        let envelope = try ExportRecoveryEnvelopeCrypto.encrypt(mnemonic: mnemonic, code: code)
+        let payload = WalletBackupPayload(
+            schemaVersion: WalletBackupPayload.currentSchemaVersion,
+            productName: "KeySlot",
+            walletPublicAddress: "11111111111111111111111111111111",
+            walletLabel: "Test",
+            derivationPath: DerivationPath.defaultSolana.rawValue,
+            createdAt: Date(),
+            encryptedRecoveryEnvelope: envelope,
+            compatibilityMetadata: .default
+        )
+        let data = try WalletBackupEncoder.encode(payload)
+        let json = try #require(String(data: data, encoding: .utf8)).lowercased()
+        #expect(!json.contains("abandon"))
+        #expect(!json.contains("mnemonic"))
+        #expect(!json.contains(VaultExportCode.normalize(code)))
+    }
+
+    // MARK: Export Service
+
+    @Test func exportServiceRestoresBackupWithCorrectCode() throws {
+        let code = VaultExportCode.generate()
+        let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        let derivationService = SolanaDerivationService()
+        let keypair = try derivationService.deriveKeypair(mnemonic: mnemonic, path: .defaultSolana)
+        let envelope = try ExportRecoveryEnvelopeCrypto.encrypt(mnemonic: mnemonic, code: code)
+        let payload = WalletBackupPayload(
+            schemaVersion: WalletBackupPayload.currentSchemaVersion,
+            productName: "KeySlot",
+            walletPublicAddress: keypair.publicAddress,
+            walletLabel: "Test",
+            derivationPath: DerivationPath.defaultSolana.rawValue,
+            createdAt: Date(),
+            encryptedRecoveryEnvelope: envelope,
+            compatibilityMetadata: .default
+        )
+        let service = WalletVaultExportService()
+        let result = service.restoreBackup(payload: payload, code: code, existingProfiles: [])
+        if case .success(let profile) = result {
+            #expect(profile.publicAddress == keypair.publicAddress)
+        } else {
+            Issue.record("Expected restore success, got \(result)")
+        }
+    }
+
+    @Test func exportServiceRestoreFailsWithWrongCode() throws {
+        let code1 = VaultExportCode.generate()
+        let code2 = VaultExportCode.generate()
+        let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        let derivationService = SolanaDerivationService()
+        let keypair = try derivationService.deriveKeypair(mnemonic: mnemonic, path: .defaultSolana)
+        let envelope = try ExportRecoveryEnvelopeCrypto.encrypt(mnemonic: mnemonic, code: code1)
+        let payload = WalletBackupPayload(
+            schemaVersion: WalletBackupPayload.currentSchemaVersion,
+            productName: "KeySlot",
+            walletPublicAddress: keypair.publicAddress,
+            walletLabel: "Test",
+            derivationPath: DerivationPath.defaultSolana.rawValue,
+            createdAt: Date(),
+            encryptedRecoveryEnvelope: envelope,
+            compatibilityMetadata: .default
+        )
+        let service = WalletVaultExportService()
+        let result = service.restoreBackup(payload: payload, code: code2, existingProfiles: [])
+        if case .wrongCode = result {
+            // expected
+        } else {
+            Issue.record("Expected wrongCode, got \(result)")
+        }
+    }
+
+    @Test func exportServiceRestoreFailsWhenWalletAlreadyExists() throws {
+        let code = VaultExportCode.generate()
+        let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        let derivationService = SolanaDerivationService()
+        let keypair = try derivationService.deriveKeypair(mnemonic: mnemonic, path: .defaultSolana)
+        let envelope = try ExportRecoveryEnvelopeCrypto.encrypt(mnemonic: mnemonic, code: code)
+        let payload = WalletBackupPayload(
+            schemaVersion: WalletBackupPayload.currentSchemaVersion,
+            productName: "KeySlot",
+            walletPublicAddress: keypair.publicAddress,
+            walletLabel: "Test",
+            derivationPath: DerivationPath.defaultSolana.rawValue,
+            createdAt: Date(),
+            encryptedRecoveryEnvelope: envelope,
+            compatibilityMetadata: .default
+        )
+        let existing = WalletProfile(label: "Existing", publicAddress: keypair.publicAddress, walletOrigin: .legacyKeypair)
+        let service = WalletVaultExportService()
+        let result = service.restoreBackup(payload: payload, code: code, existingProfiles: [existing])
+        if case .failed(let message) = result {
+            #expect(message.contains("already exists"))
+        } else {
+            Issue.record("Expected failed, got \(result)")
+        }
+    }
+
+    // MARK: Vault Export Code Attempt Tracking
+
+    @Test func attemptTrackerRecordsFailuresAndLockout() {
+        let tracker = UserDefaultsVaultExportCodeAttemptTracker()
+        let walletID = UUID()
+        tracker.reset(for: walletID)
+
+        #expect(!tracker.isLocked(for: walletID, now: Date()))
+
+        tracker.recordFailure(for: walletID)
+        tracker.recordFailure(for: walletID)
+        #expect(!tracker.isLocked(for: walletID, now: Date()))
+
+        tracker.recordFailure(for: walletID)
+        #expect(tracker.isLocked(for: walletID, now: Date()))
+        #expect(tracker.lockoutRemaining(for: walletID, now: Date()) > 0)
+
+        tracker.recordSuccess(for: walletID)
+        #expect(!tracker.isLocked(for: walletID, now: Date()))
+        #expect(tracker.record(for: walletID).consecutiveFailures == 0)
+    }
+
+    // MARK: Redaction
+
+    @Test func redactionCatchesVaultExportCodeRelatedKeys() {
+        #expect(Redaction.isSensitiveKey("vaultExportCode"))
+        #expect(Redaction.isSensitiveKey("export_code"))
+        #expect(Redaction.isSensitiveKey("recovery-envelope"))
+        #expect(Redaction.isSensitiveKey("signing_seed"))
+        #expect(Redaction.isSensitiveKey("bip39seed"))
+    }
+
+    @Test func redactionStripsVaultExportCodeFromDetails() {
+        let details: [String: String] = [
+            "vaultExportCode": "abcd-ef12-3456-7890",
+            "exportCodeHash": "deadbeef",
+            "network": "devnet"
+        ]
+        let safe = Redaction.safeDetails(details)
+        #expect(safe["network"] == "devnet")
+        #expect(safe["vaultExportCode"] == nil)
+        #expect(safe["exportCodeHash"] == nil)
+    }
+
+    // MARK: BIP39 Generation
+
+    @Test func bip39GenerationProducesValidTwentyFourWordPhrase() throws {
+        let service = Bip39MnemonicService()
+        let words = try service.generate(wordCount: 24)
+        #expect(words.count == 24)
+        #expect(service.validate(words.joined(separator: " ")))
+    }
+
+    @Test func twentyFourWordMnemonicReproducesDeterministicAddress() throws {
+        let service = Bip39MnemonicService()
+        let words = try service.generate(wordCount: 24)
+        let phrase = words.joined(separator: " ")
+        let derivationService = SolanaDerivationService()
+        let keypair1 = try derivationService.deriveKeypair(mnemonic: phrase, path: .defaultSolana)
+        let keypair2 = try derivationService.deriveKeypair(mnemonic: phrase, path: .defaultSolana)
+        #expect(keypair1.publicAddress == keypair2.publicAddress)
+    }
+
+    @Test func defaultDerivationPathIsSolanaStandard() {
+        #expect(DerivationPath.defaultSolana.rawValue == "m/44'/501'/0'/0'")
+    }
+
+    // MARK: Wallet Profile Schema
+
+    @Test func walletProfileCanStoreVaultExportMetadata() throws {
+        let profile = WalletProfile(
+            label: "Test",
+            publicAddress: SolanaConstants.systemProgramID,
+            walletOrigin: .generatedRecovery,
+            derivationPath: DerivationPath.defaultSolana.rawValue,
+            vaultExportCodeVersion: 1,
+            recoveryEnvelopeVersion: 1,
+            walletSchemaVersion: 1
+        )
+        let data = try JSONEncoder().encode(profile)
+        let decoded = try JSONDecoder().decode(WalletProfile.self, from: data)
+        #expect(decoded.vaultExportCodeVersion == 1)
+        #expect(decoded.recoveryEnvelopeVersion == 1)
+        #expect(decoded.walletSchemaVersion == 1)
+    }
+
+    @Test func walletProfileDecodesLegacyWithoutVaultFields() throws {
+        let json = """
+        {
+            "id": "00000000-0000-0000-0000-000000000001",
+            "label": "Legacy",
+            "publicAddress": "11111111111111111111111111111111",
+            "accounts": [],
+            "selectedNetwork": "devnet",
+            "walletOrigin": "legacy_local",
+            "profileKind": "local_signer",
+            "createdAt": "2024-01-01T00:00:00Z",
+            "lastUsedAt": null
+        }
+        """
+        let data = try #require(json.data(using: .utf8))
+        let profile = try JSONDecoder().decode(WalletProfile.self, from: data)
+        #expect(profile.walletSchemaVersion == 1)
+        #expect(profile.vaultExportCodeVersion == nil)
+        #expect(profile.recoveryEnvelopeVersion == nil)
+    }
+
+    // MARK: Agent Context Isolation
+
+    @Test func agentContextBuilderRejectsVaultExportCodePatterns() {
+        let text = "My vault export code is abcd-ef12-3456-7890-abcd-ef12-3456-7890"
+        let match = AgentRedactedContextBuilder.firstForbiddenMatch(in: text)
+        #expect(match != nil)
+    }
+
+    @Test func agentContextBuilderRejectsMnemonicPatterns() {
+        let text = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        let match = AgentRedactedContextBuilder.firstForbiddenMatch(in: text)
+        #expect(match != nil)
+    }
+}

@@ -27,8 +27,16 @@ struct WalletBackupView: View {
                 .foregroundStyle(GorkhColors.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if !status.recoveryPhraseExportAvailable {
-                Text("KeySlot cannot reveal this recovery phrase again because only the derived signing seed is stored in Keychain.")
+            if status.recoveryPhraseExportAvailable {
+                Text("Export requires Local Authentication plus your Vault Export Code.")
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.success)
+            } else if !status.recoveryPhraseConfirmed && status.riskStatus == .seedOnlyWallet {
+                Text("This wallet has no recovery phrase in KeySlot.")
+                    .font(.caption)
+                    .foregroundStyle(GorkhColors.warning)
+            } else if status.recoveryPhraseConfirmed && !status.recoveryPhraseExportAvailable {
+                Text("This wallet was created before Vault Export Code support. Recovery phrase export is unavailable.")
                     .font(.caption)
                     .foregroundStyle(GorkhColors.warning)
             }

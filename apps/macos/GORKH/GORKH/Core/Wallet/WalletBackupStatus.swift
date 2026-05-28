@@ -31,24 +31,29 @@ struct WalletBackupStatus: Equatable, Identifiable {
     let message: String
 
     static func evaluate(profile: WalletProfile) -> WalletBackupStatus {
+        let exportAvailable = profile.vaultExportCodeVersion != nil
         switch profile.walletOrigin {
         case .generatedRecovery:
             return WalletBackupStatus(
                 id: profile.id,
                 riskStatus: .backedUp,
                 recoveryPhraseConfirmed: true,
-                recoveryPhraseExportAvailable: false,
+                recoveryPhraseExportAvailable: exportAvailable,
                 title: "Recovery phrase confirmed",
-                message: "The phrase was confirmed during setup. KeySlot stores only the derived signing seed in Keychain, so the phrase cannot be shown again."
+                message: exportAvailable
+                    ? "The phrase was confirmed during setup. Export is available with Local Authentication and your Vault Export Code."
+                    : "The phrase was confirmed during setup. KeySlot stores only the derived signing seed in Keychain, so the phrase cannot be shown again."
             )
         case .importedRecovery:
             return WalletBackupStatus(
                 id: profile.id,
                 riskStatus: .cannotVerify,
                 recoveryPhraseConfirmed: true,
-                recoveryPhraseExportAvailable: false,
+                recoveryPhraseExportAvailable: exportAvailable,
                 title: "Imported recovery phrase",
-                message: "This wallet was imported from a phrase. KeySlot stores only the derived signing seed in Keychain and cannot verify or reveal your phrase later."
+                message: exportAvailable
+                    ? "This wallet was imported from a phrase. Export is available with Local Authentication and your Vault Export Code."
+                    : "This wallet was imported from a phrase. KeySlot stores only the derived signing seed in Keychain and cannot verify or reveal your phrase later."
             )
         case .importedPrivateKey:
             return WalletBackupStatus(

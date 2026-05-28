@@ -2,6 +2,8 @@ import SwiftUI
 
 struct WalletSecurityView: View {
     @EnvironmentObject private var walletManager: WalletManager
+    @State private var showExportSheet = false
+    @State private var showRestoreSheet = false
 
     var body: some View {
         GorkhPanel("Wallet Security") {
@@ -31,8 +33,36 @@ struct WalletSecurityView: View {
                     WalletBackupView(status: backupStatus)
                 }
 
+                HStack(spacing: 8) {
+                    if walletManager.selectedProfile?.canSign == true {
+                        Button {
+                            showExportSheet = true
+                        } label: {
+                            Label("Export", systemImage: "square.and.arrow.up")
+                        }
+                        .buttonStyle(.keyslotSecondary)
+                    }
+
+                    Button {
+                        showRestoreSheet = true
+                    } label: {
+                        Label("Restore Backup", systemImage: "square.and.arrow.down")
+                    }
+                    .buttonStyle(.keyslotSecondary)
+                }
+
                 WalletDeleteView()
             }
+        }
+        .sheet(isPresented: $showExportSheet) {
+            WalletExportView()
+                .environmentObject(walletManager)
+                .frame(minWidth: 520, minHeight: 480)
+        }
+        .sheet(isPresented: $showRestoreSheet) {
+            WalletRestoreView()
+                .environmentObject(walletManager)
+                .frame(minWidth: 520, minHeight: 380)
         }
     }
 }

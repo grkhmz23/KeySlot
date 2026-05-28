@@ -13,6 +13,9 @@ struct WalletProfile: Codable, Equatable, Identifiable {
     var colorTag: String?
     var createdAt: Date
     var lastUsedAt: Date?
+    var vaultExportCodeVersion: Int?
+    var recoveryEnvelopeVersion: Int?
+    var walletSchemaVersion: Int
 
     init(
         id: UUID = UUID(),
@@ -25,7 +28,10 @@ struct WalletProfile: Codable, Equatable, Identifiable {
         isPinned: Bool = false,
         colorTag: String? = nil,
         createdAt: Date = Date(),
-        lastUsedAt: Date? = nil
+        lastUsedAt: Date? = nil,
+        vaultExportCodeVersion: Int? = nil,
+        recoveryEnvelopeVersion: Int? = nil,
+        walletSchemaVersion: Int = 1
     ) {
         self.id = id
         self.label = label
@@ -41,6 +47,9 @@ struct WalletProfile: Codable, Equatable, Identifiable {
         self.colorTag = colorTag
         self.createdAt = createdAt
         self.lastUsedAt = lastUsedAt
+        self.vaultExportCodeVersion = vaultExportCodeVersion
+        self.recoveryEnvelopeVersion = recoveryEnvelopeVersion
+        self.walletSchemaVersion = walletSchemaVersion
     }
 
     var canSign: Bool {
@@ -64,6 +73,9 @@ struct WalletProfile: Codable, Equatable, Identifiable {
         case colorTag
         case createdAt
         case lastUsedAt
+        case vaultExportCodeVersion
+        case recoveryEnvelopeVersion
+        case walletSchemaVersion
     }
 
     init(from decoder: Decoder) throws {
@@ -80,6 +92,9 @@ struct WalletProfile: Codable, Equatable, Identifiable {
         colorTag = try container.decodeIfPresent(String.self, forKey: .colorTag)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         lastUsedAt = try container.decodeIfPresent(Date.self, forKey: .lastUsedAt)
+        vaultExportCodeVersion = try container.decodeIfPresent(Int.self, forKey: .vaultExportCodeVersion)
+        recoveryEnvelopeVersion = try container.decodeIfPresent(Int.self, forKey: .recoveryEnvelopeVersion)
+        walletSchemaVersion = try container.decodeIfPresent(Int.self, forKey: .walletSchemaVersion) ?? 1
         accounts = try container.decodeIfPresent([WalletAccount].self, forKey: .accounts) ?? [
             WalletAccount(id: id, publicAddress: publicAddress, label: label, derivationPath: derivationPath)
         ]
@@ -279,6 +294,20 @@ struct AuditEvent: Codable, Equatable, Identifiable {
     enum Kind: String, Codable, CaseIterable {
         case walletCreated = "wallet_created"
         case walletImported = "wallet_imported"
+        case recoveryPhraseConfirmed = "recovery_phrase_confirmed"
+        case vaultExportCodeConfirmed = "vault_export_code_confirmed"
+        case exportStarted = "export_started"
+        case exportLocalAuthCancelled = "export_local_auth_cancelled"
+        case exportCodeFailed = "export_code_failed"
+        case exportCooldownTriggered = "export_cooldown_triggered"
+        case recoveryPhraseExported = "recovery_phrase_exported"
+        case privateKeyExported = "private_key_exported"
+        case encryptedBackupExported = "encrypted_backup_exported"
+        case backupRestoreAttempted = "backup_restore_attempted"
+        case backupRestoreSucceeded = "backup_restore_succeeded"
+        case backupRestoreFailed = "backup_restore_failed"
+        case legacyWalletMetadataMigrated = "legacy_wallet_metadata_migrated"
+        case legacyKeychainFallbackUsed = "legacy_keychain_fallback_used"
         case walletUnlocked = "wallet_unlocked"
         case walletLocked = "wallet_locked"
         case walletDeleted = "wallet_deleted"

@@ -29,7 +29,16 @@ enum Redaction {
         "serializedtransaction",
         "transactionpayload",
         "swaptransaction",
-        "signedtransaction"
+        "signedtransaction",
+        "vaultexportcode",
+        "exportcode",
+        "recoveryenvelope",
+        "signingenvelope",
+        "walletbackup",
+        "keyslotwallet",
+        "bip39seed",
+        "ed25519seed",
+        "solanakeypair"
     ]
 
     static func isSensitiveKey(_ key: String) -> Bool {
